@@ -353,6 +353,7 @@ component Icon inherits Rectangle {
         name == "disconnect" ? "M5 12 H9 M15 12 H19 M5 5 L19 19" :
         name == "channel" ? "M4 9 H18 M15 6 L18 9 L15 12 M20 15 H6 M9 12 L6 15 L9 18" :
         name == "database" ? "M5 6 A7 2.5 0 0 0 19 6 A7 2.5 0 0 0 5 6 V18 A7 2.5 0 0 0 19 18 V6 M5 12 A7 2.5 0 0 0 19 12" :
+        name == "language" ? "M4 17 L7.5 7 L11 17 M5.5 13 H9.5 M14 8 H21 M17.5 8 V18 M14 12 H21 M15 18 H20" :
         name == "send" ? "M3 6 H21 V18 H3 Z M3 6 L12 13 L21 6" :
         name == "curve" ? "M3 18 L9 11 L13 15 L21 5" :
         name == "playback" ? "M8 6 L18 12 L8 18 Z" :
@@ -1969,7 +1970,7 @@ export component AppWindow inherits Window {
                             caption: I18n.en ? "Theme" : "主题";
                             RibbonBtn { icon: "theme"; label: Theme.dark ? (I18n.en ? "Light" : "浅色") : (I18n.en ? "Dark" : "深色"); clicked => { root.toggle-dark(); } }
                             RibbonBtn { icon: "layout"; label: Theme.big ? (I18n.en ? "Compact" : "紧凑") : (I18n.en ? "Large" : "大号"); clicked => { root.toggle-big(); } }
-                            RibbonBtn { icon: "theme"; label: I18n.en ? "中文" : "EN"; clicked => { root.toggle-lang(); } }
+                            RibbonBtn { icon: "language"; label: I18n.en ? "中文" : "EN"; clicked => { root.toggle-lang(); } }
                         }
                         RibbonGroup {
                             caption: I18n.en ? "Cache" : "缓存";
