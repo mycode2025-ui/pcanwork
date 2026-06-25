@@ -1,0 +1,50 @@
+[
+  {
+    "name": "Tx_5",
+    "ch": 1,
+    "id": 256,
+    "ext": false,
+    "fd": false,
+    "brs": false,
+    "remote": false,
+    "data": [
+      0,
+      17,
+      34,
+      51,
+      68,
+      85,
+      102,
+      119
+    ],
+    "periodic": false,
+    "period_ms": 1,
+    "dbc_id": null,
+    "sig_values": [],
+    "change": null
+  },
+  {
+    "name": "Tx_6",
+    "ch": 1,
+    "id": 256,
+    "ext": false,
+    "fd": false,
+    "brs": false,
+    "remote": false,
+    "data": [
+      0,
+      17,
+      34,
+      51,
+      68,
+      85,
+      102,
+      119
+    ],
+    "periodic": false,
+    "period_ms": 1,
+    "dbc_id": null,
+    "sig_values": [],
+    "change": null
+  }
+]

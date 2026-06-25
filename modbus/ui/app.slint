@@ -1,0 +1,2328 @@
+import { Button, ComboBox, LineEdit, SpinBox, ListView, ScrollView, CheckBox, TextEdit, Palette } from "std-widgets.slint";
+
+// ---------------------------------------------------------------------------
+// Shared data structures (generated into Rust as RegRow / LogLine / MiniChart)
+// ---------------------------------------------------------------------------
+export struct RegRow {
+    address: int,
+    name: string,
+    value: string,
+    raw: string,
+    editable: bool,
+    colored: bool,
+    vcolor: color,
+    hex-addr: string,
+    plc-addr: string,
+    auto-inc: bool,
+}
+
+export struct LogLine {
+    time: string,
+    dir: string,
+    text: string,
+}
+
+// One row of the client Write List grid (address is derived: start + index).
+export struct WriteRow {
+    value: string,
+    auto: bool,
+}
+
+// One per-register mini chart (its own auto-scaled Y range).
+export struct MiniChart {
+    name: string,
+    linecolor: color,
+    commands: string,
+    ymin: string,
+    ymax: string,
+}
+
+// One series for the combined/overlay chart. `commands` is an SVG path string in
+// a fixed coordinate space (x 0..1000 = full sample range, y 0..300 within the
+// series' axis range). The UI pans/zooms purely by moving the Path viewbox.
+export struct ChartSeries {
+    name: string,
+    addr: int,
+    color: color,
+    axis: int,        // 0 = left Y axis, 1 = right Y axis
+    commands: string,
+}
+
+export struct WinTab {
+    id: int,
+    title: string,
+    connected: bool,
+}
+
+// A server view "window" (tab) — its own table/address/quantity/format into the
+// shared store, mirroring the client's poll-window tabs.
+export struct SlaveWinTab {
+    id: int,
+    title: string,
+    area: int,
+    address: int,
+    quantity: int,
+    format: int,
+}
+
+global Fmt {
+    out property <[string]> list: [
+        "Signed", "Unsigned", "Hex", "Binary", "ASCII-Hex",
+        "32-bit Signed (ABCD)", "32-bit Signed (CDAB)", "32-bit Signed (BADC)", "32-bit Signed (DCBA)",
+        "32-bit Unsigned (ABCD)", "32-bit Unsigned (CDAB)", "32-bit Unsigned (BADC)", "32-bit Unsigned (DCBA)",
+        "32-bit Float (ABCD)", "32-bit Float (CDAB)", "32-bit Float (BADC)", "32-bit Float (DCBA)",
+        "64-bit Signed (ABCD)", "64-bit Signed (CDAB)", "64-bit Signed (BADC)", "64-bit Signed (DCBA)",
+        "64-bit Unsigned (ABCD)", "64-bit Unsigned (CDAB)", "64-bit Unsigned (BADC)", "64-bit Unsigned (DCBA)",
+        "64-bit Double (ABCD)", "64-bit Double (CDAB)", "64-bit Double (BADC)", "64-bit Double (DCBA)",
+    ];
+    out property <[string]> ops: ["(none)", "=", ">", "<", ">=", "<=", "AND"];
+    out property <[string]> palette: ["Default", "Red", "Green", "Yellow", "Blue", "Orange", "Cyan", "Magenta"];
+}
+
+// Scientific-blue theme palette (overrides the OS accent colour).
+global Theme {
+    out property <color> accent: #1668b8;
+    out property <color> accent-2: #2f86d6;
+    out property <color> accent-soft: #e8f1fb;
+    out property <color> accent-fg: #ffffff;
+    out property <color> ok: #2ea043;
+    out property <color> warn: #d29922;
+    out property <color> err: #e5534b;
+}
+
+// A filled accent (blue) action button, independent of the OS accent colour.
+component AccentButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    height: 32px;
+    horizontal-stretch: 0;
+    border-radius: 6px;
+    opacity: root.enabled ? 1.0 : 0.4;
+    background: ta.has-hover && root.enabled ? Theme.accent-2 : Theme.accent;
+    Text {
+        text: root.text;
+        color: Theme.accent-fg;
+        font-weight: 700;
+        width: 100%;
+        height: 100%;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+// A modern segmented switch (sliding white thumb on a translucent track).
+component ModeSwitch inherits Rectangle {
+    in property <string> left-text;
+    in property <string> right-text;
+    in-out property <int> selected; // 0 = left, 1 = right
+    width: 280px;
+    height: 38px;
+    border-radius: self.height / 2;
+    background: #ffffff22;
+    border-width: 1px;
+    border-color: #ffffff40;
+
+    // sliding highlight thumb
+    Rectangle {
+        width: parent.width / 2 - 8px;
+        height: parent.height - 8px;
+        y: 4px;
+        x: root.selected == 0 ? 4px : (parent.width / 2 + 4px);
+        border-radius: self.height / 2;
+        background: Theme.accent-fg;
+        animate x { duration: 160ms; easing: ease-in-out; }
+    }
+
+    // left segment
+    Rectangle {
+        x: 0;
+        width: parent.width / 2;
+        height: 100%;
+        Text {
+            text: root.left-text;
+            width: 100%;
+            height: 100%;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: root.selected == 0 ? Theme.accent : Theme.accent-fg;
+        }
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            mouse-cursor: pointer;
+            clicked => { root.selected = 0; }
+        }
+    }
+
+    // right segment
+    Rectangle {
+        x: parent.width / 2;
+        width: parent.width / 2;
+        height: 100%;
+        Text {
+            text: root.right-text;
+            width: 100%;
+            height: 100%;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: 14px;
+            font-weight: 700;
+            color: root.selected == 1 ? Theme.accent : Theme.accent-fg;
+        }
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            mouse-cursor: pointer;
+            clicked => { root.selected = 1; }
+        }
+    }
+}
+
+component Field inherits HorizontalLayout {
+    in property <string> label;
+    height: 32px;
+    spacing: 4px;
+    Text {
+        width: 78px;
+        text: root.label;
+        vertical-alignment: center;
+        horizontal-alignment: left;
+        overflow: elide;
+        opacity: 0.8;
+    }
+    @children
+}
+
+// ---------------------------------------------------------------------------
+// Data grid with editable Name column, conditional-colour values, hex-addr
+// toggle, row selection highlight and right-click context menu.
+// ---------------------------------------------------------------------------
+component DataGrid inherits Rectangle {
+    in property <[RegRow]> rows;
+    in property <[string]> names;
+    in property <bool> values-editable;
+    in-out property <int> addr-mode: 0;   // 0=Dec, 1=Hex, 2=PLC(base-1)
+    in property <bool> addr-in-cell: false;
+    in property <length> grid-font: 14px;
+    in-out property <int> selected-row: -1;
+
+    // address text for row i, honouring addr-mode (derived rows show "fx")
+    pure function addr-text(i: int) -> string {
+        if i >= root.rows.length { return ""; }
+        if root.rows[i].address < 0 { return root.rows[i].hex-addr; }
+        if root.addr-mode == 1 { return root.rows[i].hex-addr; }
+        if root.addr-mode == 2 { return root.rows[i].plc-addr; }
+        return "\{root.rows[i].address}";
+    }
+    callback edit(int, string);
+    callback name-edit(int, string);
+    callback activate(int);
+    callback row-copy(int);
+    callback row-delete(int);
+    callback row-chart(int);
+    callback row-format(int);
+    callback row-autoinc(int);
+    in property <bool> allow-autoinc: false;
+
+    border-radius: 8px;
+    background: Palette.control-background;
+    border-width: 1px;
+    border-color: Palette.border;
+    clip: true;
+
+    in-out property <bool> menu-open: false;
+    in-out property <length> menu-x;
+    in-out property <length> menu-y;
+    in-out property <int> menu-row: -1;
+
+    VerticalLayout {
+        Rectangle {
+            height: 32px;
+            background: Palette.alternate-background;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                Text { width: 132px; text: "Name"; vertical-alignment: center; font-weight: 700; }
+                Rectangle {
+                    width: 70px;
+                    addr-hdr-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.addr-mode = Math.mod(root.addr-mode + 1, 3); }
+                    }
+                    Text {
+                        text: root.addr-mode == 1 ? "Addr(H)" : root.addr-mode == 2 ? "Addr(P)" : "Address";
+                        vertical-alignment: center; font-weight: 700;
+                        color: addr-hdr-ta.has-hover ? Theme.accent : Palette.foreground;
+                    }
+                }
+                Text { horizontal-stretch: 1; text: "Value"; vertical-alignment: center; font-weight: 700; }
+                Text { width: 92px; text: "Raw (hex)"; vertical-alignment: center; font-weight: 700; }
+            }
+        }
+        ListView {
+            for name[i] in root.names: Rectangle {
+                height: 30px;
+                background:
+                    i == root.selected-row ? Theme.accent-soft :
+                    (Math.mod(i, 2) == 0 ? transparent : Palette.alternate-background);
+                row-ta := TouchArea {
+                    width: 100%; height: 100%;
+                    clicked => { root.selected-row = i; }
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.right && event.kind == PointerEventKind.down {
+                            root.selected-row = i;
+                            root.menu-row = i;
+                            // 行内局部坐标 → DataGrid 根坐标(否则菜单永远画在 grid 顶部), 再 clamp 防溢出边界
+                            root.menu-x = Math.max(0px, Math.min(
+                                self.absolute-position.x - root.absolute-position.x + self.mouse-x,
+                                root.width - 168px));
+                            root.menu-y = Math.max(0px, Math.min(
+                                self.absolute-position.y - root.absolute-position.y + self.mouse-y,
+                                root.height - ((root.allow-autoinc ? 6 : 5) * 30px + 2px)));
+                            root.menu-open = true;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    spacing: 10px;
+                    LineEdit {
+                        width: 132px;
+                        text: name;
+                        placeholder-text: "—";
+                        accepted => { root.name-edit(i < root.rows.length ? root.rows[i].address : i, self.text); }
+                    }
+                    Text {
+                        width: 70px;
+                        text: root.addr-text(i);
+                        vertical-alignment: center; font-weight: 600;
+                        font-size: root.grid-font;
+                    }
+                    if !root.values-editable: Rectangle {
+                        horizontal-stretch: 1;
+                        val-ta := TouchArea {
+                            width: 100%; height: 100%;
+                            mouse-cursor: pointer;
+                            clicked => { if i < root.rows.length { root.activate(root.rows[i].address); } }
+                        }
+                        HorizontalLayout {
+                            Text {
+                                text: i < root.rows.length ? ((root.addr-in-cell ? root.addr-text(i) + " = " : "") + root.rows[i].value) : "";
+                                vertical-alignment: center;
+                                font-size: root.grid-font;
+                                color: i < root.rows.length ? (root.rows[i].colored ? root.rows[i].vcolor : (val-ta.has-hover ? Theme.accent : Palette.foreground)) : Palette.foreground;
+                                font-weight: i < root.rows.length ? (root.rows[i].colored ? 700 : 400) : 400;
+                            }
+                        }
+                    }
+                    if root.values-editable: LineEdit {
+                        horizontal-stretch: 1;
+                        text: i < root.rows.length ? root.rows[i].value : "";
+                        accepted => { if i < root.rows.length { root.edit(root.rows[i].address, self.text); } }
+                    }
+                    Text { width: 92px; text: i < root.rows.length ? root.rows[i].raw : ""; vertical-alignment: center; opacity: 0.55; font-size: root.grid-font; }
+                }
+            }
+        }
+    }
+
+    // ---- context menu (declared LAST so it renders above the grid rows) ----
+    if root.menu-open: TouchArea {
+        width: 100%; height: 100%;
+        clicked => { root.menu-open = false; }
+    }
+    if root.menu-open: Rectangle {
+        x: root.menu-x;
+        y: root.menu-y;
+        width: 168px;
+        height: (root.allow-autoinc ? 6 : 5) * 30px + 2px;
+        border-radius: 6px;
+        background: Palette.background;
+        border-width: 1px;
+        border-color: Palette.border;
+        drop-shadow-blur: 12px;
+        drop-shadow-color: #00000055;
+        clip: true;
+        VerticalLayout {
+            spacing: 0;
+            for item[idx] in ["Write", "Set format…", "Copy value", "Delete row", "Show chart"]: Rectangle {
+                height: 30px;
+                background: item-ta.has-hover ? Palette.alternate-background : Palette.background;
+                item-ta := TouchArea {
+                    width: 100%; height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.menu-open = false;
+                        if root.menu-row >= 0 && root.menu-row < root.rows.length {
+                            if idx == 0 { root.activate(root.rows[root.menu-row].address); }
+                            if idx == 1 { root.row-format(root.rows[root.menu-row].address); }
+                            if idx == 2 { root.row-copy(root.rows[root.menu-row].address); }
+                            if idx == 3 { root.row-delete(root.rows[root.menu-row].address); }
+                            if idx == 4 { root.row-chart(root.rows[root.menu-row].address); }
+                        }
+                    }
+                }
+                Text {
+                    x: 12px; height: 100%; vertical-alignment: center;
+                    text: item;
+                }
+            }
+            if root.allow-autoinc: Rectangle {
+                height: 30px;
+                background: ai-ta.has-hover ? Palette.alternate-background : Palette.background;
+                ai-ta := TouchArea {
+                    width: 100%; height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.menu-open = false;
+                        if root.menu-row >= 0 && root.menu-row < root.rows.length {
+                            root.row-autoinc(root.rows[root.menu-row].address);
+                        }
+                    }
+                }
+                Text {
+                    x: 12px; height: 100%; vertical-alignment: center;
+                    text: (root.menu-row >= 0 && root.menu-row < root.rows.length && root.rows[root.menu-row].auto-inc ? "● " : "    ") + "Auto-increment";
+                }
+            }
+        }
+    }
+}
+
+component LogPanel inherits Rectangle {
+    in property <[LogLine]> lines;
+    border-radius: 8px;
+    background: Palette.control-background;
+    border-width: 1px;
+    border-color: Palette.border;
+    clip: true;
+
+    ListView {
+        for l in root.lines: Rectangle {
+            height: 22px;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                Text { width: 64px; text: l.time; opacity: 0.55; }
+                Text {
+                    width: 34px;
+                    text: l.dir;
+                    font-weight: 800;
+                    color: l.dir == "ERR" ? #e06c75 : (l.dir == "Tx" || l.dir == "TX" ? #61afef : (l.dir == "…" ? #c0a060 : #98c379));
+                }
+                Text { horizontal-stretch: 1; text: l.text; overflow: elide; }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// One register's own mini chart (auto-scaled to its own Y range).
+// ---------------------------------------------------------------------------
+component ChartCard inherits Rectangle {
+    in property <MiniChart> mc;
+    height: 92px;
+    border-radius: 8px;
+    background: Palette.control-background;
+    border-width: 1px;
+    border-color: Palette.border;
+    HorizontalLayout {
+        padding: 8px;
+        spacing: 10px;
+        VerticalLayout {
+            width: 96px;
+            Text { text: root.mc.name; font-weight: 700; color: root.mc.linecolor; }
+            Text { text: root.mc.ymax; font-size: 11px; opacity: 0.6; }
+            Rectangle { vertical-stretch: 1; }
+            Text { text: root.mc.ymin; font-size: 11px; opacity: 0.6; }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            background: Palette.alternate-background;
+            border-radius: 4px;
+            clip: true;
+            Path {
+                width: 100%;
+                height: 100%;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: 1000;
+                viewbox-height: 300;
+                commands: root.mc.commands;
+                stroke: root.mc.linecolor;
+                stroke-width: 1.5px;
+                fill: transparent;
+            }
+        }
+    }
+}
+
+// A scrolling stack of per-register mini charts.
+component ChartGrid inherits Rectangle {
+    in property <[MiniChart]> charts;
+    in property <bool> has-data;
+    border-radius: 8px;
+    background: Palette.control-background;
+    border-width: 1px;
+    border-color: Palette.border;
+    clip: true;
+
+    if !root.has-data: Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: "No chart data yet — connect and poll numeric registers.";
+        opacity: 0.5;
+    }
+    ScrollView {
+        VerticalLayout {
+            padding: 8px;
+            spacing: 8px;
+            for c in root.charts: ChartCard { mc: c; }
+        }
+    }
+}
+
+// Combined / overlay chart with dual Y axes and X pan+zoom. Each series'
+// samples arrive pre-normalised to [0,1] within its axis range, so this only
+// maps the X (sample) axis through the interactive view window.
+component OverlayChart inherits Rectangle {
+    in property <[ChartSeries]> series;
+    in property <string> axis-lmin;
+    in property <string> axis-lmax;
+    in property <string> axis-rmin;
+    in property <string> axis-rmax;
+    in property <bool> has-right;
+    callback axis-toggle(int, int);   // (addr, new-axis)
+
+    property <float> view-start: 0;   // left edge as fraction [0,1] of samples
+    property <float> view-span: 1.0;  // visible fraction (zoom)
+
+    border-radius: 8px;
+    background: Palette.control-background;
+    border-width: 1px;
+    border-color: Palette.border;
+    clip: true;
+
+    if root.series.length == 0: Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: "No chart data yet — connect and poll numeric registers.";
+        opacity: 0.5;
+    }
+
+    if root.series.length > 0: VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+
+        // ---- toolbar ----
+        HorizontalLayout {
+            height: 28px;
+            spacing: 6px;
+            Button {
+                text: "+";
+                clicked => {
+                    root.view-start = Math.max(0, Math.min(1 - root.view-span * 0.7, (root.view-start + root.view-span / 2) - root.view-span * 0.7 / 2));
+                    root.view-span = Math.max(0.02, root.view-span * 0.7);
+                }
+            }
+            Button {
+                text: "−";
+                clicked => {
+                    root.view-start = Math.max(0, Math.min(1 - Math.min(1.0, root.view-span / 0.7), (root.view-start + root.view-span / 2) - Math.min(1.0, root.view-span / 0.7) / 2));
+                    root.view-span = Math.min(1.0, root.view-span / 0.7);
+                }
+            }
+            Button { text: "Reset"; clicked => { root.view-start = 0; root.view-span = 1.0; } }
+            Button { text: "Latest"; clicked => { root.view-start = 1 - root.view-span; } }
+            Text { text: "drag = pan · wheel = zoom · click legend = swap axis"; font-size: 11px; opacity: 0.55; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        // ---- legend ----
+        HorizontalLayout {
+            height: 22px;
+            spacing: 6px;
+            for s in root.series: Rectangle {
+                width: chip-row.preferred-width + 12px;
+                border-radius: 4px;
+                background: chip-ta.has-hover ? Theme.accent-soft : Palette.alternate-background;
+                chip-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.axis-toggle(s.addr, s.axis == 0 ? 1 : 0); }
+                }
+                chip-row := HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    spacing: 5px;
+                    Rectangle { width: 10px; height: 10px; border-radius: 2px; background: s.color; y: (parent.height - self.height) / 2; }
+                    Text { text: s.name + " (" + (s.axis == 1 ? "R" : "L") + ")"; font-size: 11px; vertical-alignment: center; }
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        // ---- plot row: left axis | plot | right axis ----
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 4px;
+            VerticalLayout {
+                width: 48px;
+                Text { text: root.axis-lmax; font-size: 10px; opacity: 0.7; horizontal-alignment: right; }
+                Rectangle { vertical-stretch: 1; }
+                Text { text: root.axis-lmin; font-size: 10px; opacity: 0.7; horizontal-alignment: right; }
+            }
+            plot := Rectangle {
+                horizontal-stretch: 1;
+                clip: true;
+                background: Palette.alternate-background;
+                border-width: 1px;
+                border-color: Palette.border;
+
+                // horizontal gridlines
+                for k in 5: Rectangle {
+                    y: plot.height * k / 4 - self.height / 2;
+                    height: 1px;
+                    background: Palette.border;
+                    opacity: 0.4;
+                }
+
+                // series polylines — pan/zoom by moving the viewbox window over
+                // the fixed 0..1000 (x) × 0..300 (y) coordinate space.
+                for s in root.series: Path {
+                    width: 100%;
+                    height: 100%;
+                    stroke: s.color;
+                    stroke-width: 1.5px;
+                    fill: transparent;
+                    commands: s.commands;
+                    viewbox-x: root.view-start * 1000;
+                    viewbox-y: 0;
+                    viewbox-width: root.view-span * 1000;
+                    viewbox-height: 300;
+                }
+
+                ta := TouchArea {
+                    mouse-cursor: grab;
+                    moved => {
+                        if self.pressed {
+                            root.view-start = Math.max(0, Math.min(1 - root.view-span,
+                                root.view-start - (self.mouse-x - self.pressed-x) / plot.width * root.view-span));
+                        }
+                    }
+                    scroll-event(e) => {
+                        root.view-start = Math.max(0, Math.min(1 - root.view-span * (e.delta-y < 0 ? 0.85 : 1.18),
+                            (root.view-start + (ta.mouse-x / plot.width) * root.view-span) - (ta.mouse-x / plot.width) * root.view-span * (e.delta-y < 0 ? 0.85 : 1.18)));
+                        root.view-span = Math.max(0.02, Math.min(1.0, root.view-span * (e.delta-y < 0 ? 0.85 : 1.18)));
+                        accept
+                    }
+                }
+            }
+            if root.has-right: VerticalLayout {
+                width: 48px;
+                Text { text: root.axis-rmax; font-size: 10px; opacity: 0.7; }
+                Rectangle { vertical-stretch: 1; }
+                Text { text: root.axis-rmin; font-size: 10px; opacity: 0.7; }
+            }
+        }
+    }
+}
+
+component Tab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+    width: txt.preferred-width + 24px;
+    height: 30px;
+    border-radius: 6px;
+    background: root.active ? Theme.accent : transparent;
+    txt := Text {
+        text: root.label;
+        x: 12px;
+        vertical-alignment: center;
+        height: 100%;
+        color: root.active ? Theme.accent-fg : Palette.foreground;
+        font-weight: root.active ? 700 : 400;
+    }
+    TouchArea { width: 100%; height: 100%; mouse-cursor: pointer; clicked => { root.clicked(); } }
+}
+
+// ---------------------------------------------------------------------------
+// Main window
+// ---------------------------------------------------------------------------
+export component AppWindow inherits Window {
+    title: "Modbus Tools — Slint";
+    icon: @image-url("logo.svg");
+    preferred-width: 1200px;
+    preferred-height: 800px;
+    min-width: 1000px;
+    min-height: 660px;
+
+    in-out property <int> active-mode: 0;
+    in-out property <bool> dark: false;
+
+    // ---- Master config ----
+    in-out property <int> m-transport: 0;
+    in-out property <string> m-host: "127.0.0.1";
+    in-out property <int> m-port: 502;
+    // TLS (Modbus/TCP Security) — client
+    in-out property <bool> m-tls: false;
+    in-out property <string> m-tls-ca;
+    in-out property <bool> m-tls-skip: false;
+    in-out property <string> m-tls-domain;
+    in-out property <string> m-tls-cert;   // client cert (mutual TLS)
+    in-out property <string> m-tls-key;    // client key
+    in-out property <int> m-tls-cipher: 0; // 0 auto,1 AES-128,2 AES-256,3 ChaCha20
+    in-out property <int> m-tls-version: 0; // 0 auto,1 TLS1.2,2 TLS1.3
+    callback pick-m-tls-ca();
+    callback pick-m-tls-cert();
+    callback pick-m-tls-key();
+    in-out property <string> m-serial: "COM1";
+    in-out property <int> m-baud-index: 0;
+    in-out property <int> m-databits-index: 0;
+    in-out property <int> m-parity: 0;
+    in-out property <int> m-stopbits: 0;
+    in-out property <int> m-slave-id: 1;
+    in-out property <int> m-function: 2;
+    // Human label for the currently selected master function code.
+    pure function fc-label(i: int) -> string {
+        if i == 0 { return "FC 01 · Read Coils"; }
+        if i == 1 { return "FC 02 · Read Discrete Inputs"; }
+        if i == 2 { return "FC 03 · Read Holding Registers"; }
+        if i == 3 { return "FC 04 · Read Input Registers"; }
+        if i == 4 { return "FC 05 · Write Single Coil"; }
+        if i == 5 { return "FC 06 · Write Single Register"; }
+        if i == 6 { return "FC 15 · Write Multiple Coils"; }
+        return "FC 16 · Write Multiple Registers";
+    }
+    in-out property <int> m-address: 0;
+    in-out property <int> m-quantity: 10;
+    in-out property <int> m-scanrate: 1000;
+    in-out property <int> m-format: 1;
+    // 连接鲁棒性
+    in-out property <int> m-timeout: 1000;      // 单次响应超时 ms
+    in-out property <bool> m-reconnect: false;  // 通信失败后自动重连
+    in-out property <int> m-reconnect-ms: 2000; // 重连间隔 ms
+
+    // ---- Master state ----
+    in-out property <[RegRow]> m-rows;
+    in-out property <[string]> m-names;
+    in-out property <bool> m-connected: false;
+    in-out property <string> m-status: "Not connected";
+    in-out property <int> m-tx: 0;
+    in-out property <int> m-rx: 0;
+    in-out property <int> m-err: 0;
+    in-out property <[LogLine]> m-log;
+    in-out property <[LogLine]> m-traffic;
+    in-out property <int> m-bottom-tab: 0;
+
+    // ---- Chart ----
+    in-out property <[MiniChart]> m-charts;
+    in-out property <bool> m-chart-has: false;
+    in-out property <[ChartSeries]> m-series;
+    in-out property <string> m-axis-lmin;
+    in-out property <string> m-axis-lmax;
+    in-out property <string> m-axis-rmin;
+    in-out property <string> m-axis-rmax;
+    in-out property <bool> m-chart-has-right: false;
+    in-out property <bool> m-chart-overlay: true;   // overlay vs per-register grid
+    callback master-chart-axis(int, int);            // (addr, axis 0=left/1=right)
+
+    // ---- Poll windows (MDI) ----
+    in-out property <[WinTab]> windows;
+    in-out property <int> active-win: 1;
+
+    // ---- Value-names dialog ----
+    in-out property <bool> vn-open: false;
+    in-out property <bool> vn-enabled: false;
+    in-out property <string> vn-text: "0=Off\n1=On";
+
+    // ---- Logging dialog ----
+    in-out property <bool> log-open: false;
+    in-out property <bool> log-active: false;
+    in-out property <int> log-rate-mode: 0; // 0 = each read, 1 = period
+    in-out property <int> log-period: 5;
+    in-out property <int> log-delim: 0; // 0 = comma, 1 = tab
+    in-out property <bool> log-onchange: false;
+    in-out property <bool> log-timestamp: true;
+
+    // ---- Write dialog ----
+    in-out property <bool> wd-open: false;
+    in-out property <int> wd-func: 1;
+    in-out property <int> wd-address: 0;
+    in-out property <string> wd-text: "0";
+    in-out property <int> wd-type: 0;  // 0=16-bit,1=I32,2=U32,3=F32,4=I64,5=U64,6=F64
+    in-out property <int> wd-order: 0; // 0=ABCD,1=CDAB,2=BADC,3=DCBA
+
+    // ---- FC22/23 advanced client dialog ----
+    in-out property <bool> adv-open: false;
+    in-out property <int> mw-addr: 0;        // FC22 Mask Write 地址
+    in-out property <string> mw-and: "FFFF";  // AND mask (hex)
+    in-out property <string> mw-or: "0000";   // OR mask (hex)
+    in-out property <int> rw-read-addr: 0;   // FC23 读地址
+    in-out property <int> rw-read-qty: 4;    // FC23 读数量
+    in-out property <int> rw-write-addr: 0;  // FC23 写地址
+    in-out property <string> rw-write-vals: "1 2 3 4"; // 写值(空格分隔, 十进制或 0x..)
+    callback master-mask-write();
+    callback master-read-write();
+
+    // ---- Per-cell format dialog (master) ----
+    in-out property <bool> cf-open: false;
+    in-out property <int> cf-addr: 0;
+    in-out property <int> cf-fmt: 0;
+
+    // ---- Derived channels dialog (master) ----
+    in-out property <bool> dv-open: false;
+    in-out property <string> dv-text: "Power = r0 * 256 + r1\nTemp = r2 * 0.1";
+
+    // ---- Write list state (shares the read definition's function/address/quantity) ----
+    in-out property <bool> wl-active: false;   // auto-write running
+    in-out property <int> wl-interval: 1000;
+    in-out property <[WriteRow]> wl-rows;
+    callback wl-resize(int);                    // quantity changed → resize the row model
+    callback wl-set-value(int, string);
+    callback wl-set-auto(int, bool);
+
+    // ---- View options dialog (display: address mode, in-cell, font) ----
+    in-out property <bool> vw-open: false;
+
+    // ---- Scan dialog ----
+    in-out property <bool> scan-open: false;
+    in-out property <int> sc-type: 0;
+    in-out property <int> sc-func: 2;
+    in-out property <int> sc-start: 0;
+    in-out property <int> sc-count: 32;
+    in-out property <int> sc-addr: 0;
+    in-out property <int> sc-fromid: 1;
+    in-out property <int> sc-toid: 32;
+    in-out property <[LogLine]> scan-rows;
+    in-out property <string> scan-status: "Idle";
+    in-out property <bool> scan-running: false;
+
+    // ---- Scaling dialog ----
+    in-out property <bool> scl-open: false;
+    in-out property <bool> scl-enabled: false;
+    in-out property <string> scl-x1: "0";
+    in-out property <string> scl-y1: "0";
+    in-out property <string> scl-x2: "65535";
+    in-out property <string> scl-y2: "100";
+    in-out property <int> scl-decimals: 2;
+
+    // ---- Colors dialog ----
+    in-out property <bool> col-open: false;
+    in-out property <int> col-normal: 0;
+    in-out property <int> col-op1: 0;
+    in-out property <string> col-v1: "0";
+    in-out property <int> col-c1: 1;
+    in-out property <int> col-op2: 0;
+    in-out property <string> col-v2: "0";
+    in-out property <int> col-c2: 2;
+
+    // ---- Slave config ----
+    in-out property <int> s-transport: 0;
+    in-out property <string> s-host: "0.0.0.0";
+    in-out property <int> s-port: 502;
+    // TLS (Modbus/TCP Security) — server
+    in-out property <bool> s-tls: false;
+    in-out property <string> s-tls-cert;
+    in-out property <string> s-tls-key;
+    in-out property <bool> s-tls-require: false;   // require client cert (mutual TLS)
+    in-out property <string> s-tls-cacert;         // CA to verify client certs
+    in-out property <int> s-tls-cipher: 0;         // 0 auto,1 AES-128,2 AES-256,3 ChaCha20
+    in-out property <int> s-tls-version: 0;        // 0 auto,1 TLS1.2,2 TLS1.3
+    callback pick-s-tls-cert();
+    callback pick-s-tls-key();
+    callback pick-s-tls-cacert();
+    in-out property <string> s-serial: "COM1";
+    in-out property <int> s-baud-index: 0;
+    in-out property <int> s-databits-index: 0;
+    in-out property <int> s-parity: 0;
+    in-out property <int> s-stopbits: 0;
+    in-out property <int> s-unit-id: 1;
+    in-out property <int> s-area: 2;
+    // Function codes that serve the selected slave data table.
+    pure function slave-fc-label(i: int) -> string {
+        if i == 0 { return "FC 01/05/15 · Coils"; }
+        if i == 1 { return "FC 02 · Discrete Inputs (read-only)"; }
+        if i == 3 { return "FC 04 · Input Registers (read-only)"; }
+        return "FC 03/06/16 · Holding Registers";
+    }
+    in-out property <int> s-address: 0;
+    in-out property <int> s-quantity: 10;
+    in-out property <int> s-format: 1;
+
+    in-out property <bool> s-ignore-unit-id: true;
+
+    // ---- Slave state ----
+    in-out property <[RegRow]> s-rows;
+    in-out property <[string]> s-names;
+    in-out property <bool> s-running: false;
+    in-out property <string> s-status: "Stopped";
+    in-out property <int> s-requests: 0;
+    in-out property <[LogLine]> s-log;
+    in-out property <[LogLine]> s-traffic;
+    in-out property <int> s-bottom-tab: 0;
+    in-out property <[MiniChart]> s-charts;
+    in-out property <bool> s-chart-has: false;
+
+    // ---- Simulation dialog ----
+    in-out property <bool> sim-open: false;
+    in-out property <bool> sim-active: false;
+    in-out property <int> sim-mode: 1; // 0 off,1 inc,2 dec,3 random,4 toggle
+    in-out property <int> sim-step: 1;
+    in-out property <int> sim-min: 0;
+    in-out property <int> sim-max: 1000;
+    in-out property <int> sim-interval: 500;
+    in-out property <bool> sim-one: false;   // animate only one register
+    in-out property <int> sim-target: 0;     // that register's address
+
+    // ---- Row selection & grid options ----
+    in-out property <int> m-selected-row: -1;
+    in-out property <int> s-selected-row: -1;
+    in-out property <int> addr-mode: 0;        // 0=Dec, 1=Hex, 2=PLC(base-1)
+    in-out property <bool> addr-in-cell: false;
+    in-out property <length> grid-font: 14px;
+
+    // ---- Connection info popup ----
+    in-out property <bool> conn-info-open: false;
+    in-out property <string> conn-info-text: "";
+
+    // ---- Callbacks ----
+    callback master-connect();
+    callback master-disconnect();
+    callback master-write();
+    callback master-format-changed();
+    callback master-readdef-changed();
+    callback master-name(int, string);
+    callback master-scaling();
+    callback master-colors();
+    callback master-cell-format();
+    callback master-cell-format-clear();
+    callback master-derived();
+    callback master-write-once();
+    callback master-auto-write();
+    callback master-auto-write-stop();
+    callback master-chart-export();
+    callback master-scan-address();
+    callback master-scan-slave();
+    callback master-scan-stop();
+    callback save-workspace();
+    callback open-workspace();
+    callback export-csv();
+    callback import-csv();
+    callback new-window();
+    callback select-window(int);
+    callback close-window(int);
+    callback float-window();
+    callback master-start-log();
+    callback master-stop-log();
+    callback master-value-names();
+    callback vn-import();
+    callback vn-export();
+    callback slave-start();
+    callback slave-stop();
+    callback slave-edit(int, string);
+    callback slave-name(int, string);
+    callback slave-view-changed();
+    callback slave-scaling();
+    callback slave-colors();
+    callback slave-value-names();
+    callback slave-sim-start();
+    // server view-window tabs (MDI, like the client)
+    in-out property <[SlaveWinTab]> s-windows;
+    in-out property <int> s-active: 1;
+    callback new-slave-window();
+    callback select-slave-window(int);
+    callback close-slave-window(int);
+    callback float-slave-window();
+    callback slave-sim-stop();
+
+    // ---- Grid context actions ----
+    callback master-copy(int);
+    callback master-delete(int);
+    callback master-chart(int);
+    callback slave-copy(int);
+    callback slave-delete(int);
+    callback slave-chart(int);
+    callback slave-autoinc(int);
+
+    // ---- Keyboard shortcuts ----
+    callback key-new-window();
+    callback key-save();
+    callback key-reconnect();
+    callback key-delete-selected();
+
+    // ---- Connection info ----
+    callback show-conn-info();
+
+    key-fs := FocusScope {
+        width: 100%;
+        height: 100%;
+        // Grab focus on startup so the Ctrl shortcuts work before any field is clicked.
+        init => { self.focus(); }
+        key-pressed(event) => {
+            if event.modifiers.control && event.text == "s" {
+                root.key-save();
+                accept;
+            } else if event.modifiers.control && event.text == "n" {
+                root.key-new-window();
+                accept;
+            } else if event.modifiers.control && event.text == "r" {
+                root.key-reconnect();
+                accept;
+            } else if event.modifiers.control && event.text == "d" {
+                root.key-delete-selected();
+                accept;
+            } else {
+                reject;
+            }
+        }
+        VerticalLayout {
+        width: 100%;
+        height: 100%;
+
+        Rectangle {
+            height: 50px;
+            background: Theme.accent;
+            // Title group, anchored left and vertically centred.
+            HorizontalLayout {
+                x: 18px;
+                height: 100%;
+                spacing: 8px;
+                Image { source: @image-url("logo.svg"); width: 30px; height: 30px; vertical-alignment: center; }
+                Text { text: "Modbus Tools"; color: Theme.accent-fg; font-size: 21px; font-weight: 800; vertical-alignment: center; }
+            }
+            // Dark/light toggle, left of the mode switch.
+            Rectangle {
+                width: 84px;
+                height: 30px;
+                x: parent.width - 260px - 14px - 10px - self.width;
+                y: (parent.height - self.height) / 2;
+                border-radius: 15px;
+                background: dta.has-hover ? #ffffff40 : #ffffff22;
+                border-width: 1px;
+                border-color: #ffffff40;
+                Text {
+                    text: root.dark ? "Light" : "Dark";
+                    width: 100%; height: 100%;
+                    horizontal-alignment: center; vertical-alignment: center;
+                    color: Theme.accent-fg; font-weight: 700; font-size: 13px;
+                }
+                dta := TouchArea {
+                    width: 100%; height: 100%;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.dark = !root.dark;
+                        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+                    }
+                }
+            }
+            // Mode switch, anchored right and explicitly vertically centred.
+            ModeSwitch {
+                width: 260px;
+                height: 46px;
+                x: parent.width - self.width - 14px;
+                y: (parent.height - self.height) / 2;
+                left-text: "Client";
+                right-text: "Server";
+                selected <=> root.active-mode;
+            }
+        }
+
+        // ===== Master page =====
+        if root.active-mode == 0: HorizontalLayout {
+            padding: 12px;
+            spacing: 12px;
+
+            Rectangle {
+                width: 300px;
+                border-radius: 10px;
+                background: Palette.control-background;
+                border-width: 1px;
+                border-color: Palette.border;
+                mscroll := ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    VerticalLayout {
+                        width: mscroll.visible-width;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 14px;
+                        padding-bottom: 14px;
+                        spacing: 6px;
+
+                        Text { text: "Connection"; font-weight: 800; font-size: 15px; }
+                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU"]; current-index <=> root.m-transport; } }
+                        if root.m-transport == 0: Field { label: "Host:"; LineEdit { text <=> root.m-host; } }
+                        if root.m-transport == 0: Field { label: "Port:"; SpinBox { value <=> root.m-port; minimum: 1; maximum: 65535; } }
+                        if root.m-transport == 0: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.m-tls; } Rectangle { horizontal-stretch: 1; } } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "CA file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-ca; placeholder-text: "server/CA PEM (blank = system roots)"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-ca(); } } } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "Domain:"; LineEdit { text <=> root.m-tls-domain; placeholder-text: "SNI (blank = host)"; } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "Version:"; ComboBox { model: ["Auto (1.2 + 1.3)", "TLS 1.2 only", "TLS 1.3 only"]; current-index <=> root.m-tls-version; } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "Cipher:"; ComboBox { model: ["Auto (strongest)", "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.m-tls-cipher; } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: ""; CheckBox { text: "Skip cert verify"; checked <=> root.m-tls-skip; } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "Client cert:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-cert; placeholder-text: "PEM (blank = no mutual TLS)"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-cert(); } } } }
+                        if root.m-transport == 0 && root.m-tls: Field { label: "Client key:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-key; placeholder-text: "PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-key(); } } } }
+                        if root.m-transport == 1: Field { label: "Serial:"; LineEdit { text <=> root.m-serial; placeholder-text: "COM1"; } }
+                        if root.m-transport == 1: Field { label: "Baud:"; ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.m-baud-index; } }
+                        if root.m-transport == 1: Field { label: "Data bits:"; ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.m-databits-index; } }
+                        if root.m-transport == 1: Field { label: "Parity:"; ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.m-parity; } }
+                        if root.m-transport == 1: Field { label: "Stop bits:"; ComboBox { model: ["1", "2"]; current-index <=> root.m-stopbits; } }
+
+                        Rectangle { height: 8px; }
+                        Text { text: "Read definition"; font-weight: 800; font-size: 15px; }
+                        Field { label: "Slave ID:"; SpinBox { value <=> root.m-slave-id; minimum: 0; maximum: 247; } }
+                        Field { label: "Function:"; ComboBox {
+                            model: ["01 Read Coils", "02 Read Discrete Inputs", "03 Read Holding Registers", "04 Read Input Registers", "05 Write Single Coil", "06 Write Single Register", "15 Write Multiple Coils", "16 Write Multiple Registers"];
+                            current-index <=> root.m-function;
+                            selected => { root.wl-resize(root.m-quantity); root.master-readdef-changed(); }
+                        } }
+                        Field { label: "Address:"; SpinBox { value <=> root.m-address; minimum: 0; maximum: 65535; edited => { root.master-readdef-changed(); } } }
+                        Field { label: "Quantity:"; SpinBox { value <=> root.m-quantity; minimum: 1; maximum: 2000; edited => { root.wl-resize(self.value); root.master-readdef-changed(); } } }
+                        Field { label: "Scan ms:"; SpinBox { value <=> root.m-scanrate; minimum: 20; maximum: 60000; step-size: 100; edited => { root.master-readdef-changed(); } } }
+                        Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.m-format; selected => { root.master-format-changed(); } } }
+                        // 连接鲁棒性(下次连接时生效)
+                        Field { label: "Timeout ms:"; SpinBox { value <=> root.m-timeout; minimum: 20; maximum: 60000; step-size: 100; } }
+                        Field { label: "Reconnect:"; CheckBox { checked <=> root.m-reconnect; text: root.m-reconnect ? "auto" : "off"; } }
+                        Field { label: "Reconn ms:"; SpinBox { value <=> root.m-reconnect-ms; minimum: 200; maximum: 60000; step-size: 500; } }
+
+                        Rectangle { height: 10px; }
+                        AccentButton {
+                            text: root.m-connected ? "Disconnect" : (root.m-function < 4 ? "Connect & Poll" : "Connect (write)");
+                            height: 36px;
+                            clicked => { root.m-connected ? root.master-disconnect() : root.master-connect(); }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: "Write…"; horizontal-stretch: 1; clicked => { root.wd-func = root.m-function == 0 ? 0 : 1; root.wd-open = true; } }
+                            Button { text: "Scan…"; horizontal-stretch: 1; clicked => { root.scan-open = true; } }
+                        }
+                        Rectangle { vertical-stretch: 1; min-height: 8px; }
+
+                        // ---- live poll statistics ----
+                        Rectangle {
+                            height: stats-vl.preferred-height;
+                            border-radius: 8px;
+                            background: Palette.alternate-background;
+                            border-width: 1px;
+                            border-color: Palette.border;
+                            stats-vl := VerticalLayout {
+                                padding: 10px;
+                                spacing: 5px;
+                                Text { text: "Statistics"; font-weight: 800; font-size: 14px; }
+                                HorizontalLayout { Text { text: "Polls"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-tx}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: "Responses"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-rx}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: "Errors"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-err}"; font-weight: 600; color: root.m-err > 0 ? Theme.err : Palette.foreground; } }
+                                HorizontalLayout { Text { text: "Success"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.m-tx > 0 ? "\{Math.round(root.m-rx / root.m-tx * 100)}%" : "—"; font-weight: 600; color: Theme.ok; } }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 4;
+                spacing: 10px;
+
+                // ----- poll window tabs (MDI) -----
+                HorizontalLayout {
+                    spacing: 6px;
+                    height: 36px;
+                    ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
+                    for w in root.windows: Rectangle {
+                        width: wtxt.preferred-width + 50px;
+                        border-radius: 6px;
+                        background: w.id == root.active-win ? Theme.accent : Palette.control-background;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        TouchArea { width: 100%; height: 100%; mouse-cursor: pointer; clicked => { root.active-win = w.id; root.select-window(w.id); } }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            spacing: 6px;
+                            Rectangle {
+                                width: 8px; height: 8px; border-radius: 4px;
+                                y: (parent.height - self.height) / 2;
+                                background: w.connected ? #98c379 : #888888;
+                            }
+                            wtxt := Text {
+                                text: w.title;
+                                vertical-alignment: center;
+                                color: w.id == root.active-win ? Theme.accent-fg : Palette.foreground;
+                            }
+                            Rectangle {
+                                width: 18px;
+                                y: (parent.height - self.height) / 2;
+                                height: 18px;
+                                close-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close-window(w.id); } }
+                                Text {
+                                    text: "×";
+                                    font-size: 14px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: 100%; height: 100%;
+                                    color: w.id == root.active-win ? Theme.accent-fg : Palette.foreground;
+                                    opacity: close-ta.has-hover ? 1.0 : 0.45;
+                                }
+                            }
+                        }
+                    }
+                    } } // close tab HorizontalLayout + ScrollView
+                    Button { text: "+ New"; clicked => { root.new-window(); } }
+                    Button { text: "Float"; clicked => { root.float-window(); } }
+                }
+
+                // 工具栏：横向 ScrollView 包裹，窄窗口下可横向滚动到全部按钮(不再挤出/裁剪)
+                ScrollView {
+                    height: 40px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { text: "Save Workspace"; clicked => { root.save-workspace(); } }
+                        Button { text: "Open Workspace"; clicked => { root.open-workspace(); } }
+                        Button { text: "Import CSV"; clicked => { root.import-csv(); } }
+                        Button { text: "Export CSV"; clicked => { root.export-csv(); } }
+                        Rectangle { width: 16px; }
+                        Button { text: "Log…"; clicked => { root.log-open = true; } }
+                        Button { text: "Derived…"; clicked => { root.dv-open = true; } }
+                        Button { text: "Scaling…"; clicked => { root.scl-open = true; } }
+                        Button { text: "Colors…"; clicked => { root.col-open = true; } }
+                        Button { text: "Value Names…"; clicked => { root.vn-open = true; } }
+                        Button { text: "View…"; clicked => { root.vw-open = true; } }
+                        Button { text: "FC22/23…"; enabled: root.m-connected; clicked => { root.adv-open = true; } }
+                        Button { text: "Export Chart"; clicked => { root.master-chart-export(); } }
+                    }
+                }
+
+                // ---- function-code indicator for the display area ----
+                Rectangle {
+                    height: 30px;
+                    border-radius: 6px;
+                    background: root.m-function >= 4 ? Theme.warn.with-alpha(0.16) : Theme.accent.with-alpha(0.14);
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        Rectangle {
+                            width: 50px;
+                            border-radius: 4px;
+                            background: root.m-function >= 4 ? Theme.warn : Theme.accent;
+                            y: (parent.height - self.height) / 2;
+                            height: 20px;
+                            Text {
+                                text: root.m-function >= 4 ? "WRITE" : "READ";
+                                color: #ffffff; font-size: 11px; font-weight: 800;
+                                horizontal-alignment: center; vertical-alignment: center;
+                            }
+                        }
+                        Text { text: root.fc-label(root.m-function); vertical-alignment: center; font-weight: 700; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            text: "@ \{root.m-address} × \{root.m-quantity}";
+                            vertical-alignment: center; opacity: 0.6;
+                        }
+                    }
+                }
+
+                // READ functions (FC01-04): live poll grid.
+                if root.m-function < 4: DataGrid {
+                    vertical-stretch: 1;
+                    rows: root.m-rows;
+                    names: root.m-names;
+                    values-editable: false;
+                    addr-mode <=> root.addr-mode;
+                    addr-in-cell: root.addr-in-cell;
+                    grid-font: root.grid-font;
+                    selected-row <=> root.m-selected-row;
+                    name-edit(addr, txt) => { root.master-name(addr, txt); }
+                    activate(addr) => { root.wd-address = addr; root.wd-func = root.m-function == 0 ? 0 : 1; root.wd-open = true; }
+                    row-copy(addr) => { root.master-copy(addr); }
+                    row-delete(addr) => { root.master-delete(addr); }
+                    row-chart(addr) => { root.master-chart(addr); root.m-bottom-tab = 2; }
+                    row-format(addr) => { root.cf-addr = addr; root.cf-fmt = root.m-format; root.cf-open = true; }
+                }
+                // WRITE functions (FC05/06/15/16): editable write grid over the same
+                // Address/Quantity definition. Address column = Address + index.
+                if root.m-function >= 4: Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: 8px;
+                    background: Palette.control-background;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    clip: true;
+                    VerticalLayout {
+                        Rectangle {
+                            height: 32px;
+                            background: Palette.alternate-background;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 10px;
+                                Text { width: 110px; text: "Address"; vertical-alignment: center; font-weight: 700; }
+                                Text { horizontal-stretch: 1; text: "Value to write"; vertical-alignment: center; font-weight: 700; }
+                                Text { width: 80px; text: "Auto-inc"; vertical-alignment: center; font-weight: 700; }
+                            }
+                        }
+                        ListView {
+                            vertical-stretch: 1;
+                            for row[i] in root.wl-rows: Rectangle {
+                                height: 30px;
+                                background: Math.mod(i, 2) == 0 ? transparent : Palette.alternate-background;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 10px;
+                                    Text { width: 110px; text: root.m-address + i; vertical-alignment: center; font-weight: 600; }
+                                    LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: row.value;
+                                        placeholder-text: "0";
+                                        edited(t) => { root.wl-set-value(i, t); }
+                                    }
+                                    Rectangle {
+                                        width: 80px;
+                                        CheckBox {
+                                            checked: row.auto;
+                                            toggled => { root.wl-set-auto(i, self.checked); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            height: 40px;
+                            padding: 6px;
+                            spacing: 10px;
+                            Button { text: "Write Once"; enabled: root.m-connected; clicked => { root.master-write-once(); } }
+                            Button {
+                                text: root.wl-active ? "Stop Auto" : "Start Auto";
+                                enabled: root.m-connected;
+                                clicked => {
+                                    if (root.wl-active) { root.master-auto-write-stop(); root.wl-active = false; }
+                                    else { root.master-auto-write(); } // wl-active 由后端校验通过后在 Rust 里置
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: "Auto ms"; vertical-alignment: center; }
+                            SpinBox { value <=> root.wl-interval; minimum: 50; maximum: 60000; step-size: 100; width: 100px; }
+                            Text {
+                                text: root.wl-active ? "running" : "stopped";
+                                vertical-alignment: center;
+                                color: root.wl-active ? #98c379 : Palette.foreground;
+                                font-weight: 700;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 38px;
+                    border-radius: 8px;
+                    background: Palette.control-background;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    TouchArea { width: 100%; height: 100%; clicked => { root.show-conn-info(); root.conn-info-open = true; } }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 18px;
+                        Text { horizontal-stretch: 1; text: root.m-status; vertical-alignment: center; overflow: elide; }
+                        Text { text: "Tx: \{root.m-tx}"; vertical-alignment: center; }
+                        Text { text: "Rx: \{root.m-rx}"; vertical-alignment: center; }
+                        Text { text: "Err: \{root.m-err}"; vertical-alignment: center; color: root.m-err > 0 ? #e06c75 : Palette.foreground; }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tab { label: "Event Log"; active: root.m-bottom-tab == 0; clicked => { root.m-bottom-tab = 0; } }
+                    Tab { label: "Communication Traffic"; active: root.m-bottom-tab == 1; clicked => { root.m-bottom-tab = 1; } }
+                    Tab { label: "Chart"; active: root.m-bottom-tab == 2; clicked => { root.m-bottom-tab = 2; } }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.m-bottom-tab == 0: LogPanel { height: 190px; lines: root.m-log; }
+                if root.m-bottom-tab == 1: LogPanel { height: 190px; lines: root.m-traffic; }
+                if root.m-bottom-tab == 2: Rectangle {
+                    height: 250px;
+                    VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            height: 24px;
+                            spacing: 6px;
+                            Button { text: root.m-chart-overlay ? "● Overlay" : "Overlay"; clicked => { root.m-chart-overlay = true; } }
+                            Button { text: !root.m-chart-overlay ? "● Grid" : "Grid"; clicked => { root.m-chart-overlay = false; } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        if root.m-chart-overlay: OverlayChart {
+                            vertical-stretch: 1;
+                            series: root.m-series;
+                            axis-lmin: root.m-axis-lmin;
+                            axis-lmax: root.m-axis-lmax;
+                            axis-rmin: root.m-axis-rmin;
+                            axis-rmax: root.m-axis-rmax;
+                            has-right: root.m-chart-has-right;
+                            axis-toggle(addr, ax) => { root.master-chart-axis(addr, ax); }
+                        }
+                        if !root.m-chart-overlay: ChartGrid {
+                            vertical-stretch: 1;
+                            charts: root.m-charts;
+                            has-data: root.m-chart-has;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===== Slave page =====
+        if root.active-mode == 1: HorizontalLayout {
+            padding: 12px;
+            spacing: 12px;
+
+            Rectangle {
+                width: 300px;
+                border-radius: 10px;
+                background: Palette.control-background;
+                border-width: 1px;
+                border-color: Palette.border;
+                sscroll := ScrollView {
+                    width: 100%;
+                    height: 100%;
+                    VerticalLayout {
+                        width: sscroll.visible-width;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 14px;
+                        padding-bottom: 14px;
+                        spacing: 6px;
+
+                        Text { text: "Server connection"; font-weight: 800; font-size: 15px; }
+                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU"]; current-index <=> root.s-transport; } }
+                        if root.s-transport == 0: Field { label: "Bind addr:"; LineEdit { text <=> root.s-host; } }
+                        if root.s-transport == 0: Field { label: "Port:"; SpinBox { value <=> root.s-port; minimum: 1; maximum: 65535; } }
+                        if root.s-transport == 0: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.s-tls; } Rectangle { horizontal-stretch: 1; } } }
+                        if root.s-transport == 0 && root.s-tls: Field { label: "Cert file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cert; placeholder-text: "server cert PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cert(); } } } }
+                        if root.s-transport == 0 && root.s-tls: Field { label: "Key file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-key; placeholder-text: "private key PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-key(); } } } }
+                        if root.s-transport == 0 && root.s-tls: Field { label: "Version:"; ComboBox { model: ["Auto (1.2 + 1.3)", "TLS 1.2 only", "TLS 1.3 only"]; current-index <=> root.s-tls-version; } }
+                        if root.s-transport == 0 && root.s-tls: Field { label: "Cipher:"; ComboBox { model: ["Auto (strongest)", "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.s-tls-cipher; } }
+                        if root.s-transport == 0 && root.s-tls: Field { label: ""; CheckBox { text: "Require client cert"; checked <=> root.s-tls-require; } }
+                        if root.s-transport == 0 && root.s-tls && root.s-tls-require: Field { label: "Client CA:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cacert; placeholder-text: "CA PEM to verify clients"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cacert(); } } } }
+                        if root.s-transport == 1: Field { label: "Serial:"; LineEdit { text <=> root.s-serial; placeholder-text: "COM1"; } }
+                        if root.s-transport == 1: Field { label: "Baud:"; ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.s-baud-index; } }
+                        if root.s-transport == 1: Field { label: "Data bits:"; ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.s-databits-index; } }
+                        if root.s-transport == 1: Field { label: "Parity:"; ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.s-parity; } }
+                        if root.s-transport == 1: Field { label: "Stop bits:"; ComboBox { model: ["1", "2"]; current-index <=> root.s-stopbits; } }
+                        Field { label: "Unit ID:"; SpinBox { value <=> root.s-unit-id; minimum: 0; maximum: 247; } }
+                        if root.s-transport == 0: Field { label: ""; CheckBox { text: "Ignore Unit ID"; checked <=> root.s-ignore-unit-id; } }
+
+                        Rectangle { height: 8px; }
+                        Text { text: "Memory view"; font-weight: 800; font-size: 15px; }
+                        Field { label: "Table:"; ComboBox { model: ["01/05/15 Coils", "02 Discrete Inputs", "03/06/16 Holding Registers", "04 Input Registers"]; current-index <=> root.s-area; selected => { root.slave-view-changed(); } } }
+                        Field { label: "Address:"; SpinBox { value <=> root.s-address; minimum: 0; maximum: 65535; edited => { root.slave-view-changed(); } } }
+                        Field { label: "Quantity:"; SpinBox { value <=> root.s-quantity; minimum: 1; maximum: 2000; edited => { root.slave-view-changed(); } } }
+                        Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.s-format; selected => { root.slave-view-changed(); } } }
+
+                        Rectangle { height: 10px; }
+                        AccentButton {
+                            text: root.s-running ? "Stop server" : "Start server";
+                            height: 36px;
+                            clicked => { root.s-running ? root.slave-stop() : root.slave-start(); }
+                        }
+                        Text {
+                            text: "Edit a Value cell and press Enter to set a register. Masters can poll and write live.";
+                            wrap: word-wrap;
+                            font-size: 12px;
+                            opacity: 0.65;
+                        }
+                        Rectangle { vertical-stretch: 1; min-height: 8px; }
+
+                        // ---- live server statistics ----
+                        Rectangle {
+                            height: sstats-vl.preferred-height;
+                            border-radius: 8px;
+                            background: Palette.alternate-background;
+                            border-width: 1px;
+                            border-color: Palette.border;
+                            sstats-vl := VerticalLayout {
+                                padding: 10px;
+                                spacing: 5px;
+                                Text { text: "Statistics"; font-weight: 800; font-size: 14px; }
+                                HorizontalLayout { Text { text: "Requests"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.s-requests}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: "Running"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.s-running ? "Yes" : "No"; font-weight: 600; color: root.s-running ? Theme.ok : Palette.foreground; } }
+                                HorizontalLayout { Text { text: "Simulating"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.sim-active ? "Yes" : "No"; font-weight: 600; color: root.sim-active ? Theme.warn : Palette.foreground; } }
+                            }
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                horizontal-stretch: 4;
+                spacing: 10px;
+
+                // ----- server view-window tabs (MDI, like the client) -----
+                HorizontalLayout {
+                    spacing: 6px;
+                    height: 36px;
+                    ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
+                    for w in root.s-windows: Rectangle {
+                        width: swtxt.preferred-width + 50px;
+                        border-radius: 6px;
+                        background: w.id == root.s-active ? Theme.accent : Palette.control-background;
+                        border-width: 1px;
+                        border-color: Palette.border;
+                        TouchArea { width: 100%; height: 100%; mouse-cursor: pointer; clicked => { root.s-active = w.id; root.select-slave-window(w.id); } }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            spacing: 6px;
+                            swtxt := Text {
+                                text: w.title;
+                                vertical-alignment: center;
+                                color: w.id == root.s-active ? Theme.accent-fg : Palette.foreground;
+                            }
+                            Rectangle {
+                                width: 18px; height: 18px;
+                                y: (parent.height - self.height) / 2;
+                                sclose-ta := TouchArea { mouse-cursor: pointer; clicked => { root.close-slave-window(w.id); } }
+                                Text {
+                                    text: "×"; font-size: 14px;
+                                    horizontal-alignment: center; vertical-alignment: center;
+                                    width: 100%; height: 100%;
+                                    color: w.id == root.s-active ? Theme.accent-fg : Palette.foreground;
+                                    opacity: sclose-ta.has-hover ? 1.0 : 0.45;
+                                }
+                            }
+                        }
+                    }
+                    } } // close tab HorizontalLayout + ScrollView
+                    Button { text: "+ New"; clicked => { root.new-slave-window(); } }
+                    Button { text: "Float"; clicked => { root.float-slave-window(); } }
+                }
+
+                ScrollView {
+                    height: 40px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { text: "Simulate…"; clicked => { root.sim-open = true; } }
+                        Button { text: "Import CSV"; clicked => { root.import-csv(); } }
+                        Button { text: "Export CSV"; clicked => { root.export-csv(); } }
+                        Rectangle { width: 16px; }
+                        Button { text: "Scaling…"; clicked => { root.scl-open = true; } }
+                        Button { text: "Colors…"; clicked => { root.col-open = true; } }
+                        Button { text: "Value Names…"; clicked => { root.vn-open = true; } }
+                    }
+                }
+
+                // ---- function-code indicator (server serves these FCs for the table) ----
+                Rectangle {
+                    height: 30px;
+                    border-radius: 6px;
+                    background: Theme.ok.with-alpha(0.14);
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        Rectangle {
+                            width: 58px;
+                            height: 20px;
+                            border-radius: 4px;
+                            background: Theme.ok;
+                            y: (parent.height - self.height) / 2;
+                            Text { text: "SERVER"; color: #ffffff; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                        Text { text: root.slave-fc-label(root.s-area); vertical-alignment: center; font-weight: 700; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text { text: "@ \{root.s-address} × \{root.s-quantity}"; vertical-alignment: center; opacity: 0.6; }
+                    }
+                }
+
+                DataGrid {
+                    vertical-stretch: 1;
+                    rows: root.s-rows;
+                    names: root.s-names;
+                    values-editable: true;
+                    addr-mode <=> root.addr-mode;
+                    addr-in-cell: root.addr-in-cell;
+                    grid-font: root.grid-font;
+                    selected-row <=> root.s-selected-row;
+                    edit(addr, txt) => { root.slave-edit(addr, txt); }
+                    name-edit(addr, txt) => { root.slave-name(addr, txt); }
+                    row-copy(addr) => { root.slave-copy(addr); }
+                    row-delete(addr) => { root.slave-delete(addr); }
+                    row-chart(addr) => { root.slave-chart(addr); root.s-bottom-tab = 2; }
+                    allow-autoinc: true;
+                    row-autoinc(addr) => { root.slave-autoinc(addr); }
+                }
+                Rectangle {
+                    height: 38px;
+                    border-radius: 8px;
+                    background: Palette.control-background;
+                    border-width: 1px;
+                    border-color: Palette.border;
+                    TouchArea { width: 100%; height: 100%; clicked => { root.show-conn-info(); root.conn-info-open = true; } }
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 18px;
+                        Text { horizontal-stretch: 1; text: root.s-status; vertical-alignment: center; overflow: elide; }
+                        Text { text: root.sim-active ? "Simulating" : ""; vertical-alignment: center; color: #e5c07b; }
+                        Text { text: "Requests: \{root.s-requests}"; vertical-alignment: center; }
+                        Rectangle {
+                            width: 12px; height: 12px; border-radius: 6px;
+                            y: (parent.height - self.height) / 2;
+                            background: root.s-running ? #98c379 : #888888;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tab { label: "Event Log"; active: root.s-bottom-tab == 0; clicked => { root.s-bottom-tab = 0; } }
+                    Tab { label: "Communication Traffic"; active: root.s-bottom-tab == 1; clicked => { root.s-bottom-tab = 1; } }
+                    Tab { label: "Chart"; active: root.s-bottom-tab == 2; clicked => { root.s-bottom-tab = 2; } }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                if root.s-bottom-tab == 0: LogPanel { height: 190px; lines: root.s-log; }
+                if root.s-bottom-tab == 1: LogPanel { height: 190px; lines: root.s-traffic; }
+                if root.s-bottom-tab == 2: ChartGrid {
+                    height: 190px;
+                    charts: root.s-charts;
+                    has-data: root.s-chart-has;
+                }
+            }
+        }
+        }
+    }
+
+    // =====================================================================
+    // Write dialog
+    // =====================================================================
+    if root.wd-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 460px;
+            height: 440px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Write to slave"; font-size: 17px; font-weight: 800; }
+                Field { label: "Type:"; ComboBox {
+                    model: ["16-bit", "32-bit Int", "32-bit UInt", "32-bit Float", "64-bit Int", "64-bit UInt", "64-bit Double"];
+                    current-index <=> root.wd-type;
+                } }
+                if root.wd-type == 0: Field { label: "Function:"; ComboBox {
+                    model: ["05 Write Single Coil", "06 Write Single Register", "15 Write Multiple Coils", "16 Write Multiple Registers"];
+                    current-index <=> root.wd-func;
+                } }
+                if root.wd-type > 0: Field { label: "Byte order:"; ComboBox {
+                    model: ["ABCD", "CDAB", "BADC", "DCBA"];
+                    current-index <=> root.wd-order;
+                } }
+                Field { label: "Slave ID:"; Text { text: "\{root.m-slave-id}"; vertical-alignment: center; } }
+                Field { label: "Address:"; SpinBox { value <=> root.wd-address; minimum: 0; maximum: 65535; } }
+                Field { label: "Value(s):"; LineEdit { text <=> root.wd-text; placeholder-text: "123 / 0x1F / 3.14 / on"; } }
+                Text {
+                    text: root.wd-type > 0
+                        ? "Enter one number; it is encoded across registers (FC16) using the byte order. e.g. 3.14159"
+                        : (root.wd-func >= 2 ? "Multiple write: separate values with commas (e.g. 10,20,30 or 1,0,1)." : "Single write: one value. Coils accept 0/1/on/off.");
+                    wrap: word-wrap; font-size: 12px; opacity: 0.65;
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.wd-open = false; } }
+                    AccentButton { text: "Send"; width: 90px; clicked => { root.master-write(); root.wd-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // FC22 / FC23 advanced client dialog (server already supports them)
+    // =====================================================================
+    if root.adv-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 480px;
+            height: 430px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 8px;
+                Text { text: "Advanced write — FC22 / FC23"; font-size: 17px; font-weight: 800; }
+                Text { text: "结果显示在下方 Event Log。Slave ID: \{root.m-slave-id}"; font-size: 12px; opacity: 0.65; }
+
+                Text { text: "FC22 · Mask Write Register"; font-weight: 700; }
+                Field { label: "Address:"; SpinBox { value <=> root.mw-addr; minimum: 0; maximum: 65535; } }
+                Field { label: "AND (hex):"; LineEdit { text <=> root.mw-and; placeholder-text: "FFFF"; } }
+                Field { label: "OR (hex):"; LineEdit { text <=> root.mw-or; placeholder-text: "0000"; } }
+                HorizontalLayout { Rectangle { horizontal-stretch: 1; } AccentButton { text: "Send FC22"; width: 110px; clicked => { root.master-mask-write(); } } }
+
+                Rectangle { height: 1px; background: Palette.border; }
+
+                Text { text: "FC23 · Read/Write Multiple Registers"; font-weight: 700; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Field { label: "Read addr:"; SpinBox { value <=> root.rw-read-addr; minimum: 0; maximum: 65535; } }
+                    Field { label: "Read qty:"; SpinBox { value <=> root.rw-read-qty; minimum: 1; maximum: 125; } }
+                }
+                Field { label: "Write addr:"; SpinBox { value <=> root.rw-write-addr; minimum: 0; maximum: 65535; } }
+                Field { label: "Write vals:"; LineEdit { text <=> root.rw-write-vals; placeholder-text: "1 2 3 0x10"; } }
+                HorizontalLayout { Rectangle { horizontal-stretch: 1; } AccentButton { text: "Send FC23"; width: 110px; clicked => { root.master-read-write(); } } }
+
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout { Rectangle { horizontal-stretch: 1; } Button { text: "Close"; clicked => { root.adv-open = false; } } }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Per-cell format dialog
+    // =====================================================================
+    if root.cf-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 420px;
+            height: 230px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Register @\{root.cf-addr} format"; font-size: 17px; font-weight: 800; }
+                Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.cf-fmt; } }
+                Text { text: "Applies to this register only; 32/64-bit spans the following registers."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Button { text: "Use default"; clicked => { root.master-cell-format-clear(); root.cf-open = false; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.cf-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { root.master-cell-format(); root.cf-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Derived channels dialog
+    // =====================================================================
+    if root.dv-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 480px;
+            height: 420px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Derived channels"; font-size: 17px; font-weight: 800; }
+                Text {
+                    text: "One \"name = formula\" per line. Use r0, r1, … for polled registers; + - * / % & | ^ << >> and ( ) are supported.";
+                    wrap: word-wrap; font-size: 12px; opacity: 0.65;
+                }
+                TextEdit { vertical-stretch: 1; text <=> root.dv-text; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.dv-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { root.master-derived(); root.dv-open = false; } }
+                }
+            }
+        }
+    }
+
+    // ---- View options dialog ----
+    if root.vw-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 420px;
+            height: 300px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+                Text { text: "View options"; font-size: 17px; font-weight: 800; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "Address format"; vertical-alignment: center; width: 130px; }
+                    ComboBox {
+                        horizontal-stretch: 1;
+                        model: ["Decimal", "Hex", "PLC (base-1)"];
+                        current-index <=> root.addr-mode;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "Address in value cell"; vertical-alignment: center; width: 130px; }
+                    CheckBox { checked <=> root.addr-in-cell; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Text { text: "Font size"; vertical-alignment: center; width: 130px; }
+                    Button { text: "A−"; clicked => { if root.grid-font > 10px { root.grid-font -= 1px; } } }
+                    Text { text: "\{round(root.grid-font / 1px)} px"; vertical-alignment: center; }
+                    Button { text: "A+"; clicked => { if root.grid-font < 22px { root.grid-font += 1px; } } }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    AccentButton { text: "Close"; width: 90px; clicked => { root.vw-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Scan dialog
+    // =====================================================================
+    if root.scan-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 560px;
+            height: 560px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 8px;
+                Text { text: "Scan"; font-size: 17px; font-weight: 800; }
+                Text { text: "Uses the Master connection settings. Stop polling first if on the same serial port."; wrap: word-wrap; font-size: 12px; opacity: 0.6; }
+                Field { label: "Type:"; ComboBox { model: ["Address Scan", "Slave ID Scan"]; current-index <=> root.sc-type; } }
+                Field { label: "Function:"; ComboBox { model: ["0x Read Coils", "1x Read Discrete Inputs", "4x Read Holding Registers", "3x Read Input Registers"]; current-index <=> root.sc-func; } }
+                if root.sc-type == 0: Field { label: "Start:"; SpinBox { value <=> root.sc-start; minimum: 0; maximum: 65535; } }
+                if root.sc-type == 0: Field { label: "Count:"; SpinBox { value <=> root.sc-count; minimum: 1; maximum: 2000; } }
+                if root.sc-type == 1: Field { label: "Probe addr:"; SpinBox { value <=> root.sc-addr; minimum: 0; maximum: 65535; } }
+                if root.sc-type == 1: Field { label: "From ID:"; SpinBox { value <=> root.sc-fromid; minimum: 0; maximum: 247; } }
+                if root.sc-type == 1: Field { label: "To ID:"; SpinBox { value <=> root.sc-toid; minimum: 0; maximum: 247; } }
+                HorizontalLayout {
+                    spacing: 10px;
+                    AccentButton { text: "Start"; width: 90px; clicked => { root.sc-type == 0 ? root.master-scan-address() : root.master-scan-slave(); } }
+                    Button { text: "Stop"; clicked => { root.master-scan-stop(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Close"; clicked => { root.scan-open = false; } }
+                }
+                Text { text: root.scan-status; opacity: 0.8; }
+                LogPanel { vertical-stretch: 1; lines: root.scan-rows; }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Scaling dialog
+    // =====================================================================
+    if root.scl-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 460px;
+            height: 380px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Scaling (linear)"; font-size: 17px; font-weight: 800; }
+                Field { label: "Enabled:"; CheckBox { checked <=> root.scl-enabled; } }
+                Field { label: "Raw X1:"; LineEdit { text <=> root.scl-x1; } }
+                Field { label: "Eng Y1:"; LineEdit { text <=> root.scl-y1; } }
+                Field { label: "Raw X2:"; LineEdit { text <=> root.scl-x2; } }
+                Field { label: "Eng Y2:"; LineEdit { text <=> root.scl-y2; } }
+                Field { label: "Decimals:"; SpinBox { value <=> root.scl-decimals; minimum: 0; maximum: 6; } }
+                Text { text: "Y = m·(X − X1) + Y1.  Applies to numeric register formats."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.scl-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { root.active-mode == 0 ? root.master-scaling() : root.slave-scaling(); root.scl-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Colors dialog
+    // =====================================================================
+    if root.col-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 540px;
+            height: 360px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Conditional colours"; font-size: 17px; font-weight: 800; }
+                Field { label: "Normal:"; ComboBox { model: Fmt.palette; current-index <=> root.col-normal; } }
+                Field { label: "Rule 1:"; HorizontalLayout { spacing: 6px;
+                    ComboBox { width: 90px; model: Fmt.ops; current-index <=> root.col-op1; }
+                    LineEdit { width: 110px; text <=> root.col-v1; placeholder-text: "value"; }
+                    ComboBox { model: Fmt.palette; current-index <=> root.col-c1; }
+                } }
+                Field { label: "Rule 2:"; HorizontalLayout { spacing: 6px;
+                    ComboBox { width: 90px; model: Fmt.ops; current-index <=> root.col-op2; }
+                    LineEdit { width: 110px; text <=> root.col-v2; placeholder-text: "value"; }
+                    ComboBox { model: Fmt.palette; current-index <=> root.col-c2; }
+                } }
+                Text { text: "Rule 1 takes precedence. AND treats the value as a bitmask (hex/decimal)."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Button { text: "Clear"; clicked => { root.col-op1 = 0; root.col-op2 = 0; root.col-normal = 0; root.active-mode == 0 ? root.master-colors() : root.slave-colors(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.col-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { root.active-mode == 0 ? root.master-colors() : root.slave-colors(); root.col-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Value-names dialog
+    // =====================================================================
+    if root.vn-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 480px;
+            height: 480px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Value names"; font-size: 17px; font-weight: 800; }
+                Field { label: "Enabled:"; CheckBox { text: "show labels instead of numeric values"; checked <=> root.vn-enabled; } }
+                Text { text: "One \"value=name\" per line (decimal or 0x hex). Unmapped values stay numeric."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                TextEdit {
+                    vertical-stretch: 1;
+                    text <=> root.vn-text;
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Button { text: "Import…"; clicked => { root.vn-import(); } }
+                    Button { text: "Export…"; clicked => { root.vn-export(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Cancel"; clicked => { root.vn-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { root.active-mode == 0 ? root.master-value-names() : root.slave-value-names(); root.vn-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Logging dialog
+    // =====================================================================
+    if root.log-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 480px;
+            height: 400px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Data logging (active window)"; font-size: 17px; font-weight: 800; }
+                Field { label: "Status:"; Text {
+                    text: root.log-active ? "Logging…" : "Stopped";
+                    vertical-alignment: center;
+                    color: root.log-active ? #98c379 : Palette.foreground;
+                    font-weight: 700;
+                } }
+                Field { label: "Rate:"; ComboBox { model: ["Each read", "Every N seconds"]; current-index <=> root.log-rate-mode; } }
+                if root.log-rate-mode == 1: Field { label: "Period s:"; SpinBox { value <=> root.log-period; minimum: 1; maximum: 86400; } }
+                Field { label: "Delimiter:"; ComboBox { model: ["Comma (CSV)", "Tab"]; current-index <=> root.log-delim; } }
+                Field { label: "On change:"; CheckBox { text: "log only when a value changes"; checked <=> root.log-onchange; } }
+                Field { label: "Timestamp:"; CheckBox { text: "prefix each row with date/time"; checked <=> root.log-timestamp; } }
+                Text { text: "Start choose a file; rows are appended live as the active window polls."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    AccentButton { text: "Start logging…"; width: 130px; enabled: !root.log-active; clicked => { root.master-start-log(); } }
+                    Button { text: "Stop"; enabled: root.log-active; clicked => { root.master-stop-log(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Close"; clicked => { root.log-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Simulation dialog (slave)
+    // =====================================================================
+    if root.sim-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { } }
+        Rectangle {
+            width: 460px;
+            height: 480px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Register simulation"; font-size: 17px; font-weight: 800; }
+                Field { label: "Status:"; Text {
+                    text: root.sim-active ? "Running" : "Stopped";
+                    vertical-alignment: center;
+                    color: root.sim-active ? #98c379 : Palette.foreground;
+                    font-weight: 700;
+                } }
+                Field { label: "Mode:"; ComboBox { model: ["Off", "Increment", "Decrement", "Random", "Toggle"]; current-index <=> root.sim-mode; } }
+                Field { label: "Step:"; SpinBox { value <=> root.sim-step; minimum: 1; maximum: 65535; } }
+                Field { label: "Min:"; SpinBox { value <=> root.sim-min; minimum: -32768; maximum: 65535; } }
+                Field { label: "Max:"; SpinBox { value <=> root.sim-max; minimum: -32768; maximum: 65535; } }
+                Field { label: "Interval ms:"; SpinBox { value <=> root.sim-interval; minimum: 50; maximum: 60000; step-size: 50; } }
+                Field { label: "Scope:"; CheckBox { text: "Only one register"; checked <=> root.sim-one; } }
+                Field { label: "Target addr:"; SpinBox { value <=> root.sim-target; minimum: 0; maximum: 65535; enabled: root.sim-one; } }
+                Text { text: "Animates the current table/address/quantity shown in the grid (or just one register if scoped). Masters read the changing values live."; wrap: word-wrap; font-size: 12px; opacity: 0.65; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    AccentButton { text: "Start"; width: 90px; enabled: !root.sim-active; clicked => { root.slave-sim-start(); } }
+                    Button { text: "Stop"; enabled: root.sim-active; clicked => { root.slave-sim-stop(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Close"; clicked => { root.sim-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Connection info popup (status bar click)
+    // =====================================================================
+    if root.conn-info-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #00000099;
+        TouchArea { width: 100%; height: 100%; clicked => { root.conn-info-open = false; } }
+        Rectangle {
+            width: 420px;
+            height: 260px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            VerticalLayout {
+                padding: 20px;
+                spacing: 10px;
+                Text { text: "Connection details"; font-size: 17px; font-weight: 800; }
+                TextEdit {
+                    vertical-stretch: 1;
+                    text <=> root.conn-info-text;
+                    read-only: true;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    AccentButton { text: "Close"; width: 90px; clicked => { root.conn-info-open = false; } }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Floating poll monitor — a separate top-level window mirroring one poll
+// window's live state, so several polls can be watched at once.
+// ---------------------------------------------------------------------------
+export component PollFloat inherits Window {
+    title: "Modbus Poll — " + root.ptitle;
+    preferred-width: 740px;
+    preferred-height: 480px;
+    min-width: 460px;
+    min-height: 440px; // 底部 log/chart 固定占高较大, 提高最小高度防裁剪
+
+    in property <string> ptitle: "Poll";
+    in property <[RegRow]> rows;
+    in property <[string]> names;
+    in property <string> status: "";
+    in property <int> tx: 0;
+    in property <int> rx: 0;
+    in property <int> err: 0;
+    in property <[LogLine]> log;
+    in property <[LogLine]> traffic;
+    in property <[MiniChart]> charts;
+    in property <bool> chart-has: false;
+    in-out property <[ChartSeries]> series;
+    in-out property <string> axis-lmin;
+    in-out property <string> axis-lmax;
+    in-out property <string> axis-rmin;
+    in-out property <string> axis-rmax;
+    in-out property <bool> chart-has-right: false;
+    in-out property <bool> chart-overlay: true;
+    callback chart-axis(int, int);
+    in property <string> fc-text: "FC 03 · Read Holding Registers";
+    in property <bool> is-write: false;
+    in-out property <int> bottom-tab: 0;
+
+    VerticalLayout {
+        Rectangle {
+            height: 38px;
+            background: Theme.accent;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
+                Text { text: root.ptitle; color: Theme.accent-fg; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: "Tx: \{root.tx}"; color: Theme.accent-fg; vertical-alignment: center; }
+                Text { text: "Rx: \{root.rx}"; color: Theme.accent-fg; vertical-alignment: center; }
+                Text { text: "Err: \{root.err}"; color: Theme.accent-fg; vertical-alignment: center; }
+            }
+        }
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            // function-code indicator (mirrors the main window's)
+            Rectangle {
+                height: 28px;
+                border-radius: 6px;
+                background: root.is-write ? Theme.warn.with-alpha(0.16) : Theme.accent.with-alpha(0.14);
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 50px;
+                        height: 20px;
+                        border-radius: 4px;
+                        background: root.is-write ? Theme.warn : Theme.accent;
+                        y: (parent.height - self.height) / 2;
+                        Text {
+                            text: root.is-write ? "WRITE" : "READ";
+                            color: #ffffff; font-size: 11px; font-weight: 800;
+                            horizontal-alignment: center; vertical-alignment: center;
+                        }
+                    }
+                    Text { text: root.fc-text; vertical-alignment: center; font-weight: 700; }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+            DataGrid {
+                vertical-stretch: 1;
+                rows: root.rows;
+                names: root.names;
+                values-editable: false;
+            }
+            Rectangle {
+                height: 30px;
+                border-radius: 8px;
+                background: Palette.control-background;
+                border-width: 1px;
+                border-color: Palette.border;
+                Text { x: 12px; width: parent.width - 24px; height: 100%; text: root.status; vertical-alignment: center; overflow: elide; }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                Tab { label: "Event Log"; active: root.bottom-tab == 0; clicked => { root.bottom-tab = 0; } }
+                Tab { label: "Communication Traffic"; active: root.bottom-tab == 1; clicked => { root.bottom-tab = 1; } }
+                Tab { label: "Chart"; active: root.bottom-tab == 2; clicked => { root.bottom-tab = 2; } }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            if root.bottom-tab == 0: LogPanel { height: 150px; lines: root.log; }
+            if root.bottom-tab == 1: LogPanel { height: 150px; lines: root.traffic; }
+            if root.bottom-tab == 2: Rectangle {
+                height: 230px;
+                VerticalLayout {
+                    spacing: 4px;
+                    HorizontalLayout {
+                        height: 24px;
+                        spacing: 6px;
+                        Button { text: root.chart-overlay ? "● Overlay" : "Overlay"; clicked => { root.chart-overlay = true; } }
+                        Button { text: !root.chart-overlay ? "● Grid" : "Grid"; clicked => { root.chart-overlay = false; } }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                    if root.chart-overlay: OverlayChart {
+                        vertical-stretch: 1;
+                        series: root.series;
+                        axis-lmin: root.axis-lmin;
+                        axis-lmax: root.axis-lmax;
+                        axis-rmin: root.axis-rmin;
+                        axis-rmax: root.axis-rmax;
+                        has-right: root.chart-has-right;
+                        axis-toggle(addr, ax) => { root.chart-axis(addr, ax); }
+                    }
+                    if !root.chart-overlay: ChartGrid {
+                        vertical-stretch: 1;
+                        charts: root.charts;
+                        has-data: root.chart-has;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Floating server monitor — its own table/address/quantity view into the SAME
+// shared data store. Multiple monitors can watch different tables at once.
+export component SlaveMonitor inherits Window {
+    title: "Modbus Server — " + root.mtitle;
+    preferred-width: 460px;
+    preferred-height: 420px;
+    icon: @image-url("logo.svg");
+
+    in property <string> mtitle: "Monitor";
+    in-out property <int> mon-area: 2;
+    in-out property <int> mon-address: 0;
+    in-out property <int> mon-quantity: 10;
+    in-out property <int> mon-format: 1;
+    in property <[RegRow]> rows;
+    in property <[string]> names;
+    in-out property <int> addr-mode: 0;
+    in-out property <length> grid-font: 14px;
+    callback view-changed();
+    callback edit(int, string);
+
+    pure function fc-fam(i: int) -> string {
+        if i == 0 { return "FC 01/05/15 · Coils"; }
+        if i == 1 { return "FC 02 · Discrete Inputs (read-only)"; }
+        if i == 3 { return "FC 04 · Input Registers (read-only)"; }
+        return "FC 03/06/16 · Holding Registers";
+    }
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        // 顶部 4 个 Field 拆两行, 默认 460px 宽下不再挤压/截断
+        HorizontalLayout {
+            height: 30px;
+            spacing: 10px;
+            Field { label: "Table:"; ComboBox { model: ["01/05/15 Coils", "02 Discrete Inputs", "03/06/16 Holding Registers", "04 Input Registers"]; current-index <=> root.mon-area; selected => { root.view-changed(); } } }
+            Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.mon-format; selected => { root.view-changed(); } } }
+        }
+        HorizontalLayout {
+            height: 30px;
+            spacing: 10px;
+            Field { label: "Address:"; SpinBox { value <=> root.mon-address; minimum: 0; maximum: 65535; edited => { root.view-changed(); } } }
+            Field { label: "Quantity:"; SpinBox { value <=> root.mon-quantity; minimum: 1; maximum: 2000; edited => { root.view-changed(); } } }
+        }
+        Rectangle {
+            height: 28px;
+            border-radius: 6px;
+            background: Theme.ok.with-alpha(0.14);
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 10px;
+                Rectangle {
+                    width: 58px; height: 20px; border-radius: 4px; background: Theme.ok;
+                    y: (parent.height - self.height) / 2;
+                    Text { text: "SERVER"; color: #ffffff; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Text { text: root.fc-fam(root.mon-area); vertical-alignment: center; font-weight: 700; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: "@ \{root.mon-address} × \{root.mon-quantity}"; vertical-alignment: center; opacity: 0.6; }
+            }
+        }
+        DataGrid {
+            vertical-stretch: 1;
+            rows: root.rows;
+            names: root.names;
+            values-editable: true;
+            addr-mode <=> root.addr-mode;
+            grid-font: root.grid-font;
+            edit(addr, txt) => { root.edit(addr, txt); }
+        }
+    }
+}

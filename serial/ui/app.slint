@@ -1,0 +1,623 @@
+import { Button, CheckBox, ComboBox, LineEdit, ScrollView, SpinBox, TextEdit, Palette } from "std-widgets.slint";
+
+export global I18n {
+    in-out property <bool> en: false;
+    public pure function t(zh: string, eng: string) -> string {
+        return en ? eng : zh;
+    }
+}
+
+// 与 PcanWork 统一: 学术蓝(Academic Blue) 浅色配色
+global Theme {
+    in-out property <bool> dark: false;
+    out property <color> bg: dark ? #0f1826 : #eef3f9;
+    out property <color> surface: dark ? #1a2536 : #ffffff;
+    out property <color> surface-2: dark ? #243349 : #e3ecf6;
+    out property <color> border: dark ? #2c3e57 : #cdd9e8;
+    out property <color> text: dark ? #e6edf6 : #16243a;
+    out property <color> muted: dark ? #8b9bb4 : #5a6b85;
+    out property <color> accent: dark ? #4a90d9 : #1c5aa6;
+    out property <color> success: dark ? #34d058 : #16a34a;
+    out property <color> danger: dark ? #f06c6c : #dc2626;
+}
+
+export struct QuickCommand {
+    enabled: bool,
+    hex: bool,
+    payload: string,
+    remark: string,
+    delay-ms: int,
+}
+
+component Card inherits Rectangle {
+    background: Theme.surface;
+    border-color: Theme.border;
+    border-width: 1px;
+    border-radius: 8px;
+}
+
+component SectionLabel inherits Text {
+    color: Theme.muted;
+    font-size: 11px;
+}
+
+component CardTitle inherits Text {
+    color: Theme.text;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+// 高度不定死，跟随所在行拉伸，保证与同行的标题/控件垂直对齐
+component CountBadge inherits Rectangle {
+    in property <string> label;
+    in property <int> value;
+    in property <color> tint: Theme.accent;
+    background: Theme.surface-2;
+    border-radius: 4px;
+    border-color: Theme.border;
+    border-width: 1px;
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        spacing: 4px;
+        Text { text: root.label; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+        Text { text: "" + root.value; color: root.tint; font-size: 11px; font-weight: 700; vertical-alignment: center; }
+    }
+}
+
+// 紧凑数字输入框：替代 SpinBox（fluent SpinBox 的上下箭头要占 ~50px，窄了必溢出）。
+// 回车或失焦时提交，自动钳到 [minimum, maximum]，非数字输入恢复原值。
+component NumEdit inherits LineEdit {
+    in-out property <int> value;
+    in property <int> minimum: 0;
+    in property <int> maximum: 1000000;
+    callback committed();
+
+    horizontal-alignment: right;
+    font-size: 12px;
+    text: "" + root.value;
+
+    function commit() {
+        if (root.text.is-float()) {
+            root.value = Math.max(root.minimum, Math.min(root.maximum, Math.round(root.text.to-float())));
+        }
+        root.text = "" + root.value;
+        root.committed();
+    }
+
+    accepted => { root.commit(); }
+    changed has-focus => {
+        if (!root.has-focus) {
+            root.commit();
+        }
+    }
+}
+
+component QuickCommandRow inherits Rectangle {
+    in property <int> idx;
+    in property <bool> cmd-enabled;
+    in property <bool> cmd-hex;
+    in property <string> payload;
+    in property <string> remark;
+    in property <int> delay-ms;
+    callback send(string, bool);
+    callback edited(bool, bool, string, string, int);
+
+    function notify() {
+        root.edited(en-box.checked, hex-box.checked, payload-edit.text, remark-edit.text, delay-box.value);
+    }
+
+    height: 28px;
+    background: transparent;
+
+    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+
+    HorizontalLayout {
+        padding-left: 4px;
+        padding-right: 4px;
+        spacing: 5px;
+        Text { text: "" + root.idx; width: 22px; color: Theme.muted; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
+        en-box := CheckBox { checked: root.cmd-enabled; width: 22px; toggled => { root.notify(); } }
+        hex-box := CheckBox { checked: root.cmd-hex; width: 22px; toggled => { root.notify(); } }
+        payload-edit := LineEdit { text: root.payload; font-family: "Consolas"; font-size: 12px; width: 210px; edited => { root.notify(); } }
+        remark-edit := LineEdit { text: root.remark; font-size: 12px; width: 96px; edited => { root.notify(); } }
+        delay-box := NumEdit { value: root.delay-ms; minimum: 0; maximum: 600000; width: 60px; committed => { root.notify(); } }
+        Button {
+            text: I18n.t("发送", "Send");
+            width: 48px;
+            clicked => { root.send(payload-edit.text, hex-box.checked); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+}
+
+// Academic-blue button matching PcanWork (std Button follows the system accent, so we draw our own).
+component AccentBtn inherits Rectangle {
+    in property <string> text;
+    in property <bool> filled: true;       // true = accent fill, false = outlined
+    in property <bool> btn-enabled: true;
+    callback clicked;
+    min-width: txt.preferred-width + 24px;
+    height: 30px;
+    border-radius: 6px;
+    background: !root.btn-enabled ? Theme.surface-2
+        : root.filled ? (ta.has-hover ? Theme.accent.brighter(0.12) : Theme.accent)
+        : (ta.has-hover ? Theme.surface-2 : Theme.surface);
+    border-width: 1px;
+    border-color: !root.btn-enabled ? Theme.border : (root.filled ? Theme.accent : Theme.border);
+    txt := Text {
+        text: root.text;
+        color: root.filled ? #ffffff : Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        font-size: 12px;
+    }
+    ta := TouchArea {
+        enabled: root.btn-enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "Serial Tool";
+    icon: @image-url("../assets/app.png");
+    default-font-size: 12px;
+    preferred-width: 940px;
+    preferred-height: 580px;
+    min-width: 920px;
+    min-height: 540px;
+    background: Theme.bg;
+    always-on-top: root.topmost-enabled;
+
+    // std-widgets 跟随本工具的 Dark/Light(而非系统), 初始按 Theme.dark。
+    init => {
+        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+
+    in-out property <int> transport: 0; // 0=Serial 1=TCP Client 2=TCP Server 3=UDP 4=SSH Serial
+    in-out property <[string]> ports;
+    in-out property <string> selected-port;
+    in-out property <[string]> baud-rates;
+    in-out property <string> selected-baud;
+    in-out property <[string]> data-bits;
+    in-out property <string> selected-data-bits;
+    in-out property <[string]> stop-bits;
+    in-out property <string> selected-stop-bits;
+    in-out property <[string]> parities;
+    in-out property <string> selected-parity;
+    in-out property <[string]> flow-controls;
+    in-out property <string> selected-flow-control;
+    in-out property <[string]> checksum-types: ["None", "SUM8", "XOR8", "CRC8", "CRC16-Modbus"];
+    in-out property <string> selected-checksum: "None";
+    in-out property <string> local-host: "0.0.0.0";
+    in-out property <int> local-port: 502;
+    in-out property <string> remote-host: "192.168.1.110";
+    in-out property <int> remote-port: 502;
+    // 原生 SSH 串口
+    in-out property <string> ssh-host: "192.168.1.110";
+    in-out property <string> ssh-user: "root";
+    in-out property <int> ssh-port: 22;
+    in-out property <string> ssh-key: "";
+    in-out property <string> ssh-device: "/dev/ttyUSB0";
+    in-out property <int> ssh-baud: 115200;
+    in-out property <int> ssh-auth: 0; // 0=Private Key 1=Password
+    in-out property <string> ssh-password: "";
+    in-out property <string> ssh-cmd-template: "socat - {dev},raw,echo=0,b{baud}";
+    in-out property <string> receive-text;
+    in-out property <string> send-text;
+    in-out property <string> selected-file;
+    in-out property <string> status-message: "就绪";
+    in-out property <bool> connected;
+    in-out property <bool> receive-hex;
+    in-out property <bool> send-hex;
+    in-out property <bool> timestamp-enabled: true;
+    in-out property <bool> autoscroll: true;
+    in-out property <bool> echo-tx: true;
+    in-out property <bool> append-newline: true;
+    in-out property <bool> receive-to-file;
+    in-out property <bool> topmost-enabled;
+    in-out property <int> timeout-ms: 20;
+    in-out property <int> from-byte: 1;
+    in-out property <bool> rts-enabled;
+    in-out property <bool> dtr-enabled: true;
+    in-out property <bool> auto-sending;
+    in-out property <int> auto-interval-ms: 1000;
+    in-out property <bool> quick-panel-visible: false;
+    in-out property <int> rx-count;
+    in-out property <int> tx-count;
+
+    callback refresh-ports();
+    callback toggle-port();
+    callback send-data();
+    callback clear-receive();
+    callback clear-send();
+    callback save-receive();
+    callback open-file();
+    callback send-file();
+    callback toggle-auto-send();
+    callback stop-sending();
+    callback save-settings();
+    callback toggle-receive-file();
+    callback toggle-quick-panel();
+    callback english-changed();
+
+
+    // 把光标移到末尾，TextEdit 会自动把光标滚进视野 => 滚动条贴底
+    public function scroll-rx-to-end() {
+        rx-edit.set-selection-offsets(rx-edit.text.character-count, rx-edit.text.character-count);
+    }
+
+    VerticalLayout {
+        padding: 0px;
+        spacing: 0px;
+
+        // ── 顶栏 ─────────────────────────────────────────────
+        Rectangle {
+            height: 40px;
+            background: Theme.surface;
+            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 8px;
+                spacing: 8px;
+
+                Rectangle {
+                    width: 8px;
+                    height: 8px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 4px;
+                    background: connected ? Theme.success : Theme.muted;
+                }
+                Text {
+                    text: I18n.t("串口调试工具", "Serial Tool");
+                    color: Theme.text;
+                    font-size: 14px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+                Rectangle {
+                    width: 64px;
+                    height: 20px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 10px;
+                    background: connected ? #e3f4ea : #fdecec;
+                    border-width: 1px;
+                    border-color: connected ? Theme.success : Theme.danger;
+                    Text {
+                        text: connected ? I18n.t("已连接", "Online") : I18n.t("未连接", "Offline");
+                        color: connected ? Theme.success : Theme.danger;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                CheckBox { text: I18n.t("置顶", "Pin"); checked <=> root.topmost-enabled; }
+                Button {
+                    text: Theme.dark ? I18n.t("浅色", "Light") : I18n.t("深色", "Dark");
+                    clicked => { Theme.dark = !Theme.dark; Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+                }
+                CheckBox { text: "English"; checked <=> I18n.en; toggled => { root.english-changed(); } }
+                Button { text: I18n.t("保存参数", "Save Cfg"); clicked => { root.save-settings(); } }
+                Button {
+                    text: quick-panel-visible ? I18n.t("收起命令", "Hide Cmds") : I18n.t("多条命令", "Commands");
+                    clicked => { root.toggle-quick-panel(); }
+                }
+            }
+        }
+
+        // ── 主体：侧边栏 + 工作区 ────────────────────────────
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+            vertical-stretch: 1;
+
+            // 侧边栏（ScrollView 比卡片宽 16px，给滚动条留位，避免裁掉右列控件）
+            ScrollView {
+                width: 266px;
+                Card {
+                    width: 250px;
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+
+                        CardTitle { text: I18n.t("连接", "Connection"); }
+                        SectionLabel { text: I18n.t("传输方式", "Transport"); }
+                        ComboBox {
+                            model: [I18n.t("串口", "Serial"), I18n.t("TCP 客户端", "TCP Client"), I18n.t("TCP 服务器", "TCP Server"), "UDP", I18n.t("SSH 串口", "SSH Serial")];
+                            current-index <=> root.transport;
+                        }
+                        if root.transport == 0: ComboBox { model: root.ports; current-value <=> root.selected-port; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            if root.transport == 0: Button { text: I18n.t("刷新", "Refresh"); clicked => { root.refresh-ports(); } }
+                            AccentBtn {
+                                text: connected ? I18n.t("断开", "Disconnect") : I18n.t("连接", "Connect");
+                                filled: !connected;
+                                horizontal-stretch: 1;
+                                clicked => { root.toggle-port(); }
+                            }
+                        }
+
+                        // ---- Serial 参数 ----
+                        if root.transport == 0: VerticalLayout {
+                            spacing: 6px;
+                            Rectangle { height: 1px; background: Theme.border; }
+                            CardTitle { text: I18n.t("串口参数", "Serial Params"); }
+                            SectionLabel { text: I18n.t("波特率", "Baud Rate"); }
+                            ComboBox { model: root.baud-rates; current-value <=> root.selected-baud; }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("数据位", "Data"); } ComboBox { width: 112px; model: root.data-bits; current-value <=> root.selected-data-bits; } }
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("停止位", "Stop"); } ComboBox { width: 112px; model: root.stop-bits; current-value <=> root.selected-stop-bits; } }
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("校验位", "Parity"); } ComboBox { width: 112px; model: root.parities; current-value <=> root.selected-parity; } }
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("流控", "Flow"); } ComboBox { width: 112px; model: root.flow-controls; current-value <=> root.selected-flow-control; } }
+                            }
+                            HorizontalLayout {
+                                CheckBox { text: "RTS"; checked <=> root.rts-enabled; }
+                                CheckBox { text: "DTR"; checked <=> root.dtr-enabled; }
+                            }
+                        }
+
+                        // ---- TCP/UDP ----
+                        if root.transport >= 1 && root.transport <= 3: VerticalLayout {
+                            spacing: 6px;
+                            Rectangle { height: 1px; background: Theme.border; }
+                            CardTitle { text: I18n.t("网络", "Network"); }
+                            HorizontalLayout {
+                                spacing: 5px;
+                                SectionLabel { text: I18n.t("远程", "Rmt"); width: 28px; vertical-alignment: center; }
+                                LineEdit { text <=> root.remote-host; width: 128px; font-size: 12px; }
+                                NumEdit { value <=> root.remote-port; minimum: 1; maximum: 65535; width: 56px; }
+                            }
+                            HorizontalLayout {
+                                spacing: 5px;
+                                SectionLabel { text: I18n.t("本地", "Loc"); width: 28px; vertical-alignment: center; }
+                                LineEdit { text <=> root.local-host; width: 128px; font-size: 12px; }
+                                NumEdit { value <=> root.local-port; minimum: 1; maximum: 65535; width: 56px; }
+                            }
+                        }
+
+                        // ---- SSH Serial ----
+                        if root.transport == 4: VerticalLayout {
+                            spacing: 6px;
+                            Rectangle { height: 1px; background: Theme.border; }
+                            CardTitle { text: I18n.t("SSH 串口", "SSH Serial"); }
+                            SectionLabel { text: I18n.t("远端需装 socat", "remote needs socat"); }
+                            HorizontalLayout { spacing: 5px; SectionLabel { text: I18n.t("主机", "Host"); width: 28px; vertical-alignment: center; } LineEdit { text <=> root.ssh-host; width: 110px; font-size: 12px; } NumEdit { value <=> root.ssh-port; minimum: 1; maximum: 65535; width: 50px; } }
+                            HorizontalLayout { spacing: 5px; SectionLabel { text: I18n.t("用户", "User"); width: 28px; vertical-alignment: center; } LineEdit { text <=> root.ssh-user; width: 84px; font-size: 12px; } SectionLabel { text: I18n.t("波特", "Baud"); width: 28px; vertical-alignment: center; } NumEdit { value <=> root.ssh-baud; minimum: 50; maximum: 4000000; width: 84px; } }
+                            HorizontalLayout { spacing: 5px; SectionLabel { text: I18n.t("设备", "Dev"); width: 28px; vertical-alignment: center; } LineEdit { text <=> root.ssh-device; placeholder-text: "/dev/ttyUSB0"; width: 168px; font-size: 12px; } }
+                            SectionLabel { text: I18n.t("认证方式", "Auth"); }
+                            ComboBox { model: [I18n.t("私钥", "Private Key"), I18n.t("密码", "Password")]; current-index <=> root.ssh-auth; }
+                            if root.ssh-auth == 0: HorizontalLayout { spacing: 5px; SectionLabel { text: I18n.t("私钥", "Key"); width: 28px; vertical-alignment: center; } LineEdit { text <=> root.ssh-key; placeholder-text: I18n.t("可空=默认/agent", "blank=default/agent"); width: 168px; font-size: 12px; } }
+                            if root.ssh-auth == 1: HorizontalLayout { spacing: 5px; SectionLabel { text: I18n.t("密码", "Pwd"); width: 28px; vertical-alignment: center; } LineEdit { text <=> root.ssh-password; input-type: InputType.password; width: 168px; font-size: 12px; } }
+                            SectionLabel { text: I18n.t("远端命令模板", "Remote cmd"); }
+                            LineEdit { text <=> root.ssh-cmd-template; font-size: 11px; }
+                        }
+
+                    }
+                }
+            }
+
+            // 工作区
+            VerticalLayout {
+                spacing: 8px;
+                horizontal-stretch: 1;
+
+                // 接收卡片
+                Card {
+                    vertical-stretch: 1;
+                    background: Theme.surface;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            CardTitle { text: I18n.t("接收", "Receive"); vertical-alignment: center; }
+                            CountBadge { label: "RX"; value: rx-count; }
+                            ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
+                            CheckBox { text: I18n.t("自动滚动", "Follow"); checked <=> root.autoscroll; }
+                            CheckBox { text: "HEX"; checked <=> root.receive-hex; }
+                            CheckBox { text: I18n.t("时间戳分包", "Timestamp"); checked <=> root.timestamp-enabled; }
+                            SectionLabel { text: I18n.t("超时", "Gap"); vertical-alignment: center; }
+                            NumEdit { value <=> root.timeout-ms; minimum: 1; maximum: 60000; width: 56px; }
+                            SectionLabel { text: "ms"; vertical-alignment: center; }
+                            CheckBox {
+                                text: I18n.t("记录到文件", "Log to file");
+                                checked <=> root.receive-to-file;
+                                toggled => { root.toggle-receive-file(); }
+                            }
+                            Button { text: I18n.t("保存", "Save"); clicked => { root.save-receive(); } }
+                            Button { text: I18n.t("清屏", "Clear"); clicked => { root.clear-receive(); } }
+                        } }
+                        }
+
+                        rx-edit := TextEdit {
+                            text <=> root.receive-text;
+                            font-family: "Cascadia Mono, Consolas, DejaVu Sans Mono";
+                            font-size: 12px;
+                            wrap: word-wrap;
+                            vertical-stretch: 1;
+                        }
+                    }
+                }
+
+                // 发送卡片
+                Card {
+                    height: 162px;
+                    background: Theme.surface;
+                    VerticalLayout {
+                        padding: 8px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            spacing: 6px;
+                            CardTitle { text: I18n.t("发送", "Send"); vertical-alignment: center; color: Theme.text; }
+                            CountBadge { label: "TX"; value: tx-count; tint: Theme.success; }
+                            ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
+                            CheckBox { text: I18n.t("回显", "Echo"); checked <=> root.echo-tx; }
+                            CheckBox { text: "HEX"; checked <=> root.send-hex; }
+                            CheckBox { text: I18n.t("回车换行", "CRLF"); checked <=> root.append-newline; }
+                            SectionLabel { text: I18n.t("校验", "Checksum"); vertical-alignment: center; }
+                            ComboBox { model: root.checksum-types; current-value <=> root.selected-checksum; width: 118px; }
+                            SectionLabel { text: I18n.t("第", "from"); vertical-alignment: center; }
+                            NumEdit { value <=> root.from-byte; minimum: 1; maximum: 4096; width: 44px; }
+                            SectionLabel { text: I18n.t("字节起", "byte"); vertical-alignment: center; }
+                        } }
+                        }
+
+                        TextEdit {
+                            text <=> root.send-text;
+                            font-family: "Cascadia Mono, Consolas, DejaVu Sans Mono";
+                            font-size: 12px;
+                            vertical-stretch: 1;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 5px;
+                            Button { text: I18n.t("打开文件", "Open File"); clicked => { root.open-file(); } }
+                            Button { text: I18n.t("发送文件", "Send File"); clicked => { root.send-file(); } }
+                            Text {
+                                text: selected-file == "" ? I18n.t("未选择文件", "No file") : selected-file;
+                                color: Theme.muted;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            SectionLabel { text: I18n.t("定时", "Every"); vertical-alignment: center; }
+                            NumEdit { value <=> root.auto-interval-ms; minimum: 1; maximum: 600000; width: 64px; }
+                            SectionLabel { text: "ms"; vertical-alignment: center; }
+                            Button {
+                                text: auto-sending ? I18n.t("停止定时", "Stop Timer") : I18n.t("定时发送", "Auto Send");
+                                clicked => { root.toggle-auto-send(); }
+                            }
+                            Button { text: I18n.t("停止", "Stop"); clicked => { root.stop-sending(); } }
+                            Button { text: I18n.t("清空", "Clear"); clicked => { root.clear-send(); } }
+                            AccentBtn {
+                                text: I18n.t("发 送", "Send");
+                                min-width: 84px;
+                                clicked => { root.send-data(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── 状态栏 ───────────────────────────────────────────
+        Rectangle {
+            height: 24px;
+            background: Theme.surface;
+            Rectangle { height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                Text { text: status-message; color: Theme.muted; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
+                Text { text: "S " + tx-count; color: Theme.success; font-size: 11px; vertical-alignment: center; }
+                Text { text: "R " + rx-count; color: Theme.accent; font-size: 11px; vertical-alignment: center; }
+                Text {
+                    text: selected-baud + " · " + selected-data-bits + "-" + selected-parity + "-" + selected-stop-bits;
+                    color: Theme.muted;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+}
+
+// ── 多条命令：独立窗口，可拖出主窗口、可最小化 ──────────────
+export component QuickWindow inherits Window {
+    title: I18n.t("多条字符串发送", "Multi-String Send");
+    icon: @image-url("../assets/app.png");
+    default-font-size: 12px;
+    preferred-width: 584px;
+    preferred-height: 520px;
+    min-width: 560px;
+    min-height: 320px;
+    background: Theme.bg;
+
+    in-out property <[QuickCommand]> quick-commands;
+    in-out property <bool> quick-loop-enabled;
+
+    callback send-quick(string, bool);
+    callback run-quick-sequence();
+    callback stop-sending();
+    callback import-quick-ini();
+    callback export-quick-ini();
+    callback add-quick-row();
+    callback remove-quick-row();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            spacing: 5px;
+            CheckBox { text: I18n.t("循环发送", "Loop"); checked <=> root.quick-loop-enabled; }
+            AccentBtn { text: I18n.t("顺序发送", "Run Sequence"); clicked => { root.run-quick-sequence(); } }
+            Button { text: I18n.t("停止", "Stop"); clicked => { root.stop-sending(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Button { text: I18n.t("导入ini", "Import"); clicked => { root.import-quick-ini(); } }
+            Button { text: I18n.t("导出ini", "Export"); clicked => { root.export-quick-ini(); } }
+            Button { text: "+"; width: 30px; clicked => { root.add-quick-row(); } }
+            Button { text: "-"; width: 30px; clicked => { root.remove-quick-row(); } }
+        }
+
+        Rectangle {
+            height: 24px;
+            background: Theme.surface-2;
+            border-radius: 4px;
+            HorizontalLayout {
+                padding-left: 4px;
+                spacing: 5px;
+                Text { text: "#"; width: 22px; color: Theme.muted; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
+                Text { text: I18n.t("启用", "On"); width: 22px; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: "HEX"; width: 22px; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: I18n.t("内容", "Payload"); width: 210px; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: I18n.t("注释", "Remark"); width: 96px; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Text { text: I18n.t("延时ms", "Delay"); width: 60px; color: Theme.muted; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 0px;
+                for row[i] in root.quick-commands: QuickCommandRow {
+                    idx: i + 1;
+                    cmd-enabled: row.enabled;
+                    cmd-hex: row.hex;
+                    payload: row.payload;
+                    remark: row.remark;
+                    delay-ms: row.delay-ms;
+                    edited(en, hx, pl, rm, dl) => {
+                        row.enabled = en;
+                        row.hex = hx;
+                        row.payload = pl;
+                        row.remark = rm;
+                        row.delay-ms = dl;
+                    }
+                    send(pl, hx) => {
+                        root.send-quick(pl, hx);
+                    }
+                }
+            }
+        }
+    }
+}

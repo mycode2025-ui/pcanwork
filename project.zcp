@@ -1,0 +1,40 @@
+{
+  "settings": {
+    "channels": [
+      {
+        "sw_channel": 1,
+        "is_fd": false,
+        "device_type": "Virtual",
+        "device_index": 0,
+        "channel_index": 0,
+        "baud": "500K",
+        "data_baud": "2M",
+        "termination": false,
+        "net_server": true,
+        "ip": "",
+        "port": ""
+      }
+    ],
+    "channel_sel": 0,
+    "dark": false,
+    "big": true,
+    "trace_cap": 100000,
+    "chart_cap": 10000,
+    "f_id": "",
+    "f_name": "",
+    "f_data": "",
+    "dir_filter": 0,
+    "dbc_path": null,
+    "dbc_paths": [
+      ".\\aaaaa.dbc"
+    ],
+    "left_w": 232.0,
+    "bottom_h": 192.0,
+    "mode_trace": false,
+    "time_mode": 0,
+    "cols_hidden": "",
+    "sim_widgets": "[{\"kind\":\"Dial\",\"name\":\"仪表盘1\",\"channel\":1,\"frame_id\":256,\"signal\":\"\",\"threshold\":0.0,\"min\":0.0,\"max\":100.0,\"gen_mode\":\"Sine\",\"gen_step\":2.0,\"period_ms\":100,\"x\":323.99998474121094,\"y\":39.33332824707031,\"w\":134.6666717529297,\"h\":139.3333282470703,\"enabled\":true,\"slider_val\":0.0,\"press_val\":1.0,\"release_val\":0.0,\"align\":1},{\"kind\":\"Bar\",\"name\":\"进度条2\",\"channel\":1,\"frame_id\":256,\"signal\":\"\",\"threshold\":0.0,\"min\":0.0,\"max\":100.0,\"gen_mode\":\"Sine\",\"gen_step\":2.0,\"period_ms\":100,\"x\":0.0,\"y\":188.66665649414065,\"w\":175.3333282470703,\"h\":30.0,\"enabled\":true,\"slider_val\":0.0,\"press_val\":1.0,\"release_val\":0.0,\"align\":1},{\"kind\":\"Label\",\"name\":\"标签3\",\"channel\":1,\"frame_id\":256,\"signal\":\"\",\"threshold\":0.0,\"min\":0.0,\"max\":100.0,\"gen_mode\":\"Sine\",\"gen_step\":2.0,\"period_ms\":100,\"x\":24.666664123535156,\"y\":313.33336639404297,\"w\":128.0,\"h\":30.0,\"enabled\":true,\"slider_val\":0.0,\"press_val\":1.0,\"release_val\":0.0,\"align\":1},{\"kind\":\"Slider\",\"name\":\"滑块4\",\"channel\":1,\"frame_id\":256,\"signal\":\"\",\"threshold\":0.0,\"min\":0.0,\"max\":100.0,\"gen_mode\":\"Sine\",\"gen_step\":2.0,\"period_ms\":100,\"x\":32.0,\"y\":257.3333435058594,\"w\":141.3333282470703,\"h\":56.0,\"enabled\":true,\"slider_val\":0.0,\"press_val\":1.0,\"release_val\":0.0,\"align\":1}]",
+    "lang_en": false
+  },
+  "txs": []
+}
