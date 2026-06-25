@@ -1,5 +1,5 @@
-// GUI 子系统：不要给程序挂控制台窗口（debug 构建仍保留控制台便于看日志）
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// GUI subsystem: do not attach a console window on Windows.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use anyhow::{Context, Result, bail};
 use chrono::Local;
