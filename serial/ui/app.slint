@@ -52,6 +52,7 @@ component CountBadge inherits Rectangle {
     in property <string> label;
     in property <int> value;
     in property <color> tint: Theme.accent;
+    height: 30px;
     background: Theme.surface-2;
     border-radius: 4px;
     border-color: Theme.border;
@@ -159,6 +160,23 @@ component AccentBtn inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
+}
+
+component ToolCheck inherits CheckBox {
+    height: 30px;
+}
+
+component ToolButton inherits Button {
+    height: 30px;
+    min-width: 72px;
+}
+
+component ToolStrip inherits ScrollView {
+    height: 38px;
+    horizontal-stretch: 1;
+    vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+    horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
+    viewport-height: 32px;
 }
 
 export component AppWindow inherits Window {
@@ -426,20 +444,20 @@ export component AppWindow inherits Window {
                             spacing: 6px;
                             CardTitle { text: I18n.t("接收", "Receive"); vertical-alignment: center; }
                             CountBadge { label: "RX"; value: rx-count; }
-                            ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
-                            CheckBox { text: I18n.t("自动滚动", "Follow"); checked <=> root.autoscroll; }
-                            CheckBox { text: "HEX"; checked <=> root.receive-hex; }
-                            CheckBox { text: I18n.t("时间戳分包", "Timestamp"); checked <=> root.timestamp-enabled; }
-                            SectionLabel { text: I18n.t("超时", "Gap"); vertical-alignment: center; }
-                            NumEdit { value <=> root.timeout-ms; minimum: 1; maximum: 60000; width: 56px; }
-                            SectionLabel { text: "ms"; vertical-alignment: center; }
-                            CheckBox {
+                            ToolStrip { HorizontalLayout { spacing: 8px; height: 30px;
+                            ToolCheck { text: I18n.t("自动滚动", "Follow"); checked <=> root.autoscroll; }
+                            ToolCheck { text: "HEX"; checked <=> root.receive-hex; }
+                            ToolCheck { text: I18n.t("时间戳分包", "Timestamp"); checked <=> root.timestamp-enabled; }
+                            SectionLabel { text: I18n.t("超时", "Gap"); vertical-alignment: center; height: 30px; }
+                            NumEdit { value <=> root.timeout-ms; minimum: 1; maximum: 60000; width: 56px; height: 30px; }
+                            SectionLabel { text: "ms"; vertical-alignment: center; height: 30px; }
+                            ToolCheck {
                                 text: I18n.t("记录到文件", "Log to file");
                                 checked <=> root.receive-to-file;
                                 toggled => { root.toggle-receive-file(); }
                             }
-                            Button { text: I18n.t("保存", "Save"); clicked => { root.save-receive(); } }
-                            Button { text: I18n.t("清屏", "Clear"); clicked => { root.clear-receive(); } }
+                            ToolButton { text: I18n.t("保存", "Save"); clicked => { root.save-receive(); } }
+                            ToolButton { text: I18n.t("清屏", "Clear"); clicked => { root.clear-receive(); } }
                         } }
                         }
 
@@ -465,15 +483,15 @@ export component AppWindow inherits Window {
                             spacing: 6px;
                             CardTitle { text: I18n.t("发送", "Send"); vertical-alignment: center; color: Theme.text; }
                             CountBadge { label: "TX"; value: tx-count; tint: Theme.success; }
-                            ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 6px;
-                            CheckBox { text: I18n.t("回显", "Echo"); checked <=> root.echo-tx; }
-                            CheckBox { text: "HEX"; checked <=> root.send-hex; }
-                            CheckBox { text: I18n.t("回车换行", "CRLF"); checked <=> root.append-newline; }
-                            SectionLabel { text: I18n.t("校验", "Checksum"); vertical-alignment: center; }
-                            ComboBox { model: root.checksum-types; current-value <=> root.selected-checksum; width: 118px; }
-                            SectionLabel { text: I18n.t("第", "from"); vertical-alignment: center; }
-                            NumEdit { value <=> root.from-byte; minimum: 1; maximum: 4096; width: 44px; }
-                            SectionLabel { text: I18n.t("字节起", "byte"); vertical-alignment: center; }
+                            ToolStrip { HorizontalLayout { spacing: 8px; height: 30px;
+                            ToolCheck { text: I18n.t("回显", "Echo"); checked <=> root.echo-tx; }
+                            ToolCheck { text: "HEX"; checked <=> root.send-hex; }
+                            ToolCheck { text: I18n.t("回车换行", "CRLF"); checked <=> root.append-newline; }
+                            SectionLabel { text: I18n.t("校验", "Checksum"); vertical-alignment: center; height: 30px; }
+                            ComboBox { model: root.checksum-types; current-value <=> root.selected-checksum; width: 118px; height: 30px; }
+                            SectionLabel { text: I18n.t("第", "from"); vertical-alignment: center; height: 30px; }
+                            NumEdit { value <=> root.from-byte; minimum: 1; maximum: 4096; width: 44px; height: 30px; }
+                            SectionLabel { text: I18n.t("字节起", "byte"); vertical-alignment: center; height: 30px; }
                         } }
                         }
 
@@ -520,7 +538,6 @@ export component AppWindow inherits Window {
         Rectangle {
             height: 24px;
             background: Theme.surface;
-            Rectangle { height: 1px; background: Theme.border; }
             HorizontalLayout {
                 padding-left: 10px;
                 padding-right: 10px;
