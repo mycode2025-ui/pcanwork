@@ -8,6 +8,8 @@ mod expr;
 mod format;
 mod protocol;
 mod tls;
+#[cfg(windows)]
+mod windows_dpi;
 
 use backend::{
     Cmd, DerivedCh, LogCfg, MasterCfg, ScanCfg, SimCfg, SimMode, SlaveCfg, SlaveScanCfg, UiCfg,
@@ -513,6 +515,9 @@ fn apply_workspace(a: &AppWindow, content: &str) {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    #[cfg(windows)]
+    windows_dpi::force_system_dpi_awareness();
+
     let app = AppWindow::new()?;
     let tx = backend::start_backend(app.as_weak());
 

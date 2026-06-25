@@ -10,6 +10,11 @@ fn main() {
     // 嵌入 exe 图标（资源管理器/桌面快捷方式显示用）
     #[cfg(windows)]
     {
+        use embed_manifest::manifest::DpiAwareness;
+        use embed_manifest::{embed_manifest, new_manifest};
+        embed_manifest(new_manifest("SerialTool").dpi_awareness(DpiAwareness::System))
+            .expect("failed to embed Windows application manifest");
+
         let mut res = winres::WindowsResource::new();
         res.set_icon("assets/app.ico");
         res.set("ProductName", "Serial Tool");

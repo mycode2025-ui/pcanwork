@@ -19,6 +19,8 @@ mod sim;
 mod tree;
 mod tx;
 mod vary;
+#[cfg(windows)]
+mod windows_dpi;
 
 // Callback wiring is split per-window into the wire_*.rs files below, pulled in via
 // include!() so they share this module's imports and private items.
@@ -1224,6 +1226,9 @@ const PALETTE: [(u8, u8, u8); 8] = [
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    windows_dpi::force_system_dpi_awareness();
+
     let ui = AppWindow::new()?;
     let chart_window = ChartWindow::new()?;
     let signal_window = SignalSelectWindow::new()?;

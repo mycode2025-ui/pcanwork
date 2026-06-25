@@ -13,6 +13,7 @@ serialport = "4"
 slint = "1.17.0"
 
 [build-dependencies]
+embed-manifest = "1.5.0"
 slint-build = "1.17.0"
 
 [target.'cfg(windows)'.build-dependencies]

@@ -20,6 +20,9 @@ use std::sync::{
 use std::thread;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
+mod windows_dpi;
+
 slint::include_modules!();
 
 // 高频定时发送需要 1ms 级 sleep 精度，Windows 默认计时器粒度约 15.6ms
@@ -150,6 +153,9 @@ enum UiEvent {
 }
 
 fn main() -> Result<()> {
+    #[cfg(windows)]
+    windows_dpi::force_system_dpi_awareness();
+
     #[cfg(windows)]
     unsafe {
         timeBeginPeriod(1);

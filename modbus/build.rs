@@ -4,6 +4,11 @@ fn main() {
 
     // 仅 Windows: 嵌入 exe 图标(资源管理器/任务栏固定项显示), 与 pcanwork 同款品牌。
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        use embed_manifest::manifest::DpiAwareness;
+        use embed_manifest::{embed_manifest, new_manifest};
+        embed_manifest(new_manifest("ModbusTools").dpi_awareness(DpiAwareness::System))
+            .expect("failed to embed Windows application manifest");
+
         let mut res = winresource::WindowsResource::new();
         res.set_icon("app.ico");
         if let Err(e) = res.compile() {
