@@ -8,7 +8,7 @@ anyhow = "1.0"
 arboard = "3.4"
 futures = "0.3"
 rfd = "0.17.2"
-slint = { version = "1.16", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility"] }
+slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
 tokio-modbus = { version = "0.17", default-features = false, features = ["tcp", "rtu", "tcp-server", "rtu-server"] }
 tokio-serial = "5.5"
@@ -17,6 +17,6 @@ rustls-pemfile = "2"
 rustls-native-certs = "0.8"
 
 [build-dependencies]
-slint-build = "1.16"
+slint-build = "1.17.0"
 winresource = "0.1"  # 嵌入 exe 图标(app.ico)
 # 注: profile 由工作区根 (Pcanwork/Cargo.toml) 统一管理，成员不再单独设置。
