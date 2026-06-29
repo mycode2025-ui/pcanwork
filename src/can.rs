@@ -12,7 +12,14 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+static OTA_CANCEL: AtomicBool = AtomicBool::new(false);
+
+pub fn cancel_ota() {
+    OTA_CANCEL.store(true, Ordering::Relaxed);
+}
 
 /// 统一 CAN/CAN FD 帧。
 #[derive(Clone, Debug)]
@@ -1289,6 +1296,7 @@ pub enum Cmd {
     Start,
     Stop,
     SendOnce(CanFrame),
+    OtaRun(OtaJob),
     /// 周期发送：handle 唯一标识任务；enable=false 表示停止该任务。
     SetPeriodic {
         handle: u64,
@@ -1311,9 +1319,42 @@ pub enum Cmd {
     Quit,
 }
 
+#[derive(Clone, Debug)]
+pub struct OtaJob {
+    pub name: String,
+    pub steps: Vec<OtaStep>,
+    pub timeout_ms: u64,
+    pub retries: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct OtaStep {
+    pub frame: CanFrame,
+    pub ack: OtaAck,
+    pub timeout_ms: u64,
+    pub retries: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum OtaResponseId {
+    Exact(u32),
+    WildcardBase(u32),
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum OtaAck {
+    None,
+    XcpConnect { response: OtaResponseId },
+    XcpAck { response: OtaResponseId },
+    UdsFlowControl,
+    UdsPositive { service: u8 },
+}
+
 pub enum Evt {
     Frame(CanFrame),
+    PlaybackFrame(CanFrame),
     Log(String),
+    OtaProgress(usize, usize, String),
     /// 连接状态变化：(connected, 后端名称)
     Connected(bool, String),
     Running(bool),
@@ -1429,6 +1470,134 @@ fn connect_channels(
     }
 }
 
+fn ota_response_id_matches(spec: OtaResponseId, id: u32) -> bool {
+    match spec {
+        OtaResponseId::Exact(expected) => id == expected,
+        OtaResponseId::WildcardBase(base) => (id & 0xFFFF_FF00) == base,
+    }
+}
+
+fn ota_ack_matches(ack: OtaAck, frame: &CanFrame) -> bool {
+    match ack {
+        OtaAck::None => true,
+        OtaAck::XcpConnect { response } => {
+            ota_response_id_matches(response, frame.id)
+                && frame.data.len() >= 8
+                && frame.data[0] == 0xFF
+                && frame.data[1] == 0x10
+                && frame.data[4] == 0x08
+                && frame.data[5] == 0x00
+                && frame.data[6] == 0x01
+                && frame.data[7] == 0x01
+        }
+        OtaAck::XcpAck { response } => {
+            ota_response_id_matches(response, frame.id) && frame.data.len() == 1 && frame.data[0] == 0xFF
+        }
+        OtaAck::UdsFlowControl => frame.data.first().copied() == Some(0x30),
+        OtaAck::UdsPositive { service } => frame.data.get(1).copied() == Some(service.wrapping_add(0x40)),
+    }
+}
+
+fn poll_for_ota_ack(
+    adapters: &mut [(u8, Box<dyn CanAdapter>)],
+    evt_tx: &Sender<Evt>,
+    buf: &mut Vec<CanFrame>,
+    ack: OtaAck,
+    timeout: Duration,
+) -> bool {
+    if matches!(ack, OtaAck::None) {
+        return true;
+    }
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if OTA_CANCEL.load(Ordering::Relaxed) {
+            return false;
+        }
+        for (ch, adapter) in adapters.iter_mut() {
+            buf.clear();
+            adapter.poll(buf);
+            for mut frame in buf.drain(..) {
+                frame.ch = *ch;
+                let matched = ota_ack_matches(ack, &frame);
+                let _ = evt_tx.send(Evt::Frame(frame));
+                if matched {
+                    return true;
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    false
+}
+
+fn run_ota_job(
+    adapters: &mut Vec<(u8, Box<dyn CanAdapter>)>,
+    evt_tx: &Sender<Evt>,
+    start: Instant,
+    buf: &mut Vec<CanFrame>,
+    job: OtaJob,
+) {
+    if adapters.is_empty() {
+        let _ = evt_tx.send(Evt::OtaProgress(0, job.steps.len(), "OTA failed: no device connected".into()));
+        return;
+    }
+
+    let total = job.steps.len();
+    OTA_CANCEL.store(false, Ordering::Relaxed);
+    let _ = evt_tx.send(Evt::OtaProgress(0, total, format!("{} started", job.name)));
+
+    for (idx, step) in job.steps.into_iter().enumerate() {
+        if OTA_CANCEL.load(Ordering::Relaxed) {
+            let _ = evt_tx.send(Evt::OtaProgress(idx, total, format!("{} cancelled", job.name)));
+            return;
+        }
+        let mut ok = false;
+        let timeout = Duration::from_millis(step.timeout_ms.max(job.timeout_ms).max(1));
+        let retries = step.retries.max(job.retries);
+        for attempt in 0..=retries {
+            let mut frame = step.frame.clone();
+            if OTA_CANCEL.load(Ordering::Relaxed) {
+                let _ = evt_tx.send(Evt::OtaProgress(idx, total, format!("{} cancelled", job.name)));
+                return;
+            }
+            frame.t = start.elapsed().as_secs_f64();
+            frame.tx = true;
+            match send_on(adapters, &frame) {
+                Ok(used) => {
+                    frame.ch = used;
+                    let _ = evt_tx.send(Evt::Frame(frame));
+                }
+                Err(e) => {
+                    let _ = evt_tx.send(Evt::OtaProgress(idx, total, format!("OTA send failed: {e}")));
+                    return;
+                }
+            }
+
+            if poll_for_ota_ack(adapters, evt_tx, buf, step.ack, timeout) {
+                ok = true;
+                break;
+            }
+            let _ = evt_tx.send(Evt::Log(format!(
+                "{} step {}/{} timeout, retry {}/{}",
+                job.name,
+                idx + 1,
+                total,
+                attempt + 1,
+                retries
+            )));
+        }
+
+        if !ok {
+            let _ = evt_tx.send(Evt::OtaProgress(idx, total, format!("{} failed at step {}", job.name, idx + 1)));
+            return;
+        }
+
+        let _ = evt_tx.send(Evt::OtaProgress(idx + 1, total, format!("{} {}/{}", job.name, idx + 1, total)));
+    }
+
+    let _ = evt_tx.send(Evt::OtaProgress(total, total, format!("{} complete", job.name)));
+}
+
 fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
     let start = Instant::now();
     let mut adapters: Vec<(u8, Box<dyn CanAdapter>)> = Vec::new();
@@ -1512,6 +1681,9 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                             }
                         }
                     }
+                    Cmd::OtaRun(job) => {
+                        run_ota_job(&mut adapters, &evt_tx, start, &mut buf, job);
+                    }
                     Cmd::SetPeriodic {
                         handle,
                         frame,
@@ -1585,14 +1757,13 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                                 let t0 = pb.frames[pb.idx].t;
                                 while pb.idx < pb.frames.len() && pb.frames[pb.idx].t < t0 + 0.1 {
                                     let mut e = pb.frames[pb.idx].clone();
-                                    e.t = start.elapsed().as_secs_f64();
                                     if pb.online {
                                         if let Ok(used) = send_on(&mut adapters, &e) {
                                             e.ch = used;
                                         }
                                         e.tx = true;
                                     }
-                                    let _ = evt_tx.send(Evt::Frame(e));
+                                    let _ = evt_tx.send(Evt::PlaybackFrame(e));
                                     pb.idx += 1;
                                 }
                             }
@@ -1680,14 +1851,13 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                             break;
                         }
                         let mut e = pb.frames[pb.idx].clone();
-                        e.t = start.elapsed().as_secs_f64();
                         if pb.online {
                             if let Ok(used) = send_on(&mut adapters, &e) {
                                 e.ch = used;
                             }
                             e.tx = true;
                         }
-                        let _ = evt_tx.send(Evt::Frame(e));
+                        let _ = evt_tx.send(Evt::PlaybackFrame(e));
                         pb.idx += 1;
                     }
                 } else {
@@ -1699,14 +1869,13 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                         let dt = (pb.frames[pb.idx].t - pb.base_t).max(0.0) / pb.speed;
                         if now >= pb.base + Duration::from_secs_f64(dt) {
                             let mut e = pb.frames[pb.idx].clone();
-                            e.t = start.elapsed().as_secs_f64();
                             if pb.online {
                                 if let Ok(used) = send_on(&mut adapters, &e) {
                                     e.ch = used;
                                 }
                                 e.tx = true;
                             }
-                            let _ = evt_tx.send(Evt::Frame(e));
+                            let _ = evt_tx.send(Evt::PlaybackFrame(e));
                             pb.idx += 1;
                         } else {
                             break;

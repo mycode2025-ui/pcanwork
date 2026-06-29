@@ -111,6 +111,7 @@ fn wire_dialogs(
     }
     {
         let app = app.clone();
+        let chw = channel_window.as_weak();
         channel_window.on_save_all(move || {
             let mut a = app.borrow_mut();
             if let Some(c) = a.channels.first().cloned() {
@@ -119,6 +120,10 @@ fn wire_dialogs(
             }
             let n = a.channels.len();
             a.log(format!("已保存 {n} 个通道配置"));
+            // 刷新左侧通道列表，使其反映本次编辑(设备类型/波特率等)，否则列表停留在旧值
+            if let Some(chw) = chw.upgrade() {
+                chw.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(&a)))));
+            }
         });
     }
     {

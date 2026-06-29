@@ -407,6 +407,30 @@ a.rec_blf_buf.clear();
     }
     {
         let app = app.clone();
+        ui.on_tree_remove_dbc(move |i| {
+            let mut a = app.borrow_mut();
+            let Some(&dbc_i) = a.tree_dbc_index.get(i as usize) else {
+                return;
+            };
+            let dbc_i = dbc_i as usize;
+            if dbc_i >= a.dbcs.len() {
+                return;
+            }
+            let name = a.dbcs[dbc_i].file_name.clone();
+            a.dbcs.remove(dbc_i);
+            if dbc_i < a.dbc_paths.len() {
+                a.dbc_paths.remove(dbc_i);
+            }
+            a.last_tree_sig = u64::MAX;
+            a.signal_pick_cache = u64::MAX;
+            a.tx_msgs_cache = u64::MAX;
+            a.tx_sig_cache = u64::MAX;
+            rebuild_dbc_snap(&mut a);
+            a.log(format!("已删除 DBC: {name}"));
+        });
+    }
+    {
+        let app = app.clone();
         ui.on_select_row(move |i| {
             let mut a = app.borrow_mut();
             a.selected_index = i;
@@ -578,8 +602,12 @@ a.rec_blf_buf.clear();
             if key.is_empty() {
                 return;
             }
-            if !a.tree_collapsed.insert(key.clone()) {
-                a.tree_collapsed.remove(&key);
+            if key.starts_with("dbcfile:") {
+                if !a.tree_collapsed.remove(&key) {
+                    a.tree_collapsed.insert(key);
+                }
+            } else if !a.tree_collapsed.insert(key.clone()) {
+                    a.tree_collapsed.remove(&key);
             }
         });
     }
@@ -1087,6 +1115,28 @@ refresh_sim(&app.borrow());
                 ui.set_f_data("".into());
                 ui.set_dir_filter(0);
             }
+        });
+    }
+    // 渲染器切换(auto→gpu→cpu→…)：保存到配置，重启后生效
+    {
+        let app = app.clone();
+        let uiw = ui.as_weak();
+        ui.on_cycle_renderer(move || {
+            let Some(ui) = uiw.upgrade() else { return };
+            let next = match ui.get_renderer_mode().as_str() {
+                "auto" => "gpu",
+                "gpu" => "cpu",
+                _ => "auto",
+            };
+            ui.set_renderer_mode(next.into());
+            let mut a = app.borrow_mut();
+            settings::save(&gather_settings(&a, &ui));
+            let label = match next {
+                "gpu" => "GPU(femtovg，本地显卡)",
+                "cpu" => "CPU(software，省内存)",
+                _ => "自动(远程/虚拟显示用CPU，本地用GPU)",
+            };
+            a.log(format!("渲染器已设为 {label}；重启程序后生效"));
         });
     }
     // 主题 / 布局开关：同步到所有窗口的 Theme 全局

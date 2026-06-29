@@ -1,0 +1,332 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component ChartWindow inherits Window {
+    title: I18n.en ? "PcanWork - Chart Window" : "PcanWork - 独立曲线窗口";
+    icon: @image-url("logo.svg");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 900px;
+    min-height: 560px;
+    background: Theme.bg;
+
+    in property <[ChartSeries]> series;
+    in property <string> chart-xstart-label;
+    in property <string> chart-xend-label;
+    in property <[string]> chart-xlabels;
+    in property <string> chart-cursor-readout;
+    in property <bool> chart-paused: false;
+    in property <bool> chart-cursor: false;
+    in property <int> chart-time-mode: 0;
+    in-out property <float> cursor-frac;
+    // 双游标：开启后显示第二条游标线(cursor-frac2)，并在读数里给出两游标的时间差/值差
+    in property <bool> chart-dual: false;
+    in-out property <float> cursor-frac2: 0.5;
+    property <int> drag-target: 1; // 双游标拖动时当前抓住的游标(1/2)
+    // 绘图区宽高比：由 Rust 根据上报的 plot 像素宽高算出并写回，Path viewbox 读它(纯值,无布局依赖)。
+    in-out property <float> chart-aspect: 4.0;
+    // plot 像素宽高，仅由 Rust 读取(Slint 布局不读这两个属性，故在 changed 里写不会引起布局递归)。
+    in-out property <float> plot-w: 600;
+    in-out property <float> plot-h: 110;
+    // 每条曲线行高(px)：由 Rust 算 max(最小高, 区域高/可见数)，信号少则等分填满、多则按最小高并滚动。
+    in-out property <float> row-h: 120;
+
+    in property <bool> chart-sig-logging: false;
+    in-out property <bool> chart-topmost: false;   // 窗口置顶(显示最前)
+    callback chart-topmost-toggle(bool);
+    callback chart-toggle-pause();
+    callback clear-chart();
+    callback chart-cursor-toggle();
+    callback chart-dual-toggle();
+    callback chart-cursor-move();
+    callback chart-export-csv();
+    callback chart-export-wide-csv();
+    callback chart-sig-log-toggle();
+    callback open-signal-selector();
+    callback chart-toggle-series(int);
+    callback chart-remove-series(int);
+    callback chart-zoom(float, float);
+    callback chart-fit();
+    callback chart-set-time-mode(int);
+
+    HorizontalLayout {
+        Rectangle {
+            width: 260px; background: Theme.panel;
+            Rectangle { width: 1px; height: 100%; x: parent.width - 1px; background: Theme.border; }
+            VerticalLayout {
+                // 第一行：选择信号
+                Rectangle {
+                    height: Theme.ctrl-h + 8px; background: Theme.panel2;
+                    Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                    HorizontalLayout {
+                        padding: 4px; spacing: 6px; alignment: start;
+                        TBtn { boxed: true; text: I18n.en ? "Select Signal" : "选择信号"; clicked => { root.open-signal-selector(); } }
+                        Text { text: I18n.en ? "Add from DBC message tree" : "从 DBC 消息树添加"; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; horizontal-stretch: 1; }
+                    }
+                }
+                // 第二行：曲线信号（列表标题）
+                Rectangle {
+                    height: 28px; background: Theme.header;
+                    Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Chart Signals" : "曲线信号"; x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                }
+                ListView {
+                    for ser[i] in root.series: Rectangle {
+                        height: 34px;
+                        background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra;
+                        HorizontalLayout {
+                            padding-left: 6px; padding-right: 4px; spacing: 6px;
+                            Rectangle {
+                                width: 16px; height: 16px; y: (parent.height - 16px) / 2;
+                                border-width: 1px; border-color: Theme.border; border-radius: 3px;
+                                background: ser.visible ? Theme.accent : white;
+                                Text { text: ser.visible ? "v" : ""; color: white; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                                TouchArea { clicked => { root.chart-toggle-series(i); } }
+                            }
+                            Rectangle { width: 12px; height: 12px; y: (parent.height - 12px) / 2; background: ser.clr; border-radius: 2px; }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                Text { text: ser.name; font-size: 11px; color: Theme.text; overflow: elide; }
+                                Text { text: (I18n.en ? "cur " : "当 ") + ser.cur + (I18n.en ? "  lo " : "  低 ") + ser.smin + (I18n.en ? "  hi " : "  高 ") + ser.smax + " " + ser.unit; font-size: 10px; color: Theme.text-dim; font-family: Theme.mono; overflow: elide; }
+                            }
+                            Rectangle {
+                                width: 18px;
+                                Text { text: "X"; color: Theme.bad; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                                TouchArea { clicked => { root.chart-remove-series(i); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        VerticalLayout {
+            Rectangle {
+                height: Theme.ctrl-h + 8px; background: Theme.panel2;
+                Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                HorizontalLayout {
+                    padding: 4px; spacing: 3px; alignment: start;
+                    TBtn { text: root.chart-paused ? (I18n.en ? "Resume" : "继续") : (I18n.en ? "Pause" : "暂停"); active: root.chart-paused; clicked => { root.chart-toggle-pause(); } }
+                    TBtn { text: I18n.en ? "Clear" : "清空"; clicked => { root.clear-chart(); } }
+                    TBtn { text: I18n.en ? "Cursor" : "游标"; active: root.chart-cursor; clicked => { root.chart-cursor-toggle(); } }
+                    TBtn { text: I18n.en ? "Dual Cursor" : "双游标"; active: root.chart-dual; clicked => { root.chart-dual-toggle(); } }
+                    Rectangle { width: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Time axis:" : "Time axis:"; vertical-alignment: center; font-size: 11px; color: Theme.text-dim; }
+                    TBtn { text: "Rel"; active: root.chart-time-mode == 0; clicked => { root.chart-set-time-mode(0); } }
+                    TBtn { text: "Actual"; active: root.chart-time-mode == 1; clicked => { root.chart-set-time-mode(1); } }
+                    TBtn { text: I18n.en ? "Zoom+" : "放大"; clicked => { root.chart-zoom(-1, 0.5); } }
+                    TBtn { text: I18n.en ? "Zoom-" : "缩小"; clicked => { root.chart-zoom(1, 0.5); } }
+                    TBtn { text: I18n.en ? "Fit" : "适应"; clicked => { root.chart-fit(); } }
+                    Rectangle { width: 1px; background: Theme.border; }
+                    TBtn { text: I18n.en ? "Export CSV" : "导出CSV"; clicked => { root.chart-export-csv(); } }
+                    TBtn { text: I18n.en ? "Export Wide" : "导出宽表"; clicked => { root.chart-export-wide-csv(); } }
+                    TBtn { text: root.chart-sig-logging ? (I18n.en ? "Stop log" : "停止记录") : (I18n.en ? "Sig log" : "信号记录"); active: root.chart-sig-logging; clicked => { root.chart-sig-log-toggle(); } }
+                    TBtn { boxed: true; text: root.chart-topmost ? (I18n.en ? "Top: ON" : "置顶: 开") : (I18n.en ? "Top" : "置顶"); active: root.chart-topmost; clicked => { root.chart-topmost = !root.chart-topmost; root.chart-topmost-toggle(root.chart-topmost); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: I18n.en ? "Independent Y axis · each signal by its own Min/Max" : "独立 Y 轴 · 每信号按自身 Min/Max"; vertical-alignment: center; font-size: 11px; color: Theme.text-dim; }
+                }
+            }
+
+            // 各信号垂直方向等分填满（VerticalLayout 永远铺满不溢出，无需内部滚动→不抢拖动手势）
+            VerticalLayout {
+                spacing: 0px;
+                // 上报曲线区像素宽高给 Rust（容器尺寸自上而下给定、稳定，读它不触发布局递归）。
+                changed width => { root.plot-w = self.width / 1px; }
+                changed height => { root.plot-h = self.height / 1px; }
+                init => { root.plot-w = self.width / 1px; root.plot-h = self.height / 1px; }
+                // 空曲线提示: 必须在 for 外(空时循环不渲染, 原提示写在循环内永远不显示)
+                if root.series.length == 0: Rectangle {
+                    vertical-stretch: 1;
+                    Text {
+                        width: 100%; height: 100%;
+                        text: I18n.en ? "Add curves from the signal panel or by right-clicking an expanded signal" : "从信号解析或展开信号右键添加曲线";
+                        color: Theme.text-dim; font-size: 13px;
+                        horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap;
+                    }
+                }
+                for ser[i] in root.series: Rectangle {
+                    vertical-stretch: ser.visible ? 1 : 0;
+                    max-height: ser.visible ? 100000px : 0px;
+                    clip: true;
+                    background: Theme.panel;
+                    HorizontalLayout {
+                        plot := Rectangle {
+                            clip: true;
+                            border-width: ser.highlight ? 2px : 1px;
+                            border-color: ser.highlight ? ser.clr : Theme.border;
+                            background: ser.highlight ? Theme.accent-soft : Theme.panel;
+                            for gy in [0.5]: Rectangle {
+                                width: 100%; height: 1px; y: parent.height * gy; background: Theme.border;
+                            }
+                            Path {
+                                width: 100%; height: 100%;
+                                viewbox-width: 100 * root.chart-aspect;
+                                viewbox-height: 100;
+                                stroke: ser.clr;
+                                stroke-width: ser.highlight ? 3px : 1.5px;
+                                commands: ser.commands;
+                            }
+                            if root.chart-cursor: Rectangle {
+                                width: 1px; height: 100%; x: parent.width * root.cursor-frac; background: Theme.bad;
+                            }
+                            if root.chart-cursor && ser.cursor-valid: Rectangle {
+                                width: 7px; height: 7px;
+                                x: parent.width * root.cursor-frac - 3px;
+                                y: parent.height * ser.cursor-y / 100 - 3px;
+                                border-radius: 4px;
+                                background: ser.clr;
+                                border-width: 1px;
+                                border-color: white;
+                            }
+                            if root.chart-cursor && ser.cursor-valid: Rectangle {
+                                width: 112px; height: 22px;
+                                x: root.cursor-frac > 0.72 ? parent.width * root.cursor-frac - 118px : parent.width * root.cursor-frac + 8px;
+                                y: ser.cursor-y > 78 ? parent.height * ser.cursor-y / 100 - 26px : parent.height * ser.cursor-y / 100 + 6px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: ser.clr;
+                                border-radius: 3px;
+                                Text {
+                                    text: ser.cursor-value;
+                                    x: 4px;
+                                    width: parent.width - 8px;
+                                    color: ser.clr;
+                                    font-size: 11px;
+                                    font-family: Theme.mono;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                            // 第二游标（双游标模式，蓝色；点击放置）
+                            if root.chart-cursor && root.chart-dual: Rectangle {
+                                width: 1px; height: 100%; x: parent.width * root.cursor-frac2; background: Theme.accent;
+                            }
+                            if root.chart-cursor && root.chart-dual && ser.cursor2-valid: Rectangle {
+                                width: 7px; height: 7px;
+                                x: parent.width * root.cursor-frac2 - 3px;
+                                y: parent.height * ser.cursor2-y / 100 - 3px;
+                                border-radius: 4px;
+                                background: Theme.accent;
+                                border-width: 1px;
+                                border-color: white;
+                            }
+                            // 第二游标的值框（蓝色边，与游标1一样显示实时值）
+                            if root.chart-cursor && root.chart-dual && ser.cursor2-valid: Rectangle {
+                                width: 112px; height: 22px;
+                                x: root.cursor-frac2 > 0.72 ? parent.width * root.cursor-frac2 - 118px : parent.width * root.cursor-frac2 + 8px;
+                                y: ser.cursor2-y > 78 ? parent.height * ser.cursor2-y / 100 - 26px : parent.height * ser.cursor2-y / 100 + 6px;
+                                background: Theme.panel;
+                                border-width: 1px;
+                                border-color: Theme.accent;
+                                border-radius: 3px;
+                                Text {
+                                    text: ser.cursor2-value;
+                                    x: 4px;
+                                    width: parent.width - 8px;
+                                    color: ser.clr;
+                                    font-size: 11px;
+                                    font-family: Theme.mono;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                            cta := TouchArea {
+                                changed mouse-x => {
+                                    // 单游标：悬停跟随
+                                    if root.chart-cursor && !root.chart-dual {
+                                        root.cursor-frac = self.mouse-x / self.width;
+                                        root.chart-cursor-move();
+                                    }
+                                }
+                                pointer-event(e) => {
+                                    // 双游标：按下时抓住离鼠标最近的那条游标
+                                    if root.chart-cursor && root.chart-dual && e.kind == PointerEventKind.down {
+                                        root.drag-target =
+                                            Math.abs(self.mouse-x / self.width - root.cursor-frac)
+                                            <= Math.abs(self.mouse-x / self.width - root.cursor-frac2)
+                                            ? 1 : 2;
+                                        if root.drag-target == 2 {
+                                            root.cursor-frac2 = self.mouse-x / self.width;
+                                        } else {
+                                            root.cursor-frac = self.mouse-x / self.width;
+                                        }
+                                        root.chart-cursor-move();
+                                    }
+                                }
+                                moved => {
+                                    // 双游标：拖动当前抓住的游标
+                                    if root.chart-cursor && root.chart-dual && self.pressed {
+                                        if root.drag-target == 2 {
+                                            root.cursor-frac2 = self.mouse-x / self.width;
+                                        } else {
+                                            root.cursor-frac = self.mouse-x / self.width;
+                                        }
+                                        root.chart-cursor-move();
+                                    }
+                                }
+                                scroll-event(e) => {
+                                    root.chart-zoom(e.delta-y / 1px, self.mouse-x / self.width);
+                                    accept
+                                }
+                            }
+                            // 左上角信号名
+                            Rectangle {
+                                x: 4px; y: 3px;
+                                width: nametxt.preferred-width + 8px; height: 16px;
+                                background: Theme.panel.with-alpha(0.82); // 跟随主题(原硬编码白在深色下突兀)
+                                border-radius: 3px;
+                                nametxt := Text {
+                                    text: ser.name; x: 4px;
+                                    color: ser.clr; font-size: Theme.fs-sm; font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            width: 66px;
+                            background: Theme.zebra;
+                            Rectangle { x: 0px; width: 1px; height: 100%; background: Theme.border; }
+                            Rectangle { x: 5px; width: 2px; height: parent.height - 16px; y: 8px; background: ser.clr; }
+                            Text { text: ser.axis-max; x: 12px; y: 6px; width: 50px; font-size: 10px; font-family: Theme.mono; color: ser.clr; overflow: elide; }
+                            Text { text: ser.axis-mid; x: 12px; y: parent.height / 2 - 6px; width: 50px; font-size: 10px; font-family: Theme.mono; color: Theme.text-dim; overflow: elide; }
+                            Text { text: ser.axis-min; x: 12px; y: parent.height - 18px; width: 50px; font-size: 10px; font-family: Theme.mono; color: ser.clr; overflow: elide; }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 22px; background: xta.has-hover ? Theme.accent-soft : Theme.panel;
+                Rectangle { width: 100%; height: 1px; y: 0; background: Theme.border; }
+                xta := TouchArea {
+                    mouse-cursor: ew-resize;
+                    scroll-event(e) => {
+                        root.chart-zoom(e.delta-y / 1px, self.mouse-x / self.width);
+                        accept
+                    }
+                }
+                // 5 个均匀时间刻度（绘图区从 0 到 width-86，最右 86px 是 Y 轴列）
+                for lbl[idx] in root.chart-xlabels: Text {
+                    text: lbl;
+                    x: Math.max(0px, Math.min((parent.width - 86px) - 76px,
+                        (parent.width - 86px) * (idx / 4.0) - 38px));
+                    width: 76px; height: 100%;
+                    vertical-alignment: center; horizontal-alignment: center;
+                    font-size: 10px; font-family: Theme.mono; color: Theme.text-dim;
+                }
+                // 刻度竖线
+                for t[idx] in root.chart-xlabels: Rectangle {
+                    width: 1px; height: 4px; y: 0;
+                    x: (parent.width - 86px) * (idx / 4.0);
+                    background: Theme.border;
+                }
+            }
+            Rectangle {
+                height: 22px; background: Theme.panel2;
+                Text { text: root.chart-cursor ? root.chart-cursor-readout : "";
+                       x: 6px; vertical-alignment: center; font-size: 11px; font-family: Theme.mono; color: Theme.text; }
+            }
+        }
+    }
+}

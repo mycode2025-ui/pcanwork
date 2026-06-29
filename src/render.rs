@@ -246,7 +246,28 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
 
     a.signal_pick_items = items;
     signal_window.set_signal_pick_filter(a.signal_pick_filter.clone().into());
-    signal_window.set_signal_pick_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
+
+    // 仅在内容变化时重建 ListView 模型: 全局渲染每 100ms 调本函数, 若每次都 set 新 VecModel,
+    // ListView 的委托会被反复销毁重建 → 点击选中/悬停高亮瞬间被重置, 视觉上"闪烁"。
+    // 用所有行字段算一个签名, 与上次相同则跳过 set。
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    rows.len().hash(&mut hasher);
+    for r in &rows {
+        r.level.hash(&mut hasher);
+        r.name.as_str().hash(&mut hasher);
+        r.desc.as_str().hash(&mut hasher);
+        r.kind.as_str().hash(&mut hasher);
+        r.expandable.hash(&mut hasher);
+        r.expanded.hash(&mut hasher);
+        r.selectable.hash(&mut hasher);
+        r.selected.hash(&mut hasher);
+    }
+    let sig = hasher.finish();
+    if sig != a.signal_pick_cache {
+        a.signal_pick_cache = sig;
+        signal_window.set_signal_pick_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
+    }
 }
 
 /// Rebuild the per-channel and per-ID statistics tables.

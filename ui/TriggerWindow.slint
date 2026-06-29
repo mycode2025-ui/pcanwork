@@ -1,0 +1,82 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component TriggerWindow inherits Window {
+    title: I18n.en ? "Trigger" : "触发器";
+    icon: @image-url("logo.svg");
+    preferred-width: 680px;
+    preferred-height: 300px;
+    min-width: 520px;
+    background: Theme.bg;
+
+    in property <bool> armed: false;
+    in-out property <int> trig-cond: 0;   // 0=ID等于 1=数据字节等于 2=错误帧
+    in-out property <string> trig-id: "100";
+    in-out property <string> trig-off: "0";
+    in-out property <string> trig-val: "00";
+    in-out property <int> trig-action: 0; // 0=报警 1=开始记录 2=停止记录 3=发送报文
+    in-out property <string> send-id: "200";
+    in-out property <string> send-data: "00 11 22 33";
+    in-out property <bool> send-ext: false;
+    in-out property <bool> send-fd: false;
+    callback trig-apply();
+    callback trig-disarm();
+
+    VerticalLayout {
+        padding: 16px; spacing: 12px;
+        Text { text: I18n.en ? "Trigger: auto-run an action when the condition matches (Alarm / Start rec / Stop rec / Send frame)" : "触发器：满足条件时自动执行动作（报警 / 开始记录 / 停止记录 / 发送报文）"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+        GridLayout {
+            spacing: 8px;
+            Row {
+                Text { text: I18n.en ? "Condition:" : "条件类型:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                ComboBox { width: 200px; height: Theme.ctrl-h; model: ["ID 等于", "数据字节等于", "错误帧"]; current-index <=> root.trig-cond; }
+                Rectangle { }
+            }
+            Row {
+                Text { text: "ID:0x"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                LineEdit { text: root.trig-id; width: 120px; height: Theme.ctrl-h; edited(v) => { root.trig-id = v; } }
+                Text { text: I18n.en ? "Byte off:" : "字节偏移:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                LineEdit { text: root.trig-off; width: 80px; height: Theme.ctrl-h; edited(v) => { root.trig-off = v; } }
+                Text { text: I18n.en ? "Byte val:0x" : "字节值:0x"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                LineEdit { text: root.trig-val; width: 80px; height: Theme.ctrl-h; edited(v) => { root.trig-val = v; } }
+            }
+            Row {
+                Text { text: I18n.en ? "Action:" : "动作:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                ComboBox { width: 200px; height: Theme.ctrl-h; model: I18n.en ? ["Alarm(log)", "Start rec(CSV)", "Stop rec", "Send frame"] : ["报警(日志)", "开始记录(CSV)", "停止记录", "发送报文"]; current-index <=> root.trig-action; }
+                Rectangle { }
+            }
+            Row {
+                Text { text: I18n.en ? "Send ID:0x" : "发送ID:0x"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                LineEdit { text: root.send-id; width: 120px; height: Theme.ctrl-h; enabled: root.trig-action == 3; edited(v) => { root.send-id = v; } }
+                Text { text: I18n.en ? "Send data:" : "发送数据:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                LineEdit { text: root.send-data; width: 200px; height: Theme.ctrl-h; enabled: root.trig-action == 3; placeholder-text: "00 11 22"; edited(v) => { root.send-data = v; } }
+            }
+            Row {
+                Text { text: I18n.en ? "Send opts:" : "发送选项:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                CheckBox { text: I18n.en ? "Extended" : "扩展帧"; checked <=> root.send-ext; enabled: root.trig-action == 3; }
+                CheckBox { text: "CAN FD"; checked <=> root.send-fd; enabled: root.trig-action == 3; }
+                Rectangle { }
+            }
+        }
+        Text {
+            text: root.armed ? (I18n.en ? "● Armed: action fires when condition matches (300ms throttle)" : "● 已布防：条件满足时将执行动作（命中节流 300ms）") : (I18n.en ? "○ Disarmed" : "○ 未布防");
+            font-size: Theme.fs; color: root.armed ? Theme.ok : Theme.text-dim;
+        }
+        Rectangle { vertical-stretch: 1;
+            Text {
+                text: I18n.en ? "Byte-equals: fires when the byte at the given offset equals the value. Error frame: fires on an error frame.\nStart-record writes to trigger_record.csv next to the exe. No hardware needed — verify with simulated data." : "数据字节等于：第「字节偏移」个字节等于「字节值」时触发。错误帧：收到错误帧时触发。\n开始记录写到 exe 目录 trigger_record.csv。无需硬件，模拟数据即可验证。";
+                x: 2px; y: 2px; width: parent.width - 4px; color: Theme.text-dim; font-size: 12px; wrap: word-wrap;
+            }
+        }
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: I18n.en ? "Arm / Apply" : "布防 / 应用"; clicked => { root.trig-apply(); } }
+                Button { text: I18n.en ? "Disarm" : "撤防"; clicked => { root.trig-disarm(); } }
+            }
+        }
+    }
+}

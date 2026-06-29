@@ -1,0 +1,78 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component ScriptRunnerWindow inherits Window {
+    title: I18n.en ? "Python Script Runner" : "Python 脚本运行器";
+    icon: @image-url("logo.svg");
+    preferred-width: 760px;
+    preferred-height: 560px;
+    background: Theme.bg;
+
+    in-out property <string> interp-path: "";
+    in property <[string]> python-list: [];
+    in-out property <string> selected-python: "";
+    in-out property <string> script-path: "";
+    in property <string> output: "";
+    in property <bool> running: false;
+    in property <int> result: 0; // -1 失败, 0 空闲/运行中, 1 通过
+    in property <string> status-text: "";
+
+    callback detect-pythons();
+    callback python-selected(string);
+    callback browse-interp();
+    callback browse-script();
+    callback run-script();
+    callback run-suite();
+    callback stop-run();
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        // 解释器（在此切换 Python 版本）
+        Rectangle { background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 4px;
+            VerticalLayout { padding: 8px; spacing: 6px;
+                Text { text: I18n.en ? "Python interpreter (switch version here)" : "Python 解释器（在此切换版本）"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                HorizontalLayout { spacing: 6px;
+                    LineEdit { horizontal-stretch: 1; height: Theme.ctrl-h; placeholder-text: "python.exe"; text <=> root.interp-path; }
+                    Button { text: I18n.en ? "Browse" : "浏览"; clicked => { root.browse-interp(); } }
+                }
+                HorizontalLayout { spacing: 6px;
+                    ComboBox { horizontal-stretch: 1; model: root.python-list; current-value <=> root.selected-python;
+                        selected(v) => { root.python-selected(v); } }
+                    Button { text: I18n.en ? "Detect installed" : "检测已装版本"; clicked => { root.detect-pythons(); } }
+                }
+            }
+        }
+
+        // 测试脚本
+        Rectangle { background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 4px;
+            VerticalLayout { padding: 8px; spacing: 6px;
+                Text { text: I18n.en ? "Test script (.py)" : "测试脚本 (.py)"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                HorizontalLayout { spacing: 6px;
+                    LineEdit { horizontal-stretch: 1; height: Theme.ctrl-h; placeholder-text: I18n.en ? "your_test.py" : "测试脚本路径"; text <=> root.script-path; }
+                    Button { text: I18n.en ? "Browse" : "浏览"; clicked => { root.browse-script(); } }
+                }
+            }
+        }
+
+        // 运行 / 停止 + 状态
+        HorizontalLayout { spacing: 8px;
+            Button { text: I18n.en ? "Run" : "运行"; enabled: !root.running; clicked => { root.run-script(); } }
+            Button { text: I18n.en ? "Run folder" : "运行套件"; enabled: !root.running; clicked => { root.run-suite(); } }
+            Button { text: I18n.en ? "Stop" : "停止"; enabled: root.running; clicked => { root.stop-run(); } }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: root.status-text; vertical-alignment: center; font-weight: 700; font-size: Theme.fs;
+                color: root.result == 1 ? Theme.ok : (root.result == -1 ? Theme.bad : Theme.text-dim); }
+        }
+
+        // 输出（脚本 stdout/stderr）
+        Rectangle { vertical-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 4px;
+            ScrollView {
+                Text { x: 8px; y: 8px; width: root.width - 44px; text: root.output; wrap: word-wrap;
+                    font-family: Theme.mono; font-size: Theme.fs-sm; color: Theme.text; }
+            }
+        }
+    }
+}

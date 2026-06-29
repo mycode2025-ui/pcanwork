@@ -1,6 +1,6 @@
 [package]
 name = "pcanwork"
-version = "0.1.3"
+version = "0.1.11"
 edition = "2024"
 
 # 工作区: pcanwork(本包) + serial(串口工具) + modbus(Modbus 工具)。
@@ -8,15 +8,21 @@ edition = "2024"
 [workspace]
 members = ["serial", "modbus"]
 
+# devmcp: 仅本地验证用 —— 启用 Slint 内置 MCP server(SLINT_MCP_PORT 运行时开启)。
+# 绝不进发布包(会内嵌可驱动 UI 的本机服务 + 切到软件渲染)。用法: cargo run --features devmcp
+[features]
+devmcp = ["slint/mcp"]
+
 [dependencies]
 can-dbc = "9.1.0"
 chrono = "0.4"
 flate2 = "1.1.9"
 libloading = "0.9.0"
 rfd = "0.17.2"
+raw-window-handle = "0.6"  # 取窗口 HWND 做置顶(SetWindowPos HWND_TOPMOST)
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-slint = { version = "1.17.0", features = ["raw-window-handle-06"] }
+slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "renderer-femtovg", "accessibility", "raw-window-handle-06"] }
 
 [build-dependencies]
 embed-manifest = "1.5.0"

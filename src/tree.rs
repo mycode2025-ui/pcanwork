@@ -58,11 +58,13 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
 
     let mut t: Vec<TreeRow> = Vec::new();
     let mut keys: Vec<String> = Vec::new();
+    let mut dbc_indices: Vec<i32> = Vec::new();
     // Append one tree row plus its collapse key (empty for non-expandable rows).
     #[allow(clippy::too_many_arguments)]
     fn push(
         t: &mut Vec<TreeRow>,
         keys: &mut Vec<String>,
+        dbc_indices: &mut Vec<i32>,
         level: i32,
         label: &str,
         kind: &str,
@@ -84,11 +86,13 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         } else {
             String::new()
         });
+        dbc_indices.push(-1);
     }
     let project_open = !a.tree_collapsed.contains("project");
     push(
         &mut t,
         &mut keys,
+        &mut dbc_indices,
         0,
         if en { "Project: CAN_Test_Project" } else { "工程: CAN_Test_Project" },
         "project",
@@ -102,6 +106,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
+        &mut dbc_indices,
             1,
             if en { "Hardware" } else { "硬件设备" },
             "device",
@@ -125,6 +130,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
             push(
                 &mut t,
                 &mut keys,
+        &mut dbc_indices,
                 2,
                 &dev_label,
                 "device",
@@ -137,6 +143,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                 push(
                     &mut t,
                     &mut keys,
+        &mut dbc_indices,
                     3,
                     &format!(
                         "CAN{} - {} - {} - {} - {}",
@@ -169,6 +176,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
+        &mut dbc_indices,
             1,
             if en { "Database" } else { "数据库" },
             "dbc",
@@ -182,6 +190,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                 push(
                     &mut t,
                     &mut keys,
+        &mut dbc_indices,
                     2,
                     if en { "(none loaded)" } else { "(未加载)" },
                     "dbc",
@@ -191,33 +200,40 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                     false,
                 );
             } else {
-                for d in &a.dbcs {
+                for (di, d) in a.dbcs.iter().enumerate() {
+                    let dbc_key = format!("dbcfile:{di}:{}", d.file_name);
+                    let dbc_file_open = a.tree_collapsed.contains(&dbc_key);
                     push(
                         &mut t,
                         &mut keys,
+        &mut dbc_indices,
                         2,
                         &d.file_name,
                         "dbc",
                         true,
-                        "",
-                        false,
-                        false,
+                        &dbc_key,
+                        true,
+                        dbc_file_open,
                     );
-                    let mut msgs: Vec<(u32, String)> =
-                        d.messages().map(|m| (m.id, m.name.clone())).collect();
-                    msgs.sort_by_key(|(id, _)| *id);
-                    for (id, name) in msgs.iter().take(30) {
-                        push(
-                            &mut t,
-                            &mut keys,
-                            3,
-                            &format!("0x{id:X} {name}"),
-                            "msg",
-                            false,
-                            "",
-                            false,
-                            false,
-                        );
+                    *dbc_indices.last_mut().unwrap() = di as i32;
+                    if dbc_file_open {
+                        let mut msgs: Vec<(u32, String)> =
+                            d.messages().map(|m| (m.id, m.name.clone())).collect();
+                        msgs.sort_by_key(|(id, _)| *id);
+                        for (id, name) in msgs.iter().take(30) {
+                            push(
+                                &mut t,
+                                &mut keys,
+        &mut dbc_indices,
+                                3,
+                                &format!("0x{id:X} {name}"),
+                                "msg",
+                                false,
+                                "",
+                                false,
+                                false,
+                            );
+                        }
                     }
                 }
             }
@@ -227,6 +243,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
+        &mut dbc_indices,
             1,
             if en { "Send List" } else { "发送列表" },
             "tx",
@@ -240,6 +257,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                 push(
                     &mut t,
                     &mut keys,
+        &mut dbc_indices,
                     2,
                     &format!("{} {}", tx.name, id_str(tx.id, tx.ext)),
                     "tx",
@@ -255,6 +273,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
+        &mut dbc_indices,
             1,
             if en { "Chart" } else { "曲线" },
             "curve",
@@ -265,11 +284,12 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         );
         if curve_open {
             for s in &a.series {
-                push(&mut t, &mut keys, 2, &s.name, "curve", false, "", false, false);
+                push(&mut t, &mut keys, &mut dbc_indices, 2, &s.name, "curve", false, "", false, false);
             }
         }
     }
     a.tree_row_keys = keys;
+    a.tree_dbc_index = dbc_indices;
     // Mark chart-signal leaf rows (level == 2, kind == "curve") for double-click open/highlight.
     a.tree_curve_sig = t
         .iter()

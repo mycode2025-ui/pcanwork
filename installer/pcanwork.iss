@@ -4,7 +4,7 @@
 ; 编译: "C:\Users\XCHARGE-2026Q1-LT08\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\pcanwork.iss
 
 #define Root "D:\_Xcharge\Pcanwork"
-#define AppVer "0.1.3"
+#define AppVer "0.1.11"
 
 [Setup]
 AppName=PcanWork

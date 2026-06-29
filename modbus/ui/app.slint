@@ -301,11 +301,17 @@ component DataGrid inherits Rectangle {
                     padding-left: 10px;
                     padding-right: 10px;
                     spacing: 10px;
-                    LineEdit {
+                    ne := LineEdit {
                         width: 132px;
                         text: name;
                         placeholder-text: "—";
+                        // 失焦/回车时才提交(打字时不碰模型, 否则后端重渲染会替换整列名字→输入框失焦)
                         accepted => { root.name-edit(i < root.rows.length ? root.rows[i].address : i, self.text); }
+                        changed has-focus => {
+                            if (!ne.has-focus) {
+                                root.name-edit(i < root.rows.length ? root.rows[i].address : i, self.text);
+                            }
+                        }
                     }
                     Text {
                         width: 70px;
@@ -663,10 +669,145 @@ component Tab inherits Rectangle {
 }
 
 // ---------------------------------------------------------------------------
+// 独立 Chart 子窗口(主站)—— 把曲线 + 显示相关功能(Derived/Scaling/Colors/Value
+// Names/Export)从主界面拆出来,数据由 Rust 侧定时镜像主窗属性喂入。
+// ---------------------------------------------------------------------------
+export component MasterChartWindow inherits Window {
+    title: "Modbus — Chart";
+    icon: @image-url("logo.svg");
+    preferred-width: 920px;
+    preferred-height: 540px;
+    min-width: 720px;
+    min-height: 420px;
+    background: Palette.background;
+
+    in property <[ChartSeries]> series;
+    in property <[MiniChart]> charts;
+    in property <bool> chart-has: false;
+    in property <bool> chart-has-right: false;
+    in property <string> axis-lmin;
+    in property <string> axis-lmax;
+    in property <string> axis-rmin;
+    in property <string> axis-rmax;
+    in property <string> ident;       // 识别信息: Client · 连接目标 · Slave ID
+    in-out property <bool> overlay: true;
+
+    callback axis-toggle(int, int);
+    callback export-chart();
+    callback open-derived();
+    callback open-scaling();
+    callback open-colors();
+    callback open-value-names();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        // ---- 识别信息条 (区分这是哪个会话的曲线) ----
+        Rectangle {
+            height: 28px;
+            border-radius: 6px;
+            background: Theme.accent.with-alpha(0.14);
+            HorizontalLayout {
+                padding-left: 10px; padding-right: 10px; spacing: 8px;
+                Rectangle {
+                    width: 46px; height: 18px; border-radius: 4px; background: Theme.accent;
+                    y: (parent.height - self.height) / 2;
+                    Text { text: "CLIENT"; color: #ffffff; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Text { text: root.ident; vertical-alignment: center; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
+            }
+        }
+        ScrollView {
+            height: 40px;
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: root.overlay ? "● Overlay" : "Overlay"; clicked => { root.overlay = true; } }
+                Button { text: !root.overlay ? "● Grid" : "Grid"; clicked => { root.overlay = false; } }
+                Rectangle { width: 16px; }
+                Button { text: "Derived…"; clicked => { root.open-derived(); } }
+                Button { text: "Scaling…"; clicked => { root.open-scaling(); } }
+                Button { text: "Colors…"; clicked => { root.open-colors(); } }
+                Button { text: "Value Names…"; clicked => { root.open-value-names(); } }
+                Button { text: "Export Chart"; clicked => { root.export-chart(); } }
+            }
+        }
+        if root.overlay: OverlayChart {
+            vertical-stretch: 1;
+            series: root.series;
+            axis-lmin: root.axis-lmin;
+            axis-lmax: root.axis-lmax;
+            axis-rmin: root.axis-rmin;
+            axis-rmax: root.axis-rmax;
+            has-right: root.chart-has-right;
+            axis-toggle(addr, ax) => { root.axis-toggle(addr, ax); }
+        }
+        if !root.overlay: ChartGrid {
+            vertical-stretch: 1;
+            charts: root.charts;
+            has-data: root.chart-has;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 独立 Chart 子窗口(从站)—— 从站只有 grid 图,按钮 = Scaling/Colors/Value Names。
+// ---------------------------------------------------------------------------
+export component SlaveChartWindow inherits Window {
+    title: "Modbus — Chart (Server)";
+    icon: @image-url("logo.svg");
+    preferred-width: 920px;
+    preferred-height: 540px;
+    min-width: 720px;
+    min-height: 420px;
+    background: Palette.background;
+
+    in property <[MiniChart]> charts;
+    in property <bool> chart-has: false;
+    in property <string> ident;       // 识别信息: Server · bind 地址 · Unit ID
+
+    callback open-scaling();
+    callback open-colors();
+    callback open-value-names();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        Rectangle {
+            height: 28px;
+            border-radius: 6px;
+            background: Theme.ok.with-alpha(0.16);
+            HorizontalLayout {
+                padding-left: 10px; padding-right: 10px; spacing: 8px;
+                Rectangle {
+                    width: 50px; height: 18px; border-radius: 4px; background: Theme.ok;
+                    y: (parent.height - self.height) / 2;
+                    Text { text: "SERVER"; color: #ffffff; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                Text { text: root.ident; vertical-alignment: center; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
+            }
+        }
+        ScrollView {
+            height: 40px;
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: "Scaling…"; clicked => { root.open-scaling(); } }
+                Button { text: "Colors…"; clicked => { root.open-colors(); } }
+                Button { text: "Value Names…"; clicked => { root.open-value-names(); } }
+            }
+        }
+        ChartGrid {
+            vertical-stretch: 1;
+            charts: root.charts;
+            has-data: root.chart-has;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main window
 // ---------------------------------------------------------------------------
 export component AppWindow inherits Window {
-    title: "Modbus Tools — Slint";
+    title: "Modbus Tools";
     icon: @image-url("logo.svg");
     preferred-width: 1200px;
     preferred-height: 800px;
@@ -913,6 +1054,8 @@ export component AppWindow inherits Window {
     callback master-colors();
     callback master-cell-format();
     callback master-cell-format-clear();
+    callback slave-cell-format();
+    callback slave-cell-format-clear();
     callback master-derived();
     callback master-write-once();
     callback master-auto-write();
@@ -960,6 +1103,8 @@ export component AppWindow inherits Window {
     callback slave-delete(int);
     callback slave-chart(int);
     callback slave-autoinc(int);
+    callback open-master-chart();  // 打开主站独立 Chart 子窗
+    callback open-slave-chart();   // 打开从站独立 Chart 子窗
 
     // ---- Keyboard shortcuts ----
     callback key-new-window();
@@ -999,13 +1144,21 @@ export component AppWindow inherits Window {
         Rectangle {
             height: 50px;
             background: Theme.accent;
-            // Title group, anchored left and vertically centred.
-            HorizontalLayout {
+            // Title group, anchored left and vertically centred (绝对定位保证 logo 与文字同轴居中)。
+            Image {
+                source: @image-url("logo.svg");
                 x: 18px;
-                height: 100%;
-                spacing: 8px;
-                Image { source: @image-url("logo.svg"); width: 30px; height: 30px; vertical-alignment: center; }
-                Text { text: "Modbus Tools"; color: Theme.accent-fg; font-size: 21px; font-weight: 800; vertical-alignment: center; }
+                width: 30px;
+                height: 30px;
+                y: (parent.height - self.height) / 2;
+            }
+            Text {
+                text: "Modbus Tools";
+                x: 56px;
+                y: (parent.height - self.height) / 2;
+                color: Theme.accent-fg;
+                font-size: 21px;
+                font-weight: 800;
             }
             // Dark/light toggle, left of the mode switch.
             Rectangle {
@@ -1067,9 +1220,9 @@ export component AppWindow inherits Window {
                         spacing: 6px;
 
                         Text { text: "Connection"; font-weight: 800; font-size: 15px; }
-                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU"]; current-index <=> root.m-transport; } }
-                        if root.m-transport == 0: Field { label: "Host:"; LineEdit { text <=> root.m-host; } }
-                        if root.m-transport == 0: Field { label: "Port:"; SpinBox { value <=> root.m-port; minimum: 1; maximum: 65535; } }
+                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU", "Modbus UDP", "Modbus RTU over TCP", "Modbus RTU over UDP"]; current-index <=> root.m-transport; } }
+                        if root.m-transport != 1: Field { label: "Host:"; LineEdit { text <=> root.m-host; } }
+                        if root.m-transport != 1: Field { label: "Port:"; SpinBox { value <=> root.m-port; minimum: 1; maximum: 65535; } }
                         if root.m-transport == 0: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.m-tls; } Rectangle { horizontal-stretch: 1; } } }
                         if root.m-transport == 0 && root.m-tls: Field { label: "CA file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-ca; placeholder-text: "server/CA PEM (blank = system roots)"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-ca(); } } } }
                         if root.m-transport == 0 && root.m-tls: Field { label: "Domain:"; LineEdit { text <=> root.m-tls-domain; placeholder-text: "SNI (blank = host)"; } }
@@ -1194,17 +1347,12 @@ export component AppWindow inherits Window {
                         spacing: 8px;
                         Button { text: "Save Workspace"; clicked => { root.save-workspace(); } }
                         Button { text: "Open Workspace"; clicked => { root.open-workspace(); } }
-                        Button { text: "Import CSV"; clicked => { root.import-csv(); } }
-                        Button { text: "Export CSV"; clicked => { root.export-csv(); } }
+                        Button { text: "Import"; clicked => { root.import-csv(); } }
+                        Button { text: "Export"; clicked => { root.export-csv(); } }
                         Rectangle { width: 16px; }
                         Button { text: "Log…"; clicked => { root.log-open = true; } }
-                        Button { text: "Derived…"; clicked => { root.dv-open = true; } }
-                        Button { text: "Scaling…"; clicked => { root.scl-open = true; } }
-                        Button { text: "Colors…"; clicked => { root.col-open = true; } }
-                        Button { text: "Value Names…"; clicked => { root.vn-open = true; } }
                         Button { text: "View…"; clicked => { root.vw-open = true; } }
                         Button { text: "FC22/23…"; enabled: root.m-connected; clicked => { root.adv-open = true; } }
-                        Button { text: "Export Chart"; clicked => { root.master-chart-export(); } }
                     }
                 }
 
@@ -1252,7 +1400,7 @@ export component AppWindow inherits Window {
                     activate(addr) => { root.wd-address = addr; root.wd-func = root.m-function == 0 ? 0 : 1; root.wd-open = true; }
                     row-copy(addr) => { root.master-copy(addr); }
                     row-delete(addr) => { root.master-delete(addr); }
-                    row-chart(addr) => { root.master-chart(addr); root.m-bottom-tab = 2; }
+                    row-chart(addr) => { root.master-chart(addr); root.open-master-chart(); }
                     row-format(addr) => { root.cf-addr = addr; root.cf-fmt = root.m-format; root.cf-open = true; }
                 }
                 // WRITE functions (FC05/06/15/16): editable write grid over the same
@@ -1328,10 +1476,21 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tab { label: "Event Log"; active: root.m-bottom-tab == 0; clicked => { root.m-bottom-tab = 0; } }
+                    Tab { label: "Communication Traffic"; active: root.m-bottom-tab == 1; clicked => { root.m-bottom-tab = 1; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Chart Window ↗"; clicked => { root.open-master-chart(); } }
+                }
+                if root.m-bottom-tab == 0: LogPanel { height: 190px; lines: root.m-log; }
+                if root.m-bottom-tab == 1: LogPanel { height: 190px; lines: root.m-traffic; }
+
+                // ---- bottom status bar (connection state + Tx/Rx/Err) ----
                 Rectangle {
-                    height: 38px;
+                    height: 30px;
                     border-radius: 8px;
-                    background: Palette.control-background;
+                    background: Palette.alternate-background;
                     border-width: 1px;
                     border-color: Palette.border;
                     TouchArea { width: 100%; height: 100%; clicked => { root.show-conn-info(); root.conn-info-open = true; } }
@@ -1339,47 +1498,15 @@ export component AppWindow inherits Window {
                         padding-left: 12px;
                         padding-right: 12px;
                         spacing: 18px;
-                        Text { horizontal-stretch: 1; text: root.m-status; vertical-alignment: center; overflow: elide; }
-                        Text { text: "Tx: \{root.m-tx}"; vertical-alignment: center; }
-                        Text { text: "Rx: \{root.m-rx}"; vertical-alignment: center; }
-                        Text { text: "Err: \{root.m-err}"; vertical-alignment: center; color: root.m-err > 0 ? #e06c75 : Palette.foreground; }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    Tab { label: "Event Log"; active: root.m-bottom-tab == 0; clicked => { root.m-bottom-tab = 0; } }
-                    Tab { label: "Communication Traffic"; active: root.m-bottom-tab == 1; clicked => { root.m-bottom-tab = 1; } }
-                    Tab { label: "Chart"; active: root.m-bottom-tab == 2; clicked => { root.m-bottom-tab = 2; } }
-                    Rectangle { horizontal-stretch: 1; }
-                }
-                if root.m-bottom-tab == 0: LogPanel { height: 190px; lines: root.m-log; }
-                if root.m-bottom-tab == 1: LogPanel { height: 190px; lines: root.m-traffic; }
-                if root.m-bottom-tab == 2: Rectangle {
-                    height: 250px;
-                    VerticalLayout {
-                        spacing: 4px;
-                        HorizontalLayout {
-                            height: 24px;
-                            spacing: 6px;
-                            Button { text: root.m-chart-overlay ? "● Overlay" : "Overlay"; clicked => { root.m-chart-overlay = true; } }
-                            Button { text: !root.m-chart-overlay ? "● Grid" : "Grid"; clicked => { root.m-chart-overlay = false; } }
-                            Rectangle { horizontal-stretch: 1; }
+                        Rectangle {
+                            width: 9px; height: 9px; border-radius: 4px;
+                            y: (parent.height - self.height) / 2;
+                            background: root.m-connected ? #5fb85f : #b0b0b0;
                         }
-                        if root.m-chart-overlay: OverlayChart {
-                            vertical-stretch: 1;
-                            series: root.m-series;
-                            axis-lmin: root.m-axis-lmin;
-                            axis-lmax: root.m-axis-lmax;
-                            axis-rmin: root.m-axis-rmin;
-                            axis-rmax: root.m-axis-rmax;
-                            has-right: root.m-chart-has-right;
-                            axis-toggle(addr, ax) => { root.master-chart-axis(addr, ax); }
-                        }
-                        if !root.m-chart-overlay: ChartGrid {
-                            vertical-stretch: 1;
-                            charts: root.m-charts;
-                            has-data: root.m-chart-has;
-                        }
+                        Text { horizontal-stretch: 1; text: root.m-status; vertical-alignment: center; overflow: elide; font-size: 12px; }
+                        Text { text: "Tx: \{root.m-tx}"; vertical-alignment: center; font-size: 12px; }
+                        Text { text: "Rx: \{root.m-rx}"; vertical-alignment: center; font-size: 12px; }
+                        Text { text: "Err: \{root.m-err}"; vertical-alignment: center; font-size: 12px; color: root.m-err > 0 ? #e06c75 : Palette.foreground; }
                     }
                 }
             }
@@ -1516,12 +1643,8 @@ export component AppWindow inherits Window {
                     HorizontalLayout {
                         spacing: 8px;
                         Button { text: "Simulate…"; clicked => { root.sim-open = true; } }
-                        Button { text: "Import CSV"; clicked => { root.import-csv(); } }
-                        Button { text: "Export CSV"; clicked => { root.export-csv(); } }
-                        Rectangle { width: 16px; }
-                        Button { text: "Scaling…"; clicked => { root.scl-open = true; } }
-                        Button { text: "Colors…"; clicked => { root.col-open = true; } }
-                        Button { text: "Value Names…"; clicked => { root.vn-open = true; } }
+                        Button { text: "Import"; clicked => { root.import-csv(); } }
+                        Button { text: "Export"; clicked => { root.export-csv(); } }
                     }
                 }
 
@@ -1561,14 +1684,26 @@ export component AppWindow inherits Window {
                     name-edit(addr, txt) => { root.slave-name(addr, txt); }
                     row-copy(addr) => { root.slave-copy(addr); }
                     row-delete(addr) => { root.slave-delete(addr); }
-                    row-chart(addr) => { root.slave-chart(addr); root.s-bottom-tab = 2; }
+                    row-chart(addr) => { root.slave-chart(addr); root.open-slave-chart(); }
+                    row-format(addr) => { root.cf-addr = addr; root.cf-fmt = root.s-format; root.cf-open = true; }
                     allow-autoinc: true;
                     row-autoinc(addr) => { root.slave-autoinc(addr); }
                 }
+                HorizontalLayout {
+                    spacing: 6px;
+                    Tab { label: "Event Log"; active: root.s-bottom-tab == 0; clicked => { root.s-bottom-tab = 0; } }
+                    Tab { label: "Communication Traffic"; active: root.s-bottom-tab == 1; clicked => { root.s-bottom-tab = 1; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { text: "Chart Window ↗"; clicked => { root.open-slave-chart(); } }
+                }
+                if root.s-bottom-tab == 0: LogPanel { height: 190px; lines: root.s-log; }
+                if root.s-bottom-tab == 1: LogPanel { height: 190px; lines: root.s-traffic; }
+
+                // ---- bottom status bar ----
                 Rectangle {
-                    height: 38px;
+                    height: 30px;
                     border-radius: 8px;
-                    background: Palette.control-background;
+                    background: Palette.alternate-background;
                     border-width: 1px;
                     border-color: Palette.border;
                     TouchArea { width: 100%; height: 100%; clicked => { root.show-conn-info(); root.conn-info-open = true; } }
@@ -1576,29 +1711,15 @@ export component AppWindow inherits Window {
                         padding-left: 12px;
                         padding-right: 12px;
                         spacing: 18px;
-                        Text { horizontal-stretch: 1; text: root.s-status; vertical-alignment: center; overflow: elide; }
-                        Text { text: root.sim-active ? "Simulating" : ""; vertical-alignment: center; color: #e5c07b; }
-                        Text { text: "Requests: \{root.s-requests}"; vertical-alignment: center; }
                         Rectangle {
-                            width: 12px; height: 12px; border-radius: 6px;
+                            width: 9px; height: 9px; border-radius: 4px;
                             y: (parent.height - self.height) / 2;
-                            background: root.s-running ? #98c379 : #888888;
+                            background: root.s-running ? #5fb85f : #b0b0b0;
                         }
+                        Text { horizontal-stretch: 1; text: root.s-status; vertical-alignment: center; overflow: elide; font-size: 12px; }
+                        Text { text: root.sim-active ? "Simulating" : ""; vertical-alignment: center; color: #e5c07b; font-size: 12px; }
+                        Text { text: "Requests: \{root.s-requests}"; vertical-alignment: center; font-size: 12px; }
                     }
-                }
-                HorizontalLayout {
-                    spacing: 6px;
-                    Tab { label: "Event Log"; active: root.s-bottom-tab == 0; clicked => { root.s-bottom-tab = 0; } }
-                    Tab { label: "Communication Traffic"; active: root.s-bottom-tab == 1; clicked => { root.s-bottom-tab = 1; } }
-                    Tab { label: "Chart"; active: root.s-bottom-tab == 2; clicked => { root.s-bottom-tab = 2; } }
-                    Rectangle { horizontal-stretch: 1; }
-                }
-                if root.s-bottom-tab == 0: LogPanel { height: 190px; lines: root.s-log; }
-                if root.s-bottom-tab == 1: LogPanel { height: 190px; lines: root.s-traffic; }
-                if root.s-bottom-tab == 2: ChartGrid {
-                    height: 190px;
-                    charts: root.s-charts;
-                    has-data: root.s-chart-has;
                 }
             }
         }
@@ -1731,10 +1852,10 @@ export component AppWindow inherits Window {
                 Rectangle { vertical-stretch: 1; }
                 HorizontalLayout {
                     spacing: 10px;
-                    Button { text: "Use default"; clicked => { root.master-cell-format-clear(); root.cf-open = false; } }
+                    Button { text: "Use default"; clicked => { if (root.active-mode == 0) { root.master-cell-format-clear(); } else { root.slave-cell-format-clear(); } root.cf-open = false; } }
                     Rectangle { horizontal-stretch: 1; }
                     Button { text: "Cancel"; clicked => { root.cf-open = false; } }
-                    AccentButton { text: "Apply"; width: 90px; clicked => { root.master-cell-format(); root.cf-open = false; } }
+                    AccentButton { text: "Apply"; width: 90px; clicked => { if (root.active-mode == 0) { root.master-cell-format(); } else { root.slave-cell-format(); } root.cf-open = false; } }
                 }
             }
         }
@@ -2164,6 +2285,11 @@ export component PollFloat inherits Window {
                 padding-left: 14px;
                 padding-right: 14px;
                 spacing: 12px;
+                Rectangle {
+                    width: 52px; height: 20px; border-radius: 4px; background: #ffffff;
+                    y: (parent.height - self.height) / 2;
+                    Text { text: "CLIENT"; color: Theme.accent; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
+                }
                 Text { text: root.ptitle; color: Theme.accent-fg; font-size: 15px; font-weight: 800; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
                 Text { text: "Tx: \{root.tx}"; color: Theme.accent-fg; vertical-alignment: center; }
@@ -2213,43 +2339,6 @@ export component PollFloat inherits Window {
                 border-color: Palette.border;
                 Text { x: 12px; width: parent.width - 24px; height: 100%; text: root.status; vertical-alignment: center; overflow: elide; }
             }
-            HorizontalLayout {
-                spacing: 6px;
-                Tab { label: "Event Log"; active: root.bottom-tab == 0; clicked => { root.bottom-tab = 0; } }
-                Tab { label: "Communication Traffic"; active: root.bottom-tab == 1; clicked => { root.bottom-tab = 1; } }
-                Tab { label: "Chart"; active: root.bottom-tab == 2; clicked => { root.bottom-tab = 2; } }
-                Rectangle { horizontal-stretch: 1; }
-            }
-            if root.bottom-tab == 0: LogPanel { height: 150px; lines: root.log; }
-            if root.bottom-tab == 1: LogPanel { height: 150px; lines: root.traffic; }
-            if root.bottom-tab == 2: Rectangle {
-                height: 230px;
-                VerticalLayout {
-                    spacing: 4px;
-                    HorizontalLayout {
-                        height: 24px;
-                        spacing: 6px;
-                        Button { text: root.chart-overlay ? "● Overlay" : "Overlay"; clicked => { root.chart-overlay = true; } }
-                        Button { text: !root.chart-overlay ? "● Grid" : "Grid"; clicked => { root.chart-overlay = false; } }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                    if root.chart-overlay: OverlayChart {
-                        vertical-stretch: 1;
-                        series: root.series;
-                        axis-lmin: root.axis-lmin;
-                        axis-lmax: root.axis-lmax;
-                        axis-rmin: root.axis-rmin;
-                        axis-rmax: root.axis-rmax;
-                        has-right: root.chart-has-right;
-                        axis-toggle(addr, ax) => { root.chart-axis(addr, ax); }
-                    }
-                    if !root.chart-overlay: ChartGrid {
-                        vertical-stretch: 1;
-                        charts: root.charts;
-                        has-data: root.chart-has;
-                    }
-                }
-            }
         }
     }
 }
@@ -2258,71 +2347,78 @@ export component PollFloat inherits Window {
 // shared data store. Multiple monitors can watch different tables at once.
 export component SlaveMonitor inherits Window {
     title: "Modbus Server — " + root.mtitle;
-    preferred-width: 460px;
-    preferred-height: 420px;
+    preferred-width: 520px;
+    preferred-height: 470px;
+    min-width: 440px;
+    min-height: 440px;
     icon: @image-url("logo.svg");
 
     in property <string> mtitle: "Monitor";
-    in-out property <int> mon-area: 2;
-    in-out property <int> mon-address: 0;
-    in-out property <int> mon-quantity: 10;
-    in-out property <int> mon-format: 1;
+    in property <string> ident;         // 识别信息: bind 地址 · Unit ID
     in property <[RegRow]> rows;
     in property <[string]> names;
+    in property <string> status: "";
+    in property <[LogLine]> log;
+    in property <[LogLine]> traffic;
+    in property <int> requests: 0;
+    in property <bool> running: false;
     in-out property <int> addr-mode: 0;
     in-out property <length> grid-font: 14px;
-    callback view-changed();
+    in-out property <int> bottom-tab: 0;
     callback edit(int, string);
 
-    pure function fc-fam(i: int) -> string {
-        if i == 0 { return "FC 01/05/15 · Coils"; }
-        if i == 1 { return "FC 02 · Discrete Inputs (read-only)"; }
-        if i == 3 { return "FC 04 · Input Registers (read-only)"; }
-        return "FC 03/06/16 · Holding Registers";
-    }
-
     VerticalLayout {
-        padding: 10px;
-        spacing: 8px;
-        // 顶部 4 个 Field 拆两行, 默认 460px 宽下不再挤压/截断
-        HorizontalLayout {
-            height: 30px;
-            spacing: 10px;
-            Field { label: "Table:"; ComboBox { model: ["01/05/15 Coils", "02 Discrete Inputs", "03/06/16 Holding Registers", "04 Input Registers"]; current-index <=> root.mon-area; selected => { root.view-changed(); } } }
-            Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.mon-format; selected => { root.view-changed(); } } }
-        }
-        HorizontalLayout {
-            height: 30px;
-            spacing: 10px;
-            Field { label: "Address:"; SpinBox { value <=> root.mon-address; minimum: 0; maximum: 65535; edited => { root.view-changed(); } } }
-            Field { label: "Quantity:"; SpinBox { value <=> root.mon-quantity; minimum: 1; maximum: 2000; edited => { root.view-changed(); } } }
-        }
+        // 统一顶部标题条(SERVER 识别色)
         Rectangle {
-            height: 28px;
-            border-radius: 6px;
-            background: Theme.ok.with-alpha(0.14);
+            height: 38px;
+            background: Theme.ok;
             HorizontalLayout {
-                padding-left: 12px;
-                padding-right: 12px;
-                spacing: 10px;
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 12px;
                 Rectangle {
-                    width: 58px; height: 20px; border-radius: 4px; background: Theme.ok;
+                    width: 56px; height: 20px; border-radius: 4px; background: #ffffff;
                     y: (parent.height - self.height) / 2;
-                    Text { text: "SERVER"; color: #ffffff; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                    Text { text: "SERVER"; color: Theme.ok; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
                 }
-                Text { text: root.fc-fam(root.mon-area); vertical-alignment: center; font-weight: 700; }
+                Text { text: root.mtitle; color: #ffffff; font-size: 15px; font-weight: 800; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
-                Text { text: "@ \{root.mon-address} × \{root.mon-quantity}"; vertical-alignment: center; opacity: 0.6; }
+                Text { text: "Requests: \{root.requests}"; color: #ffffff; vertical-alignment: center; }
+                Rectangle {
+                    width: 10px; height: 10px; border-radius: 5px;
+                    y: (parent.height - self.height) / 2;
+                    background: root.running ? #ffffff : #ffffff66;
+                }
             }
         }
-        DataGrid {
-            vertical-stretch: 1;
-            rows: root.rows;
-            names: root.names;
-            values-editable: true;
-            addr-mode <=> root.addr-mode;
-            grid-font: root.grid-font;
-            edit(addr, txt) => { root.edit(addr, txt); }
+        VerticalLayout {
+            padding: 10px;
+            spacing: 8px;
+            // 识别信息条(镜像主页 Memory view —— 编辑可写回共享存储)
+            Rectangle {
+                height: 26px;
+                border-radius: 6px;
+                background: Theme.ok.with-alpha(0.14);
+                Text { x: 12px; width: parent.width - 24px; height: 100%; text: root.ident; vertical-alignment: center; font-weight: 600; overflow: elide; }
+            }
+            DataGrid {
+                vertical-stretch: 1;
+                rows: root.rows;
+                names: root.names;
+                values-editable: true;
+                addr-mode <=> root.addr-mode;
+                grid-font: root.grid-font;
+                edit(addr, txt) => { root.edit(addr, txt); }
+            }
+            // 底部状态行
+            Rectangle {
+                height: 30px;
+                border-radius: 8px;
+                background: Palette.alternate-background;
+                border-width: 1px;
+                border-color: Palette.border;
+                Text { x: 12px; width: parent.width - 24px; height: 100%; text: root.status; vertical-alignment: center; overflow: elide; font-size: 12px; }
+            }
         }
     }
 }

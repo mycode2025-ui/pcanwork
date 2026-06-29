@@ -1,0 +1,167 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component PlaybackWindow inherits Window {
+    title: I18n.en ? "PcanWork - Playback" : "PcanWork - 数据回放";
+    icon: @image-url("logo.svg");
+    preferred-width: 760px;
+    preferred-height: 360px;
+    min-width: 560px;
+    background: Theme.bg;
+
+    in property <string> file-name: "(未选择文件)";
+    in property <string> pos: "0";
+    in property <string> total: "0";
+    in property <bool> playing: false;
+    in property <string> status: "就绪";
+    in property <string> src-channels: "-";
+    in-out property <string> channel-map: "";
+
+    in-out property <bool> online: false;
+    in-out property <bool> speed-fast: false;
+    in-out property <bool> loop-play: false;
+    in-out property <string> rate: "1";
+    in-out property <string> id-lo: "";
+    in-out property <string> id-hi: "";
+    in-out property <string> seg-start: "";
+    in-out property <string> seg-end: "";
+
+    in-out property <bool> merge-concat: false;   // 多文件合并：false=按时间戳交错，true=顺序拼接
+    in property <[PbFileRow]> pb-files: [];        // 已载入文件列表（名称+帧数）
+    in-out property <bool> files-expanded: false;  // 文件列表是否展开
+    callback open-file();
+    callback add-file();
+    callback remerge();
+    callback clear-files();
+    callback remove-file(int);
+    callback move-file-up(int);
+    callback move-file-down(int);
+    callback apply-settings();
+    callback play();
+    callback step();
+    callback pause();
+    callback cancel();
+    callback seek(float);
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+
+        // file row
+        Rectangle {
+            height: 40px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px; spacing: 8px;
+                Button { text: I18n.en ? "Open (multi)" : "打开文件(可多选)"; clicked => { root.open-file(); } }
+                Button { text: I18n.en ? "Add" : "添加"; clicked => { root.add-file(); } }
+                Button { text: I18n.en ? "Clear" : "清空已载入"; clicked => { root.clear-files(); } }
+                Button { text: (root.files-expanded ? (I18n.en ? "Hide list" : "收起列表") : (I18n.en ? "File list" : "文件列表")) + " (" + root.pb-files.length + ")"; clicked => { root.files-expanded = !root.files-expanded; } }
+                Text { text: root.file-name; vertical-alignment: center; font-size: 13px; color: Theme.text; overflow: elide; horizontal-stretch: 1; }
+            }
+        }
+
+        // expandable file list (reorder for concat / remove single)
+        if root.files-expanded: Rectangle {
+            height: 132px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+            ListView {
+                for f[i] in root.pb-files: Rectangle {
+                    height: 28px;
+                    background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra;
+                    HorizontalLayout {
+                        padding-left: 8px; padding-right: 6px; spacing: 6px;
+                        Text { text: (i + 1) + ". " + f.name; vertical-alignment: center; font-size: 13px; color: Theme.text; overflow: elide; horizontal-stretch: 1; }
+                        Text { text: f.count; width: 70px; vertical-alignment: center; horizontal-alignment: right; font-size: 12px; color: Theme.text-dim; }
+                        TBtn { boxed: true; h: 22px; text: I18n.en ? "Up" : "上移"; clicked => { root.move-file-up(i); } }
+                        TBtn { boxed: true; h: 22px; text: I18n.en ? "Dn" : "下移"; clicked => { root.move-file-down(i); } }
+                        TBtn { boxed: true; h: 22px; text: I18n.en ? "Del" : "移除"; clicked => { root.remove-file(i); } }
+                    }
+                }
+            }
+        }
+
+        // mode + speed
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                spacing: 16px;
+                CheckBox { text: I18n.en ? "Online playback (send to bus, else offline only)" : "在线回放（发送到总线，否则仅离线显示）"; checked: root.online; toggled => { root.online = self.checked; } }
+                CheckBox { text: I18n.en ? "As fast as possible" : "尽可能快"; checked: root.speed-fast; toggled => { root.speed-fast = self.checked; } }
+                Text { text: I18n.en ? "Speed" : "倍率"; vertical-alignment: center; font-size: 13px; }
+                LineEdit { width: 70px; text: root.rate; enabled: !root.speed-fast; edited(v) => { root.rate = v; } }
+                CheckBox { text: I18n.en ? "Concat (else interleave by time)" : "多文件:顺序拼接（默认按时间戳交错）"; checked: root.merge-concat; toggled => { root.merge-concat = self.checked; root.remerge(); } }
+            }
+        }
+
+        // channel mapping
+        Rectangle {
+            height: 40px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px; spacing: 8px;
+                Text { text: (I18n.en ? "File channels: " : "文件通道: ") + root.src-channels; vertical-alignment: center; font-size: 13px; color: Theme.text; }
+                Rectangle { width: 10px; }
+                Text { text: I18n.en ? "Channel map" : "通道映射"; vertical-alignment: center; font-size: 13px; }
+                LineEdit { width: 200px; placeholder-text: I18n.en ? "e.g. 1:2,2:1  (:0 drops)" : "如 1:2,2:1（:0 丢弃）"; text: root.channel-map; edited(v) => { root.channel-map = v; } }
+                Text { text: I18n.en ? "empty=keep original" : "留空=保持原通道"; vertical-alignment: center; font-size: 12px; color: Theme.text-dim; }
+            }
+        }
+
+        // filter + segment
+        Rectangle {
+            height: 40px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px; spacing: 8px;
+                Text { text: I18n.en ? "ID filter(hex)" : "ID过滤(hex)"; vertical-alignment: center; font-size: 13px; }
+                LineEdit { width: 90px; placeholder-text: I18n.en ? "from 0" : "起 0"; text: root.id-lo; edited(v) => { root.id-lo = v; } }
+                Text { text: "-"; vertical-alignment: center; }
+                LineEdit { width: 90px; placeholder-text: I18n.en ? "to 7FF" : "止 7FF"; text: root.id-hi; edited(v) => { root.id-hi = v; } }
+                Rectangle { width: 10px; }
+                Text { text: I18n.en ? "Time range(s)" : "时间段(s)"; vertical-alignment: center; font-size: 13px; }
+                LineEdit { width: 70px; placeholder-text: I18n.en ? "from" : "起"; text: root.seg-start; edited(v) => { root.seg-start = v; } }
+                Text { text: "-"; vertical-alignment: center; }
+                LineEdit { width: 70px; placeholder-text: I18n.en ? "to" : "止"; text: root.seg-end; edited(v) => { root.seg-end = v; } }
+                Button { text: I18n.en ? "Apply/Reload" : "应用/重载"; clicked => { root.apply-settings(); } }
+            }
+        }
+
+        // controls
+        Rectangle {
+            height: 40px;
+            HorizontalLayout {
+                spacing: 8px;
+                Button { text: root.playing ? (I18n.en ? "Playing..." : "回放中...") : (I18n.en ? "Play" : "正常回放"); enabled: !root.playing; clicked => { root.play(); } }
+                Button { text: I18n.en ? "Step" : "步进"; clicked => { root.step(); } }
+                Button { text: I18n.en ? "Pause" : "暂停"; clicked => { root.pause(); } }
+                Button { text: I18n.en ? "Cancel" : "取消"; clicked => { root.cancel(); } }
+                CheckBox { text: I18n.en ? "Loop" : "循环回放"; checked: root.loop-play; toggled => { root.loop-play = self.checked; } }
+            }
+        }
+
+        // progress bar（可点击跳转）
+        Rectangle {
+            height: 22px; background: Theme.panel2; border-radius: 4px;
+            Rectangle {
+                x: 0; height: 100%; border-radius: 4px;
+                width: parent.width * (root.total == "0" ? 0 : (root.pos.to-float() / max(1, root.total.to-float())));
+                background: Theme.accent;
+            }
+            Text {
+                text: root.pos + " / " + root.total;
+                x: 8px; vertical-alignment: center; font-size: 12px; font-family: Theme.mono; color: Theme.text;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.seek(self.mouse-x / self.width); }
+            }
+        }
+
+        // status
+        Rectangle {
+            vertical-stretch: 1;
+            Text {
+                text: (I18n.en ? "Status: " : "状态: ") + root.status + (root.playing ? (I18n.en ? " (playing)" : "（回放中）") : "");
+                x: 4px; y: 6px; color: Theme.text-dim; font-size: 12px;
+            }
+        }
+    }
+}

@@ -44,12 +44,51 @@ impl Area {
     pub fn plc_addr(self, offset: u16) -> String {
         format!("{}{:05}", self.plc_prefix(), offset as u32 + 1)
     }
+
+    /// 稳定的 CSV "Function" 列标识(不带空格, 便于解析)。
+    pub fn csv_name(self) -> &'static str {
+        match self {
+            Area::Coils => "Coils",
+            Area::DiscreteInputs => "DiscreteInputs",
+            Area::HoldingRegisters => "HoldingRegisters",
+            Area::InputRegisters => "InputRegisters",
+        }
+    }
+
+    /// 宽松解析 CSV Function 列 → Area(接受名称/缩写/功能码数字)。
+    pub fn from_csv_name(s: &str) -> Option<Self> {
+        let t = s.trim().to_ascii_lowercase().replace([' ', '_', '-'], "");
+        match t.as_str() {
+            "coils" | "coil" | "0x" | "1" | "5" | "15" => Some(Area::Coils),
+            "discreteinputs" | "discreteinput" | "1x" | "2" => Some(Area::DiscreteInputs),
+            "holdingregisters" | "holdingregister" | "holding" | "4x" | "3" | "6" | "16" => {
+                Some(Area::HoldingRegisters)
+            }
+            "inputregisters" | "inputregister" | "input" | "3x" | "4" => Some(Area::InputRegisters),
+            _ => None,
+        }
+    }
 }
 
 /// Physical/link layer used to reach the peer.
 #[derive(Clone, Debug)]
 pub enum Transport {
     Tcp {
+        host: String,
+        port: u16,
+    },
+    /// Modbus/UDP: MBAP 帧走 UDP 数据报(与 TCP 同帧格式，无连接)。仅主站(客户端)用。
+    Udp {
+        host: String,
+        port: u16,
+    },
+    /// Modbus RTU over TCP: RTU 帧(unit+PDU+CRC)走 TCP(串口转网关常用)。仅主站用。
+    RtuOverTcp {
+        host: String,
+        port: u16,
+    },
+    /// Modbus RTU over UDP: RTU 帧走 UDP 数据报。仅主站用。
+    RtuOverUdp {
         host: String,
         port: u16,
     },
@@ -66,6 +105,9 @@ impl Transport {
     pub fn describe(&self) -> String {
         match self {
             Transport::Tcp { host, port } => format!("TCP {host}:{port}"),
+            Transport::Udp { host, port } => format!("UDP {host}:{port}"),
+            Transport::RtuOverTcp { host, port } => format!("RTU/TCP {host}:{port}"),
+            Transport::RtuOverUdp { host, port } => format!("RTU/UDP {host}:{port}"),
             Transport::Rtu {
                 path,
                 baud,

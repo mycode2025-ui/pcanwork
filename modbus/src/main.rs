@@ -129,19 +129,42 @@ fn parse_num(s: &str, d: f64) -> f64 {
 }
 
 fn master_transport(a: &AppWindow) -> Transport {
-    if a.get_m_transport() == 0 {
-        Transport::Tcp {
-            host: a.get_m_host().to_string(),
-            port: a.get_m_port() as u16,
-        }
-    } else {
-        Transport::Rtu {
+    // m_transport: 0=TCP, 1=RTU(串口), 2=UDP, 3=RTU over TCP, 4=RTU over UDP
+    let (host, port) = (a.get_m_host().to_string(), a.get_m_port() as u16);
+    match a.get_m_transport() {
+        0 => Transport::Tcp { host, port },
+        2 => Transport::Udp { host, port },
+        3 => Transport::RtuOverTcp { host, port },
+        4 => Transport::RtuOverUdp { host, port },
+        _ => Transport::Rtu {
             path: a.get_m_serial().to_string(),
             baud: baud_from_index(a.get_m_baud_index()),
             data_bits: databits_from_index(a.get_m_databits_index()),
             parity: a.get_m_parity() as u8,
             stop_bits: stopbits_from_index(a.get_m_stopbits()),
+        },
+    }
+}
+
+/// Chart 窗识别信息: 主站(Client)会话的连接目标 + Slave ID。
+fn master_chart_ident(a: &AppWindow) -> String {
+    let id = a.get_m_slave_id();
+    match a.get_m_transport() {
+        1 => format!("RTU  {}  ·  Slave ID {id}", a.get_m_serial()),
+        t => {
+            let kind = match t { 0 => "TCP", 2 => "UDP", 3 => "RTU/TCP", 4 => "RTU/UDP", _ => "TCP" };
+            format!("{kind}  {}:{}  ·  Slave ID {id}", a.get_m_host(), a.get_m_port())
         }
+    }
+}
+
+/// Chart 窗识别信息: 从站(Server)绑定地址 + Unit ID。
+fn slave_chart_ident(a: &AppWindow) -> String {
+    let id = a.get_s_unit_id();
+    if a.get_s_transport() == 1 {
+        format!("RTU  {}  ·  Unit ID {id}", a.get_s_serial())
+    } else {
+        format!("TCP  bind {}:{}  ·  Unit ID {id}", a.get_s_host(), a.get_s_port())
     }
 }
 
@@ -352,6 +375,32 @@ fn csv_escape(s: &str) -> String {
     }
 }
 
+/// 宽松解析 CSV 地址列 → 0 基绝对地址(u16)。接受:
+///  - 十进制 0 基(原样): `16`
+///  - 十六进制: `0x10` / `0X10`
+///  - PLC(Modicon)风格: `40001`/`30001`/`10001`(5 位)或 `400001`/...(6 位)→ 去表前缀、1 基转 0 基。
+/// 注: 线圈 PLC `0xxxx`(00001-09999)与原始十进制冲突, 无法自动区分, 不支持; 用原始 0 基即可。
+fn parse_csv_address(s: &str) -> Option<u16> {
+    let t = s.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        return u16::from_str_radix(h.trim(), 16).ok();
+    }
+    let v: u32 = t.parse().ok()?;
+    let off = match v {
+        100_001..=165_536 => v - 100_001, // 1x 6 位 Discrete Inputs
+        300_001..=365_536 => v - 300_001, // 3x 6 位 Input Registers
+        400_001..=465_536 => v - 400_001, // 4x 6 位 Holding Registers
+        10_001..=19_999 => v - 10_001,    // 1x 5 位
+        30_001..=39_999 => v - 30_001,    // 3x 5 位
+        40_001..=49_999 => v - 40_001,    // 4x 5 位
+        _ => v,                           // 其它: 原始 0 基(含十进制小地址)
+    };
+    u16::try_from(off).ok()
+}
+
 /// Parse one CSV line into fields, honouring double-quoted fields with `""` escapes.
 fn parse_csv_line(line: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -560,6 +609,15 @@ fn main() -> Result<(), slint::PlatformError> {
         address: a.get_cf_addr() as u16,
         format: None,
     });
+    // 从站 per-cell 格式(与主站对等; 对话框据 active-mode 路由到这里)
+    on_cmd!(on_slave_cell_format, |a: &AppWindow| Cmd::SlaveCellFormat {
+        address: a.get_cf_addr() as u16,
+        format: Some(RegFormat::from_index(a.get_cf_fmt())),
+    });
+    on_cmd!(on_slave_cell_format_clear, |a: &AppWindow| Cmd::SlaveCellFormat {
+        address: a.get_cf_addr() as u16,
+        format: None,
+    });
     on_cmd!(on_master_derived, |a: &AppWindow| Cmd::MasterDerived(parse_derived(&a.get_dv_text())));
     on_cmd!(on_master_write_once, |a: &AppWindow| Cmd::MasterWriteOnce {
         func: func_write(a.get_m_function()),
@@ -677,18 +735,34 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let tx = tx.clone();
         app.on_master_chart_export(move || {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("CSV", &["csv"])
-                .set_file_name("chart.csv")
-                .save_file()
-            {
-                let _ = tx.send(Cmd::MasterChartExport(path.to_string_lossy().to_string()));
-            }
+            let tx = tx.clone();
+            let _ = slint::spawn_local(async move {
+                if let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name("chart.csv")
+                    .save_file()
+                    .await
+                {
+                    let _ = tx.send(Cmd::MasterChartExport(file.path().to_string_lossy().to_string()));
+                }
+            });
         });
     }
     {
         let tx = tx.clone();
+        let weak = app.as_weak();
         app.on_master_name(move |addr, name: slint::SharedString| {
+            // 乐观: 立即更新 m_names, 避免 edited 实时提交被后端异步回推 reset 输入框(打字打架)
+            if let Some(a) = weak.upgrade() {
+                let rows = a.get_m_rows();
+                let names = a.get_m_names();
+                for i in 0..rows.row_count() {
+                    if rows.row_data(i).map(|r| r.address) == Some(addr) {
+                        names.set_row_data(i, name.clone());
+                        break;
+                    }
+                }
+            }
             let _ = tx.send(Cmd::MasterName {
                 address: addr as u16,
                 name: name.to_string(),
@@ -895,58 +969,57 @@ fn main() -> Result<(), slint::PlatformError> {
         {
             let weak = app.as_weak();
             let tx = tx.clone();
-            let monitors: Rc<RefCell<HashMap<u32, SlaveMonitor>>> = Rc::new(RefCell::new(HashMap::new()));
+            // 浮窗只镜像主页 Memory view(不再独立选表); 数据由 UI 定时器拷贝, edit 走主页同一条路径。
+            let monitors: Rc<RefCell<HashMap<u32, (SlaveMonitor, slint::Timer)>>> =
+                Rc::new(RefCell::new(HashMap::new()));
             let mon_next = Rc::new(std::cell::Cell::new(1u32));
             app.on_float_slave_window(move || {
-                let Some(a) = weak.upgrade() else { return };
+                let Some(_a) = weak.upgrade() else { return };
                 let Ok(mon) = SlaveMonitor::new() else { return };
                 let id = mon_next.get();
                 mon_next.set(id + 1);
-                mon.set_mtitle(format!("View @{} ×{}", a.get_s_address(), a.get_s_quantity()).into());
-                mon.set_mon_area(a.get_s_area());
-                mon.set_mon_address(a.get_s_address());
-                mon.set_mon_quantity(a.get_s_quantity());
-                mon.set_mon_format(a.get_s_format());
-                let _ = tx.send(Cmd::SlaveAddMonitor {
-                    id,
-                    weak: mon.as_weak(),
-                    area: Area::from_index(mon.get_mon_area()),
-                    address: mon.get_mon_address() as u16,
-                    quantity: mon.get_mon_quantity() as u16,
-                    format: RegFormat::from_index(mon.get_mon_format()),
-                });
-                {
-                    let tx = tx.clone();
-                    let w = mon.as_weak();
-                    mon.on_view_changed(move || {
-                        if let Some(m) = w.upgrade() {
-                            let _ = tx.send(Cmd::SlaveMonitorView {
-                                id,
-                                area: Area::from_index(m.get_mon_area()),
-                                address: m.get_mon_address() as u16,
-                                quantity: m.get_mon_quantity() as u16,
-                                format: RegFormat::from_index(m.get_mon_format()),
-                            });
-                        }
-                    });
-                }
+                mon.set_mtitle("Live view".into());
                 {
                     let tx = tx.clone();
                     mon.on_edit(move |addr, txt: slint::SharedString| {
-                        let _ = tx.send(Cmd::SlaveMonitorEdit { id, address: addr as u16, text: txt.to_string() });
+                        let _ = tx.send(Cmd::SlaveEdit { address: addr as u16, text: txt.to_string() });
                     });
                 }
                 {
-                    let tx = tx.clone();
                     let monitors = monitors.clone();
                     mon.window().on_close_requested(move || {
-                        let _ = tx.send(Cmd::SlaveRemoveMonitor { id });
-                        monitors.borrow_mut().remove(&id);
+                        monitors.borrow_mut().remove(&id); // 连带丢弃镜像定时器
                         slint::CloseRequestResponse::HideWindow
                     });
                 }
+                // 镜像主页从站数据(行/名/状态/日志/流量/运行/请求数/识别)到浮窗
+                let timer = slint::Timer::default();
+                {
+                    let aw = weak.clone();
+                    let mw = mon.as_weak();
+                    timer.start(
+                        slint::TimerMode::Repeated,
+                        std::time::Duration::from_millis(200),
+                        move || {
+                            let (Some(a), Some(m)) = (aw.upgrade(), mw.upgrade()) else {
+                                return;
+                            };
+                            if !m.window().is_visible() {
+                                return;
+                            }
+                            m.set_rows(a.get_s_rows());
+                            m.set_names(a.get_s_names());
+                            m.set_status(a.get_s_status());
+                            m.set_log(a.get_s_log());
+                            m.set_traffic(a.get_s_traffic());
+                            m.set_running(a.get_s_running());
+                            m.set_requests(a.get_s_requests());
+                            m.set_ident(slave_chart_ident(&a).into());
+                        },
+                    );
+                }
                 let _ = mon.show();
-                monitors.borrow_mut().insert(id, mon);
+                monitors.borrow_mut().insert(id, (mon, timer));
             });
         }
     }
@@ -955,14 +1028,18 @@ fn main() -> Result<(), slint::PlatformError> {
         ($cb:ident, $set:ident) => {{
             let weak = app.as_weak();
             app.$cb(move || {
-                if let Some(a) = weak.upgrade() {
-                    if let Some(p) = rfd::FileDialog::new()
+                let weak = weak.clone();
+                let _ = slint::spawn_local(async move {
+                    if let Some(file) = rfd::AsyncFileDialog::new()
                         .add_filter("PEM", &["pem", "crt", "cer", "key"])
                         .pick_file()
+                        .await
                     {
-                        a.$set(p.to_string_lossy().to_string().into());
+                        if let Some(a) = weak.upgrade() {
+                            a.$set(file.path().to_string_lossy().to_string().into());
+                        }
                     }
-                }
+                });
             });
         }};
     }
@@ -1003,36 +1080,43 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = app.as_weak();
         let tx = tx.clone();
         app.on_master_start_log(move || {
-            if let Some(a) = weak.upgrade() {
-                // 未连接主站时记录无意义, 提示并退出(不切到 Logging 状态)
-                if !a.get_m_connected() {
-                    a.set_m_status("记录: 请先连接主站".into());
-                    return;
-                }
-                let tab = a.get_log_delim() == 1;
-                let default = if tab { "log.txt" } else { "log.csv" };
-                if let Some(path) = rfd::FileDialog::new()
+            let Some(a) = weak.upgrade() else { return };
+            // 未连接主站时记录无意义, 提示并退出(不切到 Logging 状态)
+            if !a.get_m_connected() {
+                a.set_m_status("记录: 请先连接主站".into());
+                return;
+            }
+            let tab = a.get_log_delim() == 1;
+            let default = if tab { "log.txt" } else { "log.csv" };
+            let weak = weak.clone();
+            let tx = tx.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("Log file", &["csv", "txt"])
                     .set_file_name(default)
                     .save_file()
-                {
-                    // 预探测文件能否创建; 失败则提示并退出, 不假装在记录
-                    if let Err(e) = std::fs::File::create(&path) {
-                        a.set_m_status(format!("记录: 文件打开失败 — {e}").into());
-                        return;
-                    }
-                    let cfg = LogCfg {
-                        path: path.to_string_lossy().to_string(),
-                        each_read: a.get_log_rate_mode() == 0,
-                        period_s: a.get_log_period().max(1) as u32,
-                        delimiter: if tab { '\t' } else { ',' },
-                        on_change: a.get_log_onchange(),
-                        timestamp: a.get_log_timestamp(),
-                    };
-                    let _ = tx.send(Cmd::MasterStartLog(cfg));
-                    a.set_log_active(true);
+                    .await
+                else {
+                    return;
+                };
+                let path = file.path().to_path_buf();
+                let Some(a) = weak.upgrade() else { return };
+                // 预探测文件能否创建; 失败则提示并退出, 不假装在记录
+                if let Err(e) = std::fs::File::create(&path) {
+                    a.set_m_status(format!("记录: 文件打开失败 — {e}").into());
+                    return;
                 }
-            }
+                let cfg = LogCfg {
+                    path: path.to_string_lossy().to_string(),
+                    each_read: a.get_log_rate_mode() == 0,
+                    period_s: a.get_log_period().max(1) as u32,
+                    delimiter: if tab { '\t' } else { ',' },
+                    on_change: a.get_log_onchange(),
+                    timestamp: a.get_log_timestamp(),
+                };
+                let _ = tx.send(Cmd::MasterStartLog(cfg));
+                a.set_log_active(true);
+            });
         });
     }
     {
@@ -1051,27 +1135,33 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let weak = app.as_weak();
         app.on_vn_import(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new().add_filter("Text", &["txt"]).pick_file() {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        a.set_vn_text(content.into());
-                    }
+            let weak = weak.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new().add_filter("Text", &["txt"]).pick_file().await else { return };
+                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                if let Some(a) = weak.upgrade() {
+                    a.set_vn_text(content.into());
                 }
-            }
+            });
         });
     }
     {
         let weak = app.as_weak();
         app.on_vn_export(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new()
+            let weak = weak.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("Text", &["txt"])
                     .set_file_name("value-names.txt")
                     .save_file()
-                {
-                    let _ = std::fs::write(path, a.get_vn_text().as_str());
+                    .await
+                else {
+                    return;
+                };
+                if let Some(a) = weak.upgrade() {
+                    let _ = std::fs::write(file.path(), a.get_vn_text().as_str());
                 }
-            }
+            });
         });
     }
 
@@ -1079,75 +1169,90 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let weak = app.as_weak();
         app.on_save_workspace(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new()
+            let weak = weak.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("Modbus workspace", &["mbw"])
                     .set_file_name("workspace.mbw")
                     .save_file()
-                {
-                    let _ = std::fs::write(path, serialize_workspace(&a));
+                    .await
+                else {
+                    return;
+                };
+                if let Some(a) = weak.upgrade() {
+                    let _ = std::fs::write(file.path(), serialize_workspace(&a));
                 }
-            }
+            });
         });
     }
     {
         let weak = app.as_weak();
         let tx = tx.clone();
         app.on_open_workspace(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new()
+            let weak = weak.clone();
+            let tx = tx.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("Modbus workspace", &["mbw"])
                     .pick_file()
-                {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        apply_workspace(&a, &content);
-                        // Push display settings to a live master, if any.
-                        let _ = tx.send(Cmd::MasterScaling(scaling_cfg(&a)));
-                        let _ = tx.send(Cmd::MasterColors(colors_cfg(&a)));
-                        let _ = tx.send(Cmd::MasterValueNames(value_names_cfg(&a)));
-                        // 补发关键配置, 否则后台仍按旧地址/数量/格式/视图轮询(界面新、通信旧)
-                        let func = a.get_m_function();
-                        let _ = tx.send(Cmd::MasterReadDef {
-                            area: func_area(func),
-                            address: a.get_m_address() as u16,
-                            quantity: a.get_m_quantity() as u16,
-                            scan_ms: a.get_m_scanrate() as u64,
-                            poll: !func_is_write(func),
-                        });
-                        let _ = tx.send(Cmd::MasterFormat(RegFormat::from_index(a.get_m_format())));
-                        let _ = tx.send(Cmd::SlaveView {
-                            area: Area::from_index(a.get_s_area()),
-                            address: a.get_s_address() as u16,
-                            quantity: a.get_s_quantity() as u16,
-                            format: RegFormat::from_index(a.get_s_format()),
-                        });
-                    }
-                }
-            }
+                    .await
+                else {
+                    return;
+                };
+                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                let Some(a) = weak.upgrade() else { return };
+                apply_workspace(&a, &content);
+                // Push display settings to a live master, if any.
+                let _ = tx.send(Cmd::MasterScaling(scaling_cfg(&a)));
+                let _ = tx.send(Cmd::MasterColors(colors_cfg(&a)));
+                let _ = tx.send(Cmd::MasterValueNames(value_names_cfg(&a)));
+                // 补发关键配置, 否则后台仍按旧地址/数量/格式/视图轮询(界面新、通信旧)
+                let func = a.get_m_function();
+                let _ = tx.send(Cmd::MasterReadDef {
+                    area: func_area(func),
+                    address: a.get_m_address() as u16,
+                    quantity: a.get_m_quantity() as u16,
+                    scan_ms: a.get_m_scanrate() as u64,
+                    poll: !func_is_write(func),
+                });
+                let _ = tx.send(Cmd::MasterFormat(RegFormat::from_index(a.get_m_format())));
+                let _ = tx.send(Cmd::SlaveView {
+                    area: Area::from_index(a.get_s_area()),
+                    address: a.get_s_address() as u16,
+                    quantity: a.get_s_quantity() as u16,
+                    format: RegFormat::from_index(a.get_s_format()),
+                });
+            });
         });
     }
     // Export the active grid as a round-trippable register template
     // (Import,Address,Name,Value — Import=yes marks rows to load back).
     {
         let weak = app.as_weak();
+        let tx = tx.clone();
         app.on_export_csv(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new()
+            let weak = weak.clone();
+            let tx = tx.clone();
+            // 异步文件对话框: 不阻塞 Slint(winit)事件循环, 避免对话框卡住点不动。
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("CSV", &["csv"])
                     .set_file_name("registers.csv")
                     .save_file()
-                {
-                    let rows = if a.get_active_mode() == 0 {
-                        a.get_m_rows()
-                    } else {
-                        a.get_s_rows()
-                    };
-                    let names = if a.get_active_mode() == 0 {
-                        a.get_m_names()
-                    } else {
-                        a.get_s_names()
-                    };
-                    let mut s = String::from("Import,Address,Name,Value\n");
+                    .await
+                else {
+                    return;
+                };
+                let Some(a) = weak.upgrade() else { return };
+                let server = a.get_active_mode() == 1;
+                // 活动窗口的当前行从 UI 直接取(名字/功能码保证正确); 其余窗口后端从 cache 取。
+                let (active_id, active_csv) = if server {
+                    (0, String::new())
+                } else {
+                    let area = func_area(a.get_m_function());
+                    let rows = a.get_m_rows();
+                    let names = a.get_m_names();
+                    let mut s = String::new();
                     for (i, r) in rows.iter().enumerate() {
                         let name = if i < names.row_count() {
                             names.row_data(i).unwrap_or_default().to_string()
@@ -1155,15 +1260,27 @@ fn main() -> Result<(), slint::PlatformError> {
                             r.name.to_string()
                         };
                         s.push_str(&format!(
-                            "yes,{},{},{}\n",
+                            "yes,{},{},{},{}\n",
+                            area.csv_name(),
                             r.address,
                             csv_escape(&name),
                             csv_escape(&r.value)
                         ));
                     }
-                    let _ = std::fs::write(path, s);
+                    (a.get_active_win() as u32, s)
+                };
+                let _ = tx.send(Cmd::ExportCsv {
+                    path: file.path().to_string_lossy().to_string(),
+                    server,
+                    active_id,
+                    active_csv,
+                });
+                if server {
+                    a.set_s_status("Exported all tables → CSV".into());
+                } else {
+                    a.set_m_status("Exported all poll windows → CSV".into());
                 }
-            }
+            });
         });
     }
     // Import a register template: rows flagged Import=yes set the name (and, in
@@ -1172,10 +1289,13 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = app.as_weak();
         let tx = tx.clone();
         app.on_import_csv(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new().add_filter("CSV", &["csv"]).pick_file() {
-                    if let Ok(content) = std::fs::read_to_string(path) {
-                        let slave = a.get_active_mode() == 1;
+            let weak = weak.clone();
+            let tx = tx.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new().add_filter("CSV", &["csv"]).pick_file().await else { return };
+                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                let Some(a) = weak.upgrade() else { return };
+                let slave = a.get_active_mode() == 1;
                         let mut count = 0;
                         for line in content.lines() {
                             if line.trim().is_empty() {
@@ -1185,19 +1305,27 @@ fn main() -> Result<(), slint::PlatformError> {
                             if f.len() < 3 || !is_yes(&f[0]) {
                                 continue; // header / not-selected rows
                             }
-                            let addr = match f[1].trim().parse::<u16>() {
-                                Ok(v) => v,
-                                Err(_) => continue,
+                            // 兼容两种格式: 新 `Import,Function,Address,Name,Value`(f[1]=表名)
+                            // 与旧 `Import,Address,Name,Value`(f[1]=地址)。
+                            let (area_opt, addr_field, name_idx, val_idx) =
+                                match Area::from_csv_name(&f[1]) {
+                                    Some(area) => (Some(area), f[1 + 1].as_str(), 3usize, 4usize),
+                                    None => (None, f[1].as_str(), 2usize, 3usize),
+                                };
+                            let Some(addr) = parse_csv_address(addr_field) else {
+                                continue; // 地址无法解析 → 跳过
                             };
-                            let name = f[2].trim().to_string();
+                            let name = f.get(name_idx).map(|s| s.trim().to_string()).unwrap_or_default();
                             if slave {
                                 let _ = tx.send(Cmd::SlaveName { address: addr, name });
-                                if let Some(val) = f.get(3) {
-                                    if !val.trim().is_empty() {
-                                        let _ = tx.send(Cmd::SlaveEdit {
-                                            address: addr,
-                                            text: val.trim().to_string(),
-                                        });
+                                if let Some(val) = f.get(val_idx) {
+                                    let v = val.trim();
+                                    if !v.is_empty() {
+                                        // 有 Function 列 → 写到指定表; 否则写当前视图表
+                                        match area_opt {
+                                            Some(area) => { let _ = tx.send(Cmd::SlaveEditAt { area, address: addr, text: v.to_string() }); }
+                                            None => { let _ = tx.send(Cmd::SlaveEdit { address: addr, text: v.to_string() }); }
+                                        }
                                     }
                                 }
                             } else {
@@ -1205,14 +1333,12 @@ fn main() -> Result<(), slint::PlatformError> {
                             }
                             count += 1;
                         }
-                        if slave {
-                            a.set_s_status(format!("Imported {count} register(s)").into());
-                        } else {
-                            a.set_m_status(format!("Imported {count} register name(s)").into());
-                        }
-                    }
+                if slave {
+                    a.set_s_status(format!("Imported {count} register(s)").into());
+                } else {
+                    a.set_m_status(format!("Imported {count} register name(s)").into());
                 }
-            }
+            });
         });
     }
 
@@ -1235,7 +1361,18 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     {
         let tx = tx.clone();
+        let weak = app.as_weak();
         app.on_slave_name(move |addr, name: slint::SharedString| {
+            if let Some(a) = weak.upgrade() {
+                let rows = a.get_s_rows();
+                let names = a.get_s_names();
+                for i in 0..rows.row_count() {
+                    if rows.row_data(i).map(|r| r.address) == Some(addr) {
+                        names.set_row_data(i, name.clone());
+                        break;
+                    }
+                }
+            }
             let _ = tx.send(Cmd::SlaveName {
                 address: addr as u16,
                 name: name.to_string(),
@@ -1340,15 +1477,20 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let weak = app.as_weak();
         app.on_key_save(move || {
-            if let Some(a) = weak.upgrade() {
-                if let Some(path) = rfd::FileDialog::new()
+            let weak = weak.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
                     .add_filter("Modbus workspace", &["mbw"])
                     .set_file_name("workspace.mbw")
                     .save_file()
-                {
-                    let _ = std::fs::write(path, serialize_workspace(&a));
+                    .await
+                else {
+                    return;
+                };
+                if let Some(a) = weak.upgrade() {
+                    let _ = std::fs::write(file.path(), serialize_workspace(&a));
                 }
-            }
+            });
         });
     }
     {
@@ -1396,11 +1538,13 @@ fn main() -> Result<(), slint::PlatformError> {
         app.on_show_conn_info(move || {
             if let Some(a) = weak.upgrade() {
                 let info = if a.get_active_mode() == 0 {
-                    let transport = if a.get_m_transport() == 0 {
-                        format!("Modbus TCP  {}:{}", a.get_m_host(), a.get_m_port())
-                    } else {
-                        format!("Modbus RTU  {}  baud={}", a.get_m_serial(),
-                            baud_from_index(a.get_m_baud_index()))
+                    let transport = match a.get_m_transport() {
+                        0 => format!("Modbus TCP  {}:{}", a.get_m_host(), a.get_m_port()),
+                        2 => format!("Modbus UDP  {}:{}", a.get_m_host(), a.get_m_port()),
+                        3 => format!("Modbus RTU over TCP  {}:{}", a.get_m_host(), a.get_m_port()),
+                        4 => format!("Modbus RTU over UDP  {}:{}", a.get_m_host(), a.get_m_port()),
+                        _ => format!("Modbus RTU  {}  baud={}", a.get_m_serial(),
+                            baud_from_index(a.get_m_baud_index())),
                     };
                     format!(
                         "Mode:        {}\n\
@@ -1456,11 +1600,145 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // ---- 独立 Chart 子窗口(主站): 曲线 + Derived/Scaling/Colors/Value Names/Export ----
+    let chart_win = MasterChartWindow::new()?;
+    {
+        let cw = chart_win.as_weak();
+        app.on_open_master_chart(move || {
+            if let Some(cw) = cw.upgrade() {
+                let _ = cw.show();
+            }
+        });
+    }
+    {
+        let tx = tx.clone();
+        chart_win.on_axis_toggle(move |addr, axis| {
+            let _ = tx.send(Cmd::MasterChartAxis { addr: addr as u16, right: axis == 1 });
+        });
+    }
+    {
+        let tx = tx.clone();
+        chart_win.on_export_chart(move || {
+            let tx = tx.clone();
+            let _ = slint::spawn_local(async move {
+                if let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name("chart.csv")
+                    .save_file()
+                    .await
+                {
+                    let _ = tx.send(Cmd::MasterChartExport(file.path().to_string_lossy().to_string()));
+                }
+            });
+        });
+    }
+    // 4 个对话框开关在主窗上 —— 子窗按钮经回调把主窗对应 *-open 置真并把主窗带到前面
+    macro_rules! chart_open_dialog {
+        ($cb:ident, $setter:ident) => {{
+            let aw = app.as_weak();
+            chart_win.$cb(move || {
+                if let Some(a) = aw.upgrade() {
+                    a.$setter(true);
+                    let _ = a.window().show();
+                }
+            });
+        }};
+    }
+    chart_open_dialog!(on_open_derived, set_dv_open);
+    chart_open_dialog!(on_open_scaling, set_scl_open);
+    chart_open_dialog!(on_open_colors, set_col_open);
+    chart_open_dialog!(on_open_value_names, set_vn_open);
+    // 镜像: 主窗图表属性由后端更新好, 子窗可见时定时拷过去(不动后端推送链路)
+    let _chart_mirror_timer = {
+        let aw = app.as_weak();
+        let cw = chart_win.as_weak();
+        let t = slint::Timer::default();
+        t.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(200),
+            move || {
+                let (Some(a), Some(c)) = (aw.upgrade(), cw.upgrade()) else {
+                    return;
+                };
+                if !c.window().is_visible() {
+                    return;
+                }
+                c.set_series(a.get_m_series());
+                c.set_charts(a.get_m_charts());
+                c.set_chart_has(a.get_m_chart_has());
+                c.set_chart_has_right(a.get_m_chart_has_right());
+                c.set_axis_lmin(a.get_m_axis_lmin());
+                c.set_axis_lmax(a.get_m_axis_lmax());
+                c.set_axis_rmin(a.get_m_axis_rmin());
+                c.set_axis_rmax(a.get_m_axis_rmax());
+                c.set_ident(master_chart_ident(&a).into());
+            },
+        );
+        t
+    };
+
+    // ---- 独立 Chart 子窗口(从站): 只有 grid 图 + Scaling/Colors/Value Names ----
+    let slave_chart_win = SlaveChartWindow::new()?;
+    {
+        let sw = slave_chart_win.as_weak();
+        app.on_open_slave_chart(move || {
+            if let Some(sw) = sw.upgrade() {
+                let _ = sw.show();
+            }
+        });
+    }
+    {
+        // Scaling/Colors/Value Names 弹窗主从共用,路由到主窗的 *-open
+        macro_rules! schart_open_dialog {
+            ($cb:ident, $setter:ident) => {{
+                let aw = app.as_weak();
+                slave_chart_win.$cb(move || {
+                    if let Some(a) = aw.upgrade() {
+                        a.$setter(true);
+                        let _ = a.window().show();
+                    }
+                });
+            }};
+        }
+        schart_open_dialog!(on_open_scaling, set_scl_open);
+        schart_open_dialog!(on_open_colors, set_col_open);
+        schart_open_dialog!(on_open_value_names, set_vn_open);
+    }
+    let _slave_chart_mirror_timer = {
+        let aw = app.as_weak();
+        let sw = slave_chart_win.as_weak();
+        let t = slint::Timer::default();
+        t.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(200),
+            move || {
+                let (Some(a), Some(c)) = (aw.upgrade(), sw.upgrade()) else {
+                    return;
+                };
+                if !c.window().is_visible() {
+                    return;
+                }
+                c.set_charts(a.get_s_charts());
+                c.set_chart_has(a.get_s_chart_has());
+                c.set_ident(slave_chart_ident(&a).into());
+            },
+        );
+        t
+    };
+
     // Closing the main window closes any floating monitor windows and quits.
     {
         let floats = floats.clone();
+        let cw = chart_win.as_weak();
+        let sw = slave_chart_win.as_weak();
         app.window().on_close_requested(move || {
             floats.borrow_mut().clear();
+            if let Some(cw) = cw.upgrade() {
+                let _ = cw.hide();
+            }
+            if let Some(sw) = sw.upgrade() {
+                let _ = sw.hide();
+            }
             let _ = slint::quit_event_loop();
             slint::CloseRequestResponse::HideWindow
         });

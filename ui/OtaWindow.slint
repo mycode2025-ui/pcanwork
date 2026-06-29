@@ -1,0 +1,339 @@
+import { LineEdit, TextEdit } from "std-widgets.slint";
+import { I18n, Theme, TBtn } from "common.slint";
+
+export component OtaWindow inherits Window {
+    title: root.single-tool-page == 0 ? "UDS" : (root.single-tool-page == 1 ? "XCP" : "UDS / XCP");
+    icon: @image-url("logo.svg");
+    preferred-width: 980px;
+    preferred-height: 680px;
+    min-width: 920px;
+    min-height: 620px;
+    background: Theme.bg;
+
+    in property <int> single-tool-page: -1;
+    in-out property <int> tool-page: 0; // 0=UDS, 1=XCP, 2=Upgrade
+    property <int> effective-tool-page: root.single-tool-page >= 0 ? root.single-tool-page : root.tool-page;
+    in-out property <int> ota-mode: 0; // 0=XCP, 1=UDS
+    in-out property <string> ota-file-path: "";
+    in-out property <string> ota-can-id: "1821FF10";
+    in-out property <string> ota-addr: "0";
+    in-out property <string> ota-crc: "0";
+    in property <float> ota-progress: 0.0;
+    in property <string> ota-status: "Ready";
+
+    in-out property <string> uds-id: "61A";
+    in-out property <string> uds-rx-id: "622";
+    in-out property <string> uds-session: "03";
+    in-out property <string> uds-reset-type: "01";
+    in-out property <string> uds-dtc-group: "FFFFFF";
+    in-out property <string> uds-dtc-status-mask: "FF";
+    in-out property <string> uds-dtc-subfn: "02";
+    in-out property <string> uds-did: "F190";
+    in-out property <string> uds-write-data: "";
+    in-out property <string> uds-mem-addr: "0";
+    in-out property <string> uds-mem-len: "10";
+    in-out property <string> uds-mem-data: "";
+    in-out property <string> uds-security-level: "01";
+    in-out property <string> uds-security-key: "";
+    in-out property <string> uds-routine-id: "CBA5";
+    in-out property <string> uds-custom: "22 F1 90";
+
+    in-out property <string> xcp-id: "1821FF10";
+    in-out property <string> xcp-rx-id: "";
+    in-out property <string> xcp-mta-addr: "0";
+    in-out property <string> xcp-mta-ext: "00";
+    in-out property <string> xcp-upload-len: "7";
+    in-out property <string> xcp-download-data: "";
+    in-out property <string> xcp-custom: "FF";
+    in-out property <string> diag-log: "";
+
+    callback ota-pick-file();
+    callback ota-start();
+    callback ota-stop();
+    callback uds-tester-present();
+    callback uds-session-send();
+    callback uds-reset-send();
+    callback uds-clear-dtc();
+    callback uds-read-dtc();
+    callback uds-read-did();
+    callback uds-write-did();
+    callback uds-read-memory();
+    callback uds-write-memory();
+    callback uds-security-seed();
+    callback uds-security-key-send();
+    callback uds-routine-start();
+    callback uds-custom-send();
+    callback xcp-connect();
+    callback xcp-status();
+    callback xcp-disconnect();
+    callback xcp-set-mta();
+    callback xcp-upload();
+    callback xcp-download();
+    callback xcp-custom-send();
+    callback diag-log-clear();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        Rectangle {
+            height: 42px;
+            background: Theme.panel2;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px;
+                spacing: 6px;
+                if root.single-tool-page < 0: TBtn { boxed: true; text: "UDS"; active: root.tool-page == 0; clicked => { root.tool-page = 0; } }
+                if root.single-tool-page < 0: TBtn { boxed: true; text: "XCP"; active: root.tool-page == 1; clicked => { root.tool-page = 1; } }
+                if root.single-tool-page < 0: TBtn { boxed: true; text: "Upgrade"; active: root.tool-page == 2; clicked => { root.tool-page = 2; } }
+                if root.single-tool-page >= 0: Text { text: root.single-tool-page == 0 ? "UDS" : "XCP"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: root.ota-status; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+            }
+        }
+
+        if root.effective-tool-page == 0: HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 660px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    Text { text: "UDS services"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+                    GridLayout {
+                        vertical-stretch: 0;
+                        spacing: 7px;
+                        Row {
+                            Text { text: "TX ID"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-id; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-id = v; } }
+                            Text { text: "RX ID"; width: 56px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-rx-id; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-rx-id = v; } }
+                            TBtn { boxed: true; text: "3E"; clicked => { root.uds-tester-present(); } }
+                        }
+                        Row {
+                            Text { text: "10 Session"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-session; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-session = v; } }
+                            TBtn { boxed: true; text: "Send"; clicked => { root.uds-session-send(); } }
+                            Text { text: "11 Reset"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-reset-type; width: 70px; height: Theme.ctrl-h; edited(v) => { root.uds-reset-type = v; } }
+                            TBtn { boxed: true; text: "Send"; clicked => { root.uds-reset-send(); } }
+                        }
+                        Row {
+                            Text { text: "14 Group"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-dtc-group; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-group = v; } }
+                            TBtn { boxed: true; text: "Clear"; clicked => { root.uds-clear-dtc(); } }
+                            Text { text: "19 Sub"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-dtc-subfn; width: 50px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-subfn = v; } }
+                            Text { text: "Mask"; width: 38px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-dtc-status-mask; width: 50px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-status-mask = v; } }
+                            TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-dtc(); } }
+                        }
+                        Row {
+                            Text { text: "22/2E DID"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-did; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-did = v; } }
+                            TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-did(); } }
+                            LineEdit { text: root.uds-write-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-write-data = v; } }
+                            TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-did(); } }
+                        }
+                        Row {
+                            Text { text: "23/3D Mem"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-mem-addr; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-addr = v; } }
+                            LineEdit { text: root.uds-mem-len; width: 60px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-len = v; } }
+                            TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-memory(); } }
+                            LineEdit { text: root.uds-mem-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-mem-data = v; } }
+                            TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-memory(); } }
+                        }
+                        Row {
+                            Text { text: "27 Level"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-security-level; width: 70px; height: Theme.ctrl-h; edited(v) => { root.uds-security-level = v; } }
+                            TBtn { boxed: true; text: "Seed"; clicked => { root.uds-security-seed(); } }
+                            LineEdit { text: root.uds-security-key; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-security-key = v; } }
+                            TBtn { boxed: true; text: "Key"; clicked => { root.uds-security-key-send(); } }
+                        }
+                        Row {
+                            Text { text: "31 Routine"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-routine-id; width: 95px; height: Theme.ctrl-h; edited(v) => { root.uds-routine-id = v; } }
+                            TBtn { boxed: true; text: "Start"; clicked => { root.uds-routine-start(); } }
+                        }
+                        Row {
+                            Text { text: "Custom"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.uds-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-custom = v; } }
+                            TBtn { primary: true; text: "Send"; clicked => { root.uds-custom-send(); } }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        Text { text: "UDS log"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: "Clear"; clicked => { root.diag-log-clear(); } }
+                    }
+                    TextEdit { text: root.diag-log; read-only: true; vertical-stretch: 1; font-size: Theme.fs-sm; }
+                }
+            }
+        }
+
+        if root.effective-tool-page == 1: HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 660px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    Text { text: "XCP commands"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+                    GridLayout {
+                        vertical-stretch: 0;
+                        spacing: 7px;
+                        Row {
+                            Text { text: "TX ID"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-id; width: 120px; height: Theme.ctrl-h; edited(v) => { root.xcp-id = v; } }
+                            Text { text: "RX ID"; width: 52px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-rx-id; width: 120px; height: Theme.ctrl-h; edited(v) => { root.xcp-rx-id = v; } }
+                        }
+                        Row {
+                            TBtn { boxed: true; text: "Connect FF"; clicked => { root.xcp-connect(); } }
+                            TBtn { boxed: true; text: "Status FD"; clicked => { root.xcp-status(); } }
+                            TBtn { boxed: true; text: "Disconnect FE"; clicked => { root.xcp-disconnect(); } }
+                        }
+                        Row {
+                            Text { text: "MTA addr"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-mta-addr; width: 120px; height: Theme.ctrl-h; edited(v) => { root.xcp-mta-addr = v; } }
+                            Text { text: "ext"; width: 28px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-mta-ext; width: 52px; height: Theme.ctrl-h; edited(v) => { root.xcp-mta-ext = v; } }
+                            TBtn { boxed: true; text: "SetMTA"; clicked => { root.xcp-set-mta(); } }
+                        }
+                        Row {
+                            Text { text: "Upload len"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-upload-len; width: 70px; height: Theme.ctrl-h; edited(v) => { root.xcp-upload-len = v; } }
+                            TBtn { boxed: true; text: "Upload"; clicked => { root.xcp-upload(); } }
+                        }
+                        Row {
+                            Text { text: "Download"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-download-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-download-data = v; } }
+                            TBtn { boxed: true; text: "Download"; clicked => { root.xcp-download(); } }
+                        }
+                        Row {
+                            Text { text: "Custom"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.xcp-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-custom = v; } }
+                            TBtn { primary: true; text: "Send"; clicked => { root.xcp-custom-send(); } }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
+                    HorizontalLayout {
+                        Text { text: "XCP log"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: "Clear"; clicked => { root.diag-log-clear(); } }
+                    }
+                    TextEdit { text: root.diag-log; read-only: true; vertical-stretch: 1; font-size: Theme.fs-sm; }
+                }
+            }
+        }
+
+        if root.single-tool-page < 0 && root.effective-tool-page == 2: VerticalLayout {
+            spacing: 8px;
+            Rectangle {
+                height: 42px;
+                background: Theme.panel2;
+                border-width: 1px;
+                border-color: Theme.border;
+                HorizontalLayout {
+                    padding: 6px;
+                    spacing: 8px;
+                    TBtn { boxed: true; text: "XCP"; active: root.ota-mode == 0; clicked => { root.ota-mode = 0; root.ota-can-id = root.xcp-id; } }
+                    TBtn { boxed: true; text: "UDS"; active: root.ota-mode == 1; clicked => { root.ota-mode = 1; root.ota-can-id = root.uds-id; } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text { text: root.ota-mode == 0 ? "XCP bootloader update" : "UDS diagnostic update"; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; }
+                }
+            }
+            Rectangle {
+                height: 176px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+                    Text { text: "Upgrade parameters"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+                    GridLayout {
+                        spacing: 8px;
+                        Row {
+                            Text { text: "CAN ID"; width: 90px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.ota-can-id; width: 160px; height: Theme.ctrl-h; edited(v) => { root.ota-can-id = v; } }
+                            Text { text: "Mode"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            Text { text: root.ota-mode == 0 ? "XCP" : "UDS"; width: 160px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                        }
+                        Row {
+                            Text { text: "Addr"; width: 90px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.ota-addr; width: 160px; height: Theme.ctrl-h; edited(v) => { root.ota-addr = v; } }
+                            Text { text: "CRC"; width: 70px; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; }
+                            LineEdit { text: root.ota-crc; width: 160px; height: Theme.ctrl-h; edited(v) => { root.ota-crc = v; } }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                height: 156px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 10px;
+                    Text { text: "Firmware file"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        LineEdit { text: root.ota-file-path; height: Theme.ctrl-h; horizontal-stretch: 1; read-only: true; }
+                        TBtn { boxed: true; text: "..."; clicked => { root.ota-pick-file(); } }
+                    }
+                    Text { text: root.ota-status; color: Theme.text; font-size: Theme.fs; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            height: 28px;
+                            horizontal-stretch: 1;
+                            background: Theme.panel2;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            Rectangle { x: 0; y: 0; height: 100%; width: parent.width * root.ota-progress; background: Theme.accent; }
+                        }
+                        Text { text: Math.round(root.ota-progress * 100) + "%"; width: 54px; horizontal-alignment: right; vertical-alignment: center; color: Theme.text; font-size: Theme.fs; }
+                    }
+                }
+            }
+            Rectangle {
+                height: 44px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle { horizontal-stretch: 1; }
+                    TBtn { boxed: true; text: "Stop"; clicked => { root.ota-stop(); } }
+                    TBtn { primary: true; text: "Start upgrade"; clicked => { root.ota-start(); } }
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
+    }
+}

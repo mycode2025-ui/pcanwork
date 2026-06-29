@@ -90,7 +90,21 @@ pub fn parse_csv_frames(text: &str) -> Vec<CanFrame> {
 /// CAN FD: `<t> CANFD <ch> Rx|Tx <id>[x] <name> <brs> <esi> <dlc> <datalen> <bytes...>`。
 pub fn parse_asc_frames(text: &str) -> Vec<CanFrame> {
     let mut v = Vec::new();
+    let mut date_epoch: Option<f64> = None;
+    let mut timestamps_absolute = false;
     for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("date ") {
+            date_epoch = parse_asc_date_epoch(rest);
+            continue;
+        }
+        if line.to_ascii_lowercase().contains("timestamps absolute") {
+            timestamps_absolute = true;
+            continue;
+        }
         let toks: Vec<&str> = line.split_whitespace().collect();
         if toks.len() < 5 {
             // 远程帧行最少 5 个 token: <t> <ch> <id> <dir> r
@@ -98,6 +112,11 @@ pub fn parse_asc_frames(text: &str) -> Vec<CanFrame> {
         }
         let Ok(t) = toks[0].parse::<f64>() else {
             continue;
+        };
+        let t = if timestamps_absolute {
+            date_epoch.map(|base| base + t).unwrap_or(t)
+        } else {
+            t
         };
         // ---- CAN FD 行 ----
         if toks.get(1) == Some(&"CANFD") {
@@ -177,6 +196,25 @@ pub fn parse_asc_frames(text: &str) -> Vec<CanFrame> {
         });
     }
     v
+}
+
+fn parse_asc_date_epoch(s: &str) -> Option<f64> {
+    let s = s.trim();
+    let formats = [
+        "%a %b %d %I:%M:%S%.f %p %Y",
+        "%a %b %e %I:%M:%S%.f %p %Y",
+        "%a %b %d %H:%M:%S%.f %Y",
+        "%a %b %e %H:%M:%S%.f %Y",
+    ];
+    for fmt in formats {
+        if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+            return dt
+                .and_local_timezone(chrono::Local)
+                .single()
+                .map(|local| local.timestamp() as f64 + local.timestamp_subsec_nanos() as f64 / 1e9);
+        }
+    }
+    None
 }
 
 /// Write this app's CSV format: Time,Ch,Dir,ID,Len,Data
@@ -349,6 +387,21 @@ mod tests {
         assert!(back[2].fd && back[2].brs && back[2].ext);
         assert_eq!(back[2].id, 0x18FF1234);
         assert_eq!(back[2].data, (0u8..16).collect::<Vec<u8>>());
+    }
+
+    #[test]
+    fn asc_absolute_timestamp_uses_date_header() {
+        let asc = "date Fri Jun 26 05:28:02.278 PM 2026\n\
+base hex timestamps absolute\n\
+// version 7.0.0\n\
+0.226000 1  18fa78f5x       Rx   d 8 68 00 00 00 00 00 00 00\n";
+        let frames = parse_asc_frames(asc);
+        assert_eq!(frames.len(), 1);
+        let base = parse_asc_date_epoch("Fri Jun 26 05:28:02.278 PM 2026").unwrap();
+        assert!((frames[0].t - (base + 0.226)).abs() < 0.001);
+        assert!(frames[0].t > 1_700_000_000.0);
+        assert_eq!(frames[0].id, 0x18FA78F5);
+        assert!(frames[0].ext);
     }
 
     #[test]

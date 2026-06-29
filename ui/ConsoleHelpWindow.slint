@@ -1,0 +1,39 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component ConsoleHelpWindow inherits Window {
+    title: I18n.en ? "PcanWork - printf-over-CAN (MCU firmware)" : "PcanWork - 下位机 printf-over-CAN 实现";
+    icon: @image-url("logo.svg");
+    preferred-width: 780px;
+    preferred-height: 620px;
+    background: Theme.bg;
+
+    in property <string> help-text;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+        Text {
+            text: I18n.en
+                ? "Copy the C below into your MCU firmware. CAN_LOG_ID must match the ID box in the CAN Console panel."
+                : "把下面的 C 代码抄进下位机固件。CAN_LOG_ID 要和「报文日志」面板里填的 ID 一致。";
+            wrap: word-wrap; color: Theme.text; font-size: Theme.fs;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.panel; border-width: 1px; border-color: Theme.border;
+            TextEdit {
+                width: 100%; height: 100%;
+                text: root.help-text;
+                read-only: true;
+                font-size: 12px;
+            }
+        }
+        Text {
+            text: I18n.en ? "Tip: click in the text, then Ctrl+A and Ctrl+C to copy all."
+                         : "提示：在文本里点一下，Ctrl+A 全选，Ctrl+C 复制。";
+            color: Theme.text-dim; font-size: Theme.fs-sm;
+        }
+    }
+}

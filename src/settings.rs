@@ -57,6 +57,12 @@ pub struct Settings {
     pub console_id: i64, // CAN 报文日志: 捕获的 ID(-1=任意)
     #[serde(default)]
     pub console_ch: i32, // CAN 报文日志: 捕获的通道(0=任意)
+    #[serde(default = "default_renderer")]
+    pub renderer: String, // 渲染器: "auto"(默认,远程/虚拟显示自动用CPU) | "gpu"(femtovg) | "cpu"(software)
+}
+
+pub fn default_renderer() -> String {
+    "auto".to_string()
 }
 
 fn neg_one() -> i64 {
@@ -95,6 +101,7 @@ impl Default for Settings {
             console_enabled: false,
             console_id: -1,
             console_ch: 0,
+            renderer: default_renderer(),
         }
     }
 }

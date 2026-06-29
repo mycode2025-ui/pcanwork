@@ -44,6 +44,63 @@ fn wire_tx(
         });
     }
     {
+        let txw = tx_window.as_weak();
+        let app = app.clone();
+        tx_window.on_tx_file_send(move || {
+            let Some(w) = txw.upgrade() else { return };
+            let en = app.borrow().lang_en;
+            let path = w.get_tx_file_path().to_string();
+            if path.trim().is_empty() {
+                w.set_tx_file_status(if en { "Select a file first".into() } else { "请选择文件".into() });
+                return;
+            }
+            let id = parse_u32(&w.get_tx_file_id()).unwrap_or(0);
+            let mode = w.get_tx_file_mode();
+            let repeat = w.get_tx_file_repeat().trim().parse::<u32>().unwrap_or(1).max(1);
+            let mut a = app.borrow_mut();
+            if mode == 1 || mode == 2 {
+                let job = match build_ota_job(&w, &path, id, mode, en) {
+                    Ok(job) => job,
+                    Err(e) => {
+                        w.set_tx_file_status(e.into());
+                        return;
+                    }
+                };
+                let total = job.steps.len();
+                let _ = a.cmd.send(Cmd::OtaRun(job));
+                w.set_tx_file_progress(0.0);
+                w.set_tx_file_status(if en {
+                    format!("OTA started ({total} steps)")
+                } else {
+                    format!("OTA 已启动（{total} 步）")
+                }.into());
+            } else {
+                let frames = match build_file_send_frames(&w, &path, id, mode, en) {
+                    Ok(frames) => frames,
+                    Err(e) => {
+                        w.set_tx_file_status(e.into());
+                        return;
+                    }
+                };
+                let mut sent = 0u64;
+                for _ in 0..repeat {
+                    for frame in &frames {
+                        let _ = a.cmd.send(Cmd::SendOnce(frame.clone()));
+                        sent += 1;
+                    }
+                }
+                a.tx += sent;
+                a.log(format!("File send: {path}, total {sent} frames"));
+                w.set_tx_file_progress(1.0);
+                w.set_tx_file_status(if en {
+                    format!("Sent {sent} frames ({} frames x {repeat})", frames.len())
+                } else {
+                    format!("已发送 {sent} 帧（{} 帧 x {repeat}）", frames.len())
+                }.into());
+            }
+        });
+    }
+    {
         let app = app.clone();
         tx_window.on_tx_remove(move |i| {
             let mut a = app.borrow_mut();
@@ -551,6 +608,50 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
         });
     }
     {
+        let txw = tx_window.as_weak();
+        let app = app.clone();
+        tx_window.on_tx_file_send(move || {
+            let Some(w) = txw.upgrade() else { return };
+            let en = app.borrow().lang_en;
+            let path = w.get_tx_file_path().to_string();
+            if path.trim().is_empty() {
+                w.set_tx_file_status(if en { "Select a file first".into() } else { "请选择文件".into() });
+                return;
+            }
+            let id = parse_u32(&w.get_tx_file_id()).unwrap_or(0);
+            let mode = w.get_tx_file_mode();
+            let repeat = w.get_tx_file_repeat().trim().parse::<u32>().unwrap_or(1).max(1);
+            let frames = match build_file_send_frames(&w, &path, id, mode, en) {
+                Ok(frames) => frames,
+                Err(e) => {
+                    w.set_tx_file_status(e.into());
+                    return;
+                }
+            };
+            let mut a = app.borrow_mut();
+            let mut sent = 0u64;
+            for _ in 0..repeat {
+                for frame in &frames {
+                    let _ = a.cmd.send(Cmd::SendOnce(frame.clone()));
+                    sent += 1;
+                }
+            }
+            a.tx += sent;
+            let mode_name = match mode {
+                1 => "XCP OTA",
+                2 => "UDS OTA",
+                _ => "File",
+            };
+            a.log(format!("{mode_name} send: {path}, total {sent} frames"));
+            w.set_tx_file_progress(1.0);
+            w.set_tx_file_status(if en {
+                format!("Sent {sent} frames ({} frames x {repeat})", frames.len())
+            } else {
+                format!("已发送 {sent} 帧（{} 帧 x {repeat}）", frames.len())
+            }.into());
+        });
+    }
+    {
         let app = app.clone();
         tx_window.on_tx_update(move |i, field, value| {
             let mut a = app.borrow_mut();
@@ -880,4 +981,225 @@ let mut carry = true;
             w.set_tx_form_dlc(n.to_string().into());
         });
     }
+}
+
+fn build_file_send_frames(
+    w: &TxWindow,
+    path: &str,
+    id: u32,
+    mode: i32,
+    en: bool,
+) -> Result<Vec<CanFrame>, String> {
+    match mode {
+        1 => build_xcp_file_frames(path, id, en),
+        2 => {
+            let addr = parse_u32(&w.get_tx_file_addr()).unwrap_or(0);
+            let crc = parse_u32(&w.get_tx_file_crc()).unwrap_or(0) as u16;
+            build_uds_file_frames(path, id, addr, crc, en)
+        }
+        _ => build_normal_file_frames(w, path, id, en),
+    }
+}
+
+fn build_ota_job(
+    w: &TxWindow,
+    path: &str,
+    id: u32,
+    mode: i32,
+    en: bool,
+) -> Result<OtaJob, String> {
+    match mode {
+        1 => build_xcp_ota_job(path, id, en),
+        2 => {
+            let addr = parse_u32(&w.get_tx_file_addr()).unwrap_or(0);
+            let crc = parse_u32(&w.get_tx_file_crc()).unwrap_or(0) as u16;
+            build_uds_ota_job(path, id, addr, crc, en)
+        }
+        _ => Err("unsupported OTA mode".into()),
+    }
+}
+
+fn build_normal_file_frames(
+    w: &TxWindow,
+    path: &str,
+    id: u32,
+    en: bool,
+) -> Result<Vec<CanFrame>, String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
+    let max_len = w.get_tx_file_len().trim().parse::<usize>().unwrap_or(8).clamp(1, 64);
+    let ext = id > 0x7FF;
+    let mut frames = Vec::new();
+    for line in text.lines() {
+        let data = parse_tx_bytes(line, max_len);
+        if !data.is_empty() {
+            frames.push(CanFrame {
+                t: 0.0,
+                ch: 1,
+                tx: true,
+                id,
+                ext,
+                fd: max_len > 8,
+                brs: false,
+                remote: false,
+                error: false,
+                data,
+            });
+        }
+    }
+    if frames.is_empty() {
+        return Err(if en { "No valid frame data in file".into() } else { "文件无有效帧数据".into() });
+    }
+    Ok(frames)
+}
+
+fn xcp_response_to_can(response: ota::xcp::XcpResponseId) -> OtaResponseId {
+    match response {
+        ota::xcp::XcpResponseId::Exact(id) => OtaResponseId::Exact(id),
+        ota::xcp::XcpResponseId::WildcardBase(base) => OtaResponseId::WildcardBase(base),
+    }
+}
+
+fn build_xcp_ota_job(path: &str, id: u32, en: bool) -> Result<OtaJob, String> {
+    let ids = ota::xcp::resolve_ids(id)
+        .ok_or_else(|| if en { "Invalid XCP CAN ID, expected 0x1821xx10".to_string() } else { "无效 XCP CAN ID，应为 0x1821xx10".to_string() })?;
+    let response = xcp_response_to_can(ids.response);
+    let raw = std::fs::read(path)
+        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
+    let image = ota::xcp::padded_image(raw)?;
+    let mut steps = Vec::new();
+    steps.push(OtaStep {
+        frame: ota::xcp::connect_frame(1, ids.send_id),
+        ack: OtaAck::XcpConnect { response },
+        timeout_ms: 100,
+        retries: 200,
+    });
+    for prepared in ota::xcp::prepare_download(&image) {
+        steps.push(OtaStep {
+            frame: ota::xcp::prepared_frame_to_can(1, ids.send_id, &prepared),
+            ack: OtaAck::XcpAck { response },
+            timeout_ms: if matches!(prepared, ota::xcp::XcpPreparedFrame::End) { 500 } else { 60 },
+            retries: 3,
+        });
+    }
+    Ok(OtaJob {
+        name: "XCP OTA".into(),
+        steps,
+        timeout_ms: 60,
+        retries: 3,
+    })
+}
+
+fn build_xcp_file_frames(path: &str, id: u32, en: bool) -> Result<Vec<CanFrame>, String> {
+    let ids = ota::xcp::resolve_ids(id)
+        .ok_or_else(|| if en { "Invalid XCP CAN ID, expected 0x1821xx10".to_string() } else { "无效 XCP CAN ID，应为 0x1821xx10".to_string() })?;
+    let raw = std::fs::read(path)
+        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
+    let image = ota::xcp::padded_image(raw)?;
+    let mut frames = Vec::new();
+    frames.push(ota::xcp::connect_frame(1, ids.send_id));
+    frames.extend(
+        ota::xcp::prepare_download(&image)
+            .iter()
+            .map(|frame| ota::xcp::prepared_frame_to_can(1, ids.send_id, frame)),
+    );
+    Ok(frames)
+}
+
+fn push_uds_multiframe_steps(
+    steps: &mut Vec<OtaStep>,
+    frames: impl IntoIterator<Item = CanFrame>,
+    final_ack: OtaAck,
+) {
+    let frames: Vec<CanFrame> = frames.into_iter().collect();
+    let last = frames.len().saturating_sub(1);
+    for (i, frame) in frames.into_iter().enumerate() {
+        let ack = if i == 0 {
+            OtaAck::UdsFlowControl
+        } else if i == last {
+            final_ack
+        } else {
+            OtaAck::None
+        };
+        steps.push(OtaStep {
+            frame,
+            ack,
+            timeout_ms: if matches!(ack, OtaAck::None) { 1 } else { 1000 },
+            retries: 3,
+        });
+    }
+}
+
+fn build_uds_ota_job(
+    path: &str,
+    id: u32,
+    addr: u32,
+    crc: u16,
+    en: bool,
+) -> Result<OtaJob, String> {
+    if id == 0 {
+        return Err(if en { "UDS CAN ID is empty".into() } else { "UDS CAN ID 为空".into() });
+    }
+    let image = std::fs::read(path)
+        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
+    if image.is_empty() {
+        return Err(if en { "UDS file is empty".into() } else { "UDS 文件为空".into() });
+    }
+
+    let mut steps = Vec::new();
+    steps.push(OtaStep {
+        frame: ota::uds::diagnostic_session(1, id, 0x03),
+        ack: OtaAck::UdsPositive { service: ota::uds::DIAGNOSTIC_SESSION_CONTROL },
+        timeout_ms: 1000,
+        retries: 3,
+    });
+    push_uds_multiframe_steps(
+        &mut steps,
+        ota::uds::request_download(1, id, addr, image.len() as u32),
+        OtaAck::UdsPositive { service: ota::uds::REQUEST_DOWNLOAD },
+    );
+    for (i, chunk) in image.chunks(256).enumerate() {
+        push_uds_multiframe_steps(
+            &mut steps,
+            ota::uds::transfer_data_block(1, id, i as u8, chunk),
+            OtaAck::UdsPositive { service: ota::uds::TRANSFER_DATA },
+        );
+    }
+    steps.push(OtaStep {
+        frame: ota::uds::request_transfer_exit(1, id, crc),
+        ack: OtaAck::UdsPositive { service: ota::uds::REQUEST_TRANSFER_EXIT },
+        timeout_ms: 1000,
+        retries: 3,
+    });
+    Ok(OtaJob {
+        name: "UDS OTA".into(),
+        steps,
+        timeout_ms: 1000,
+        retries: 3,
+    })
+}
+
+fn build_uds_file_frames(
+    path: &str,
+    id: u32,
+    addr: u32,
+    crc: u16,
+    en: bool,
+) -> Result<Vec<CanFrame>, String> {
+    if id == 0 {
+        return Err(if en { "UDS CAN ID is empty".into() } else { "UDS CAN ID 为空".into() });
+    }
+    let image = std::fs::read(path)
+        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
+    if image.is_empty() {
+        return Err(if en { "UDS file is empty".into() } else { "UDS 文件为空".into() });
+    }
+    let mut frames = Vec::new();
+    frames.push(ota::uds::diagnostic_session(1, id, 0x03));
+    frames.extend(ota::uds::request_download(1, id, addr, image.len() as u32));
+    for (i, chunk) in image.chunks(256).enumerate() {
+        frames.extend(ota::uds::transfer_data_block(1, id, i as u8, chunk));
+    }
+    frames.push(ota::uds::request_transfer_exit(1, id, crc));
+    Ok(frames)
 }

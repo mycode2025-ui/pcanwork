@@ -1,10 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-//! PcanWork — 参考 ZLG ZXDoc 风格的 CAN/CAN FD 报文分析工具（Slint + Rust）。
-//!
-//! 当前版本已打通的核心链路
-//!   设备层(PCAN/虚拟回退) → 接收线程 → 100ms 批量刷新 → 报文表(Trace/Overwrite)
-//!   → DBC 解码 → 信号解析面板 → 实时曲线；以及发送(单次/周期)、快速过滤、统计、日志。
+
 mod blf;
 mod can;
 mod chart;
@@ -13,6 +9,7 @@ mod dbc;
 mod expr;
 mod ipc;
 mod msg_table;
+mod ota;
 mod render;
 mod settings;
 mod sim;
@@ -28,6 +25,7 @@ include!("wire_main.rs");
 include!("wire_dialogs.rs");
 include!("wire_chart.rs");
 include!("wire_tx.rs");
+include!("wire_ota.rs");
 include!("wire_playback.rs");
 include!("wire_sim.rs");
 include!("wire_pyauto.rs");
@@ -45,7 +43,7 @@ use tx::{
     tx_list_sig, tx_task_from_form, ui_to_vary, update_tx_task,
 };
 
-use can::{CanFrame, Cmd, DeviceConfig, Evt};
+use can::{CanFrame, Cmd, DeviceConfig, Evt, OtaAck, OtaJob, OtaResponseId, OtaStep};
 use dbc::{DbcDb, Decoded, MessageDef};
 use serde::{Deserialize, Serialize};
 use slint::{Color, ModelRc, SharedString, Timer, TimerMode, VecModel};
@@ -57,16 +55,15 @@ use std::time::Duration;
 
 slint::include_modules!();
 
-const TRACE_CAP: usize = 100_000; // 原始缓存上限
-pub(crate) const DISPLAY_CAP: usize = 1500; // 单次刷新最多渲染行数（保证刷新轻量
-const CHART_CAP: usize = 10_000; // 每信号曲线点数上
+const TRACE_CAP: usize = 100_000;
+pub(crate) const DISPLAY_CAP: usize = 1500; 
+const CHART_CAP: usize = 10_000; 
 const LOG_CAP: usize = 500;
 
 pub(crate) fn key_of(ch: u8, tx: bool, id: u32) -> u64 {
     ((ch as u64) << 40) | ((tx as u64) << 39) | (id as u64)
 }
 
-/// 单帧的显示记录（已算好衍生字段）
 pub(crate) struct FrameRec {
     pub(crate) no: u64,
     pub(crate) key: u64,
@@ -92,9 +89,9 @@ pub(crate) struct LastInfo {
     pub(crate) count: u64,
     pub(crate) min_cycle: f64,
     pub(crate) max_cycle: f64,
-    pub(crate) sum_cycle: f64, // 周期累加(用于真均值 = sum_cycle/(count-1))
+    pub(crate) sum_cycle: f64,
     ext: bool,
-    pub(crate) byte_change_t: Vec<f64>, // 每字节最近一次变化的时间戳，用于 Overwrite 模式 500ms 高亮淡出
+    pub(crate) byte_change_t: Vec<f64>,
 }
 
 #[derive(Clone)]
@@ -107,11 +104,11 @@ pub(crate) struct Series {
     pub(crate) samples: VecDeque<(f64, f64)>,
     pub(crate) cur: f64,
     pub(crate) visible: bool,
-    /// Some(公式) = 表达式派生信号(用 sig_latest 实时求值采样); None = 普通 DBC 信号(id+signal)。
+
     pub(crate) expr: Option<String>,
 }
 
-/// 表达式派生信号定义(用户在"选择信号 → Expression Variables"里创建)。
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ExprVar {
     pub(crate) name: String,
@@ -120,35 +117,22 @@ pub(crate) struct ExprVar {
     pub(crate) unit: String,
 }
 
-const CONSOLE_LINE_CAP: usize = 5000; // 报文日志最多保留行数
-const CONSOLE_PARTIAL_MAX: usize = 8192; // 单行未换行字节上限(超出强制断行,防膨胀)
+const CONSOLE_LINE_CAP: usize = 5000; 
+const CONSOLE_PARTIAL_MAX: usize = 8192; 
 
-/// 下位机(MCU)侧 printf-over-CAN 实现指南,显示在"报文日志 → 帮助"窗口里。
+
 pub(crate) const CONSOLE_HELP: &str = r#"// ===== printf-over-CAN: 下位机(MCU)C 实现 =====
-// 作用: 把固件 printf 的字符通过 CAN 数据域发出, 上位机 PcanWork 的
-// [报文日志]面板按 ID 把字节重组成文本实时显示.
-//
-// 与上位机解码器的约定 (务必遵守) :
-// 1) 数据域里放 ASCII 或 UTF-8 字符 (UTF-8 可发中文) .
-// 2) 行尾用 '\n' (0x0A) 断行.
-// 3) 不足整帧的字节用 0x00 填充 -- 上位机会自动跳过 0x00.
-// 4) '\r' (0x0D) 上位机会忽略, 可发可不发.
-// 5) CAN_LOG_ID 必须和[报文日志]面板里填的 ID 一致.
-//
-// 经典 CAN: 每帧最多 8 字节, 长行自动拆成多帧, 上位机按 ID 拼到 '\n' 为一行.
-// CAN FD : 每帧最多 64 字节, 推荐一行装一帧, 发得更整, 更省带宽.
+
 
 #include <stdint.h>
 #include <stdio.h>
 
-#define CAN_LOG_ID 0x7E0u // 经典 CAN 用的 ID (与上位机一致)
-#define CAN_LOG_ID_FD 0x7E1u // CAN FD 用的 ID
+#define CAN_LOG_ID 0x7E0u 
+#define CAN_LOG_ID_FD 0x7E1u 
 
-// 你的 CAN 驱动: 发一帧. data=数据域, len=字节数(经典<=8, FD<=64),
-// is_fd=1 用 CAN FD 发. 请按你的芯片 HAL 实现这个函数.
+
 extern void board_can_send(uint32_t id, const uint8_t *data, uint8_t len, int is_fd);
 
-// ---------- 方案 A: 经典 CAN (每帧 8 字节) ----------
 static uint8_t s_buf[8];
 static uint8_t s_len = 0;
 
@@ -214,26 +198,26 @@ int _write(int fd, const char *buf, int n)
 // * 经典 CAN 与 FD 不能在同一条总线混跑, 按你的总线选一种.
 "#;
 
-/// printf-over-CAN 控制台缓冲: 把 CAN 帧数据域里的 ASCII/UTF-8 字节重组成文本行。
-/// 跳过 0x00(填充)和 0x0D(回车),遇 0x0A(换行)断行,每行用 UTF-8 lossy 解码
-/// (兼容纯 ASCII 与下位机发的 UTF-8 中文)。
+
+
+
 #[derive(Default)]
 pub(crate) struct ConsoleBuf {
-    pub(crate) lines: VecDeque<String>, // 已完成的行
-    partial: Vec<u8>,                   // 当前未换行的行字节
+    pub(crate) lines: VecDeque<String>,
+    partial: Vec<u8>,
 }
 
 impl ConsoleBuf {
-    /// 喂入一帧数据域字节。
+
     pub(crate) fn feed(&mut self, data: &[u8]) {
         for &b in data {
             match b {
-                0x00 | 0x0D => {} // 填充 / 回车: 跳过
+                0x00 | 0x0D => {}
                 0x0A => self.flush_line(),
                 _ => {
                     self.partial.push(b);
                     if self.partial.len() >= CONSOLE_PARTIAL_MAX {
-                        self.flush_line(); // 超长无换行: 强制断行
+                        self.flush_line();
                     }
                 }
             }
@@ -251,7 +235,7 @@ impl ConsoleBuf {
         self.lines.clear();
         self.partial.clear();
     }
-    /// 显示用的行 = 已完成行 + 当前未完成行(非空时附在末尾)。
+
     pub(crate) fn rows(&self) -> Vec<String> {
         let mut v: Vec<String> = self.lines.iter().cloned().collect();
         if !self.partial.is_empty() {
@@ -259,7 +243,7 @@ impl ConsoleBuf {
         }
         v
     }
-    /// 导出为纯文本(供保存到文件)。
+
     pub(crate) fn export_text(&self) -> String {
         let mut s = self.lines.iter().cloned().collect::<Vec<_>>().join("\n");
         if !self.partial.is_empty() {
@@ -284,7 +268,7 @@ pub(crate) enum SignalPickItem {
     MessagesRoot,
     Message(u32),
     Signal(u32, String),
-    ExprVar(String), // 表达式派生信号(按名字)
+    ExprVar(String),
 }
 
 pub(crate) struct TxTask {
@@ -298,29 +282,29 @@ pub(crate) struct TxTask {
     pub(crate) data: Vec<u8>,
     pub(crate) periodic: bool,
     pub(crate) period_ms: u64,
-    pub(crate) repeat: i64,                    // 发送次数：-1=无限循环；N>=1=发 N 次后自动停
+    pub(crate) repeat: i64,
     pub(crate) sent: u64,
     pub(crate) handle: u64,
-    pub(crate) dbc_id: Option<u32>,           // 绑定的 DBC 报文（DBC 发送任务）
-    pub(crate) sig_values: Vec<(String, f64)>, // 各信号当前物理值（编辑的实际值，作为变化基准）
-    pub(crate) varies: Vec<SignalVary>,         // 每信号的实际值变化规则
+    pub(crate) dbc_id: Option<u32>,
+    pub(crate) sig_values: Vec<(String, f64)>,
+    pub(crate) varies: Vec<SignalVary>,
 }
 
-/// 单个信号的实际值变化规则（信号变化发送）。未列出的信号视为「无变化」。
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct SignalVary {
     pub(crate) signal: String,
     pub(crate) mode: vary::VaryMode,
 }
 
-/// 触发条件（命中后执行动作）
+
 enum TrigCond {
     IdEquals(u32),
     ByteEquals { off: usize, val: u8 },
     ErrorFrame,
 }
 
-/// 触发动作
+
 #[derive(Clone, Copy)]
 enum TrigAction {
     Alarm,
@@ -332,8 +316,8 @@ enum TrigAction {
 struct Trigger {
     cond: TrigCond,
     action: TrigAction,
-    last: Option<std::time::Instant>, // 节流，避免连续命中刷
-// 与 SendFrame 动作使用：命中时发送的响应
+    last: Option<std::time::Instant>,
+
 send_ch: u8,
     send_id: u32,
     send_ext: bool,
@@ -351,19 +335,19 @@ impl Trigger {
     }
 }
 
-// ======================= 仿真面板(画布式仪表盘) =======================
 
-/// 仿真控件类型。RX 类读 a.last 实时显示; TX 类在运行模式下发帧
+
+
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(crate) enum SimKind {
-    Indicator, // 0 指示灯: 信号>阈值点亮
-    Dial,      // 1 仪表盘: 指针式表盘, cur 映射到[min,max]
-    Bar,       // 2 进度条: cur 映射到 [min,max]
-    Numeric,   // 3 数值: 显示 cur
-    Label,     // 4 文本标签: 显示 name
-    Button,    // 5 按钮: 运行模式点击发帧(值=max)
-    Slider,    // 6 滑块: 运行模式拖动设值并发帧
-    SignalGen, // 7 信号发生器: 运行模式按周期发时变信号
+    Indicator,
+    Dial,
+    Bar,
+    Numeric,
+    Label,
+    Button,
+    Slider,
+    SignalGen,
 }
 
 impl SimKind {
@@ -418,7 +402,7 @@ impl SimKind {
             SimKind::SignalGen => "SignalGen",
         }
     }
-    /// 新建时的默认尺寸(逻辑 px)
+
 fn default_size(self) -> (f64, f64) {
         match self {
             SimKind::Indicator => (90.0, 90.0),
@@ -433,7 +417,7 @@ fn default_size(self) -> (f64, f64) {
     }
 }
 
-/// 信号发生器波形
+
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub(crate) enum GenMode {
     Constant,
@@ -457,22 +441,22 @@ fn default_press() -> f64 {
     1.0
 }
 
-/// 保存当前配置（失败静默）。
+
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct SimWidget {
     pub(crate) kind: SimKind,
     pub(crate) name: String,
     #[serde(default = "default_chan")]
-    pub(crate) channel: u8, // CAN 通道(1 起)
+    pub(crate) channel: u8,
     pub(crate) frame_id: u32,
-    pub(crate) signal: String, // DBC 信号名(空=用 byte0 原始字节)
-    pub(crate) threshold: f64, // 指示灯阈
-    pub(crate) min: f64,       // 量程下限 / 滑块下限
-    pub(crate) max: f64,       // 量程上限 / 滑块上限
+    pub(crate) signal: String,
+    pub(crate) threshold: f64,
+    pub(crate) min: f64,
+    pub(crate) max: f64,
     pub(crate) gen_mode: GenMode,
     pub(crate) gen_step: f64,
     pub(crate) period_ms: u64,
-    // 画布位置/尺寸(逻辑 px), 加 serde default 便于将来加字段时旧档容错
+
     #[serde(default)]
     pub(crate) x: f64,
     #[serde(default)]
@@ -483,23 +467,23 @@ pub(crate) struct SimWidget {
     pub(crate) h: f64,
     pub(crate) enabled: bool,
     #[serde(default)]
-    pub(crate) slider_val: f64, // 滑块/按钮当前值(持久化)
+    pub(crate) slider_val: f64,
     #[serde(default = "default_press")]
-    pub(crate) press_val: f64, // 按钮按下发送
+    pub(crate) press_val: f64,
     #[serde(default)]
-    pub(crate) release_val: f64, // 按钮释放发送
+    pub(crate) release_val: f64,
     #[serde(default = "default_align")]
-    pub(crate) align: i32, // 文本对齐: 0左 1中 2右(标签/数值)
-    // ---- 运行期(不序列化) ----
+    pub(crate) align: i32,
+
     #[serde(skip)]
-    pub(crate) cur: f64, // RX 最新
+    pub(crate) cur: f64,
     #[serde(skip)]
-    pub(crate) tick: u64, // 发生器步进计
+    pub(crate) tick: u64,
     #[serde(skip)]
     pub(crate) last_fire: Option<std::time::Instant>,
 }
 
-/// 发送任务的可序列化形态（用于发送列表保存/加载；handle/sent 重新生成）。
+
 #[derive(Serialize, Deserialize)]
 struct TxTaskDto {
     name: String,
@@ -554,7 +538,7 @@ impl TxTaskDto {
             brs: self.brs,
             remote: self.remote,
             data: self.data,
-            periodic: false, // 加载后默认停发，避免一加载就开始周期发
+            periodic: false,
 period_ms: self.period_ms.max(1),
             repeat: self.repeat,
             sent: 0,
@@ -566,7 +550,7 @@ period_ms: self.period_ms.max(1),
     }
 }
 
-/// 工程文件（.zcp）：把当前配置 + 发送列表打包为一个可保存/打开的工程。
+
 #[derive(Serialize, Deserialize)]
 struct Project {
     #[serde(default)]
@@ -577,14 +561,14 @@ struct Project {
 
 #[derive(Default)]
 pub(crate) struct Filter {
-    pub(crate) allow: Vec<(u32, u32)>, // ID 允许范围
-    pub(crate) deny: Vec<u32>,         // ID 排除
+    pub(crate) allow: Vec<(u32, u32)>,
+    pub(crate) deny: Vec<u32>,
     pub(crate) name: Option<String>,
     pub(crate) name_exclude: bool,
     pub(crate) name_prefix: bool,
     pub(crate) name_suffix: bool,
     pub(crate) data: Option<Vec<u8>>,
-    pub(crate) dir_filter: Option<bool>, // None=全部, Some(true)=仅Tx, Some(false)=仅Rx
+    pub(crate) dir_filter: Option<bool>,
 }
 
 impl Filter {
@@ -625,82 +609,84 @@ pub(crate) struct App {
     pub(crate) cmd: Sender<Cmd>,
     pub(crate) dbcs: Vec<DbcDb>,
     pub(crate) mode_trace: bool,
-    pub(crate) time_mode: i32,       // 时间列显示 0=相对(秒) 1=绝对(时分秒) 2=系统(含日期)
-    pub(crate) capture_wall_epoch: Option<f64>, // 采集起点对应的墙钟 unix 秒(首帧时 now-f.t 推得)
-    cols_hidden: std::collections::HashSet<String>, // 隐藏的报文表列(key)
-    pub(crate) sim_widgets: Vec<SimWidget>,          // 仿真面板控件
-    pub(crate) sim_model: Rc<VecModel<SimRow>>,      // 仿真面板常驻模型
-    pub(crate) sim_sel: i32,                         // 主选中控件(-1=无), 驱动属性窗口
-    pub(crate) sim_multi: std::collections::HashSet<i32>, // 多选集合(用于对齐)
-    pub(crate) sim_running: bool,                    // 仿真运行(锁定)模式
+    pub(crate) time_mode: i32,
+    pub(crate) capture_wall_epoch: Option<f64>,
+    cols_hidden: std::collections::HashSet<String>,
+    pub(crate) sim_widgets: Vec<SimWidget>,
+    pub(crate) sim_model: Rc<VecModel<SimRow>>,
+    pub(crate) sim_sel: i32,
+    pub(crate) sim_multi: std::collections::HashSet<i32>,
+    pub(crate) sim_running: bool,
     pub(crate) paused: bool,
     autoscroll: bool,
     recording: bool,
     pub(crate) connected: bool,
-    pub(crate) conn_name: String, // 实际连接的后端设备名
+    pub(crate) conn_name: String,
     pub(crate) running: bool,
     pub(crate) baud: String,
     device_cfg: DeviceConfig,
-    pub(crate) channels: Vec<DeviceConfig>, // 多通道配置列表
-    channel_sel: i32,            // 通道管理器当前选中的通道
+    pub(crate) channels: Vec<DeviceConfig>,
+    channel_sel: i32,
     rec_file: Option<std::io::BufWriter<std::fs::File>>,
     rec_fmt: RecFmt,
     rec_blf_buf: Vec<CanFrame>,
     rec_path: Option<std::path::PathBuf>,
-    pub(crate) sig_log: Option<std::io::BufWriter<std::fs::File>>, // 信号记录器(流式 CSV)
-    trigger: Option<Trigger>,                           // 触发规则(条件→动作)
+    pub(crate) sig_log: Option<std::io::BufWriter<std::fs::File>>,
+    trigger: Option<Trigger>,
     dbc_paths: Vec<String>,
 
     pub(crate) trace: VecDeque<FrameRec>,
     pub(crate) no_counter: u64,
     pub(crate) last: HashMap<u64, LastInfo>,
-    pub(crate) last_dirty: bool, // last 变化标记：仅变化时才重建 IPC 快照(避免每拍深拷贝整表)
+    pub(crate) last_dirty: bool,
 
     pub(crate) rx: u64,
     pub(crate) tx: u64,
     pub(crate) err: u64,
 
     pub(crate) series: Vec<Series>,
-    // ---- 表达式派生信号 ----
-    pub(crate) expr_vars: Vec<ExprVar>,              // 用户定义的派生信号(名/公式/单位)
-    pub(crate) sig_latest: HashMap<String, f64>,     // 信号名 -> 最新物理值(供表达式求值)
-    pub(crate) expr_decode_ids: HashSet<u32>,        // 被任一表达式引用到的报文 id(只对这些帧解码更新 sig_latest)
-    pub(crate) sig_cat: i32,                          // 选择信号对话框左侧分类: 0=CAN/DBC, 3=表达式
-    pub(crate) signal_pick_expr_selected: Option<String>, // 表达式列表里选中的派生信号名
-    // ---- CAN 报文日志 (printf-over-CAN 控制台) ----
-    pub(crate) console_enabled: bool,                // 是否捕获
-    pub(crate) console_id: Option<u32>,              // None=任意ID, Some=只收该ID
-    pub(crate) console_ch: u8,                        // 0=任意通道, 否则只收该软件通道
-    pub(crate) console: ConsoleBuf,                   // 文本重组缓冲
+
+    pub(crate) expr_vars: Vec<ExprVar>,
+    pub(crate) sig_latest: HashMap<String, f64>,
+    pub(crate) expr_decode_ids: HashSet<u32>,
+    pub(crate) sig_cat: i32,
+    pub(crate) signal_pick_expr_selected: Option<String>,
+
+    pub(crate) console_enabled: bool,
+    pub(crate) console_id: Option<u32>,
+    pub(crate) console_ch: u8,
+    pub(crate) console: ConsoleBuf,
     pub(crate) selected_key: Option<u64>,
     selected_index: i32,
-    pub(crate) sig_panel: Vec<(u32, String)>, // (msg id, signal name) 当前信号面板顺序，供“添加到曲线”定
+    pub(crate) sig_panel: Vec<(u32, String)>,
 dbc_signal_choices: Vec<(u32, String)>,
 
     filter: Filter,
     pub(crate) txs: Vec<TxTask>,
-    pub(crate) tx_sel: i32,           // DBC 发送页选中的任务行
-    pub(crate) tx_dbc_order: Vec<(u32, String)>, // DBC 报文选择列表的顺序（id, name
-    pub(crate) tx_sig_cache: u64,     // 信号编辑器渲染签名，避免输入被每帧重建覆
-    pub(crate) tx_msgs_cache: u64,    // DBC 报文选择列表渲染签名
-    pub(crate) tx_list_cache: u64,    // 发送任务列表渲染签名，仅内容变化时重建
-    pub(crate) tx_checked: HashSet<u64>, // 发送列表中被勾选的任务 handle（全选/上移/下移/删除用）
-    tx_speed: f64,                    // 发送速度倍率：>1 更快(缩短间隔)，<1 更慢；默认 1.0
-    chan_names_cache: u64,            // 通道名列表渲染签
-    change_next: HashMap<u64, std::time::Instant>, // 信号变化任务的下次步进时间（按 handle）
+    pub(crate) tx_sel: i32,
+    pub(crate) tx_dbc_order: Vec<(u32, String)>,
+    pub(crate) tx_sig_cache: u64,
+    pub(crate) tx_msgs_cache: u64,
+    pub(crate) tx_list_cache: u64,
+    pub(crate) tx_checked: HashSet<u64>,
+    tx_speed: f64,
+    chan_names_cache: u64,
+    change_next: HashMap<u64, std::time::Instant>,
     pub(crate) next_handle: u64,
     logs: VecDeque<String>,
     pub(crate) sort_col: i32,
     pub(crate) sort_desc: bool,
-    pub(crate) display_items: Vec<DisplayItem>, // 当前显示顺序对应的行映射，含报文行和展开的信号行
+    pub(crate) display_items: Vec<DisplayItem>,
     pub(crate) expanded_keys: HashSet<u64>,
-    pub(crate) msg_model: Rc<VecModel<MsgRow>>, // 常驻报文模型，原地更新，避免每帧换模型丢点击
-    pub(crate) chart_model: Rc<VecModel<ChartSeries>>, // 常驻曲线模型，原地更新，避免重建行元素打断游标拖
-trace_cap: usize,                // 报文原始缓存上限（可配置
-chart_cap: usize,                // 每信号曲线点数上限（可配置）
+    pub(crate) msg_model: Rc<VecModel<MsgRow>>,
+    pub(crate) chart_model: Rc<VecModel<ChartSeries>>,
+trace_cap: usize,
+chart_cap: usize,
     pub(crate) tree_collapsed: HashSet<String>,
     pub(crate) tree_row_keys: Vec<String>,
+    pub(crate) tree_dbc_index: Vec<i32>,
     pub(crate) signal_pick_items: Vec<SignalPickItem>,
+    pub(crate) signal_pick_cache: u64,
     pub(crate) signal_pick_selected: Option<(u32, String)>,
     pub(crate) signal_pick_msg_expanded: HashSet<u32>,
     pub(crate) signal_pick_root_open: bool,
@@ -709,47 +695,49 @@ chart_cap: usize,                // 每信号曲线点数上限（可配置）
     pub(crate) chart_paused: bool,
     pub(crate) chart_normalize: bool,
     pub(crate) chart_cursor: bool,
-    pub(crate) chart_dual: bool, // 双游
-pub(crate) chart_view: Option<(f64, f64)>, // 时间轴可视窗口（None=自动全程
-pub(crate) chart_pause_view: Option<(f64, f64)>, // 暂停时冻结的时间窗（None=未暂停或未快照）
-    pub(crate) chart_frozen_series: Option<Vec<Series>>, // 暂停时的曲线数据快照（定格绘制，游标在其上测量）
-    chart_highlight: Option<(String, std::time::Instant)>, // 高亮的曲线信号（双击工程树触发）
-    pub(crate) tree_curve_sig: Vec<Option<String>>, // 每个树行对应的曲线信号名（仅曲线叶子有）
-    pub(crate) last_tree_sig: u64,                  // 工程树渲染签名，避免每帧重建导致悬浮抖动
-    pub(crate) lang_en: bool,                       // 界面语言镜像(true=英文)，供 Rust 端构建的文案(树/状态等)翻译
-    // ---- Python 自动化测试（IPC 服务端 + 脚本运行器）----
-    pub(crate) python_interpreter: String,          // 选定的 python.exe 路径（持久化）
-    pub(crate) last_script_path: String,            // 上次运行脚本路径（持久化）
-    pub(crate) py_child: Option<std::process::Child>, // 正在运行的脚本子进程（仅 UI 线程持有）
-    pub(crate) py_out_rx: Option<std::sync::mpsc::Receiver<String>>, // 子进程 stdout/stderr 行
-    pub(crate) py_started: Option<std::time::Instant>, // 本次运行起点（用于超时）
-    pub(crate) py_stop_flag: bool,                  // 请求停止（tick 的 reap_child 执行 kill）
-    pub(crate) run_status: String,                  // 运行状态文案（Running/PASS/FAIL...）
-    pub(crate) py_output: String,                   // 脚本 stdout/stderr 汇总缓冲（回写运行器面板 + 落日志文件）
-    pub(crate) py_dirty: bool,                      // 运行器窗口需刷新（输出/状态有变）
-    pub(crate) py_timeout_secs: u64,                // 本次运行的看门狗超时（单脚本 120s；套件用大值兜底）
-    pub(crate) ipc_snapshot: std::sync::Arc<std::sync::Mutex<ipc::Snapshot>>, // 只读快照（tick 每 100ms 重发布）
-    pub(crate) ipc_subs: std::sync::Arc<ipc::SubRegistry>, // 客户端订阅注册表 + 单运行闸门
-    pub(crate) ipc_handle_map: HashMap<(u64, u64), u64>, // (client_id, 客户端 handle) -> 内部周期 handle
-    pub(crate) dbc_snap: std::sync::Arc<ipc::DbcSnapshot>, // 不可变 DBC 快照（DBC 变化时重建）
-    pb_raw: Vec<CanFrame>, // 回放合并后的原始帧（未过滤）
-    pb_files: Vec<(String, Vec<CanFrame>)>, // 各回放文件（名称, 帧）——用于多文件合并/切换合并方式时重组
+    pub(crate) chart_dual: bool,
+    pub(crate) chart_time_mode: i32,
+    pub(crate) chart_time_source: i32,
+pub(crate) chart_view: Option<(f64, f64)>,
+pub(crate) chart_pause_view: Option<(f64, f64)>,
+    pub(crate) chart_frozen_series: Option<Vec<Series>>,
+    chart_highlight: Option<(String, std::time::Instant)>,
+    pub(crate) tree_curve_sig: Vec<Option<String>>,
+    pub(crate) last_tree_sig: u64,
+    pub(crate) lang_en: bool,
+
+    pub(crate) python_interpreter: String,
+    pub(crate) last_script_path: String,
+    pub(crate) py_child: Option<std::process::Child>,
+    pub(crate) py_out_rx: Option<std::sync::mpsc::Receiver<String>>,
+    pub(crate) py_started: Option<std::time::Instant>,
+    pub(crate) py_stop_flag: bool,
+    pub(crate) run_status: String,
+    pub(crate) py_output: String,
+    pub(crate) py_dirty: bool,
+    pub(crate) py_timeout_secs: u64,
+    pub(crate) ipc_snapshot: std::sync::Arc<std::sync::Mutex<ipc::Snapshot>>,
+    pub(crate) ipc_subs: std::sync::Arc<ipc::SubRegistry>,
+    pub(crate) ipc_handle_map: HashMap<(u64, u64), u64>,
+    pub(crate) dbc_snap: std::sync::Arc<ipc::DbcSnapshot>,
+    pb_raw: Vec<CanFrame>,
+    pb_files: Vec<(String, Vec<CanFrame>)>,
     pb_pos: usize,
     pb_total: usize,
     pb_playing: bool,
-    pub(crate) last_msg_sig: u64, // 报文表上次渲染的输入签名，用于跳过无变化的整表重
-// 实时统计
+    pub(crate) last_msg_sig: u64,
+
     pub(crate) fps: f64,
-    pub(crate) bus_load: f64, // 全局显示用：取最忙通道的负载（多卡时各总线独立，单一全局值无意义）
+    pub(crate) bus_load: f64,
     win_start: std::time::Instant,
     win_frames: u64,
     win_bits: u64,
-    pub(crate) chan_stats: std::collections::BTreeMap<u8, ChanCounters>, // 按软件通道号(CAN1=1..)分桶的统计
+    pub(crate) chan_stats: std::collections::BTreeMap<u8, ChanCounters>,
 }
 
-/// 单通道实时统计：rx/tx/err 累计 + 当前统计窗口的位数/帧数 + 算出的 bus_load/fps。
-/// 每条物理总线一份——同一帧在某通道上要么本卡发(tx)要么收(rx)，不会在同一通道里重复计，
-/// 故 per-channel 负载天然没有"同线两卡 tx+rx 翻倍"的问题。
+
+
+
 #[derive(Default, Clone)]
 pub(crate) struct ChanCounters {
     pub(crate) rx: u64,
@@ -761,7 +749,7 @@ pub(crate) struct ChanCounters {
     win_frames: u64,
 }
 
-/// 估算一帧在总线上占用的位数（含帧间隔，忽略位填充）
+
 fn frame_bits(f: &CanFrame) -> u64 {
     let overhead = if f.fd {
         if f.ext { 60 } else { 40 }
@@ -773,7 +761,7 @@ fn frame_bits(f: &CanFrame) -> u64 {
     overhead + 8 * f.data.len() as u64
 }
 
-/// 把波特率串（如 "500K"/"1M"/"250000"）解析为 bit/s。
+
 fn baud_bps(s: &str) -> f64 {
     let t = s.trim().to_ascii_uppercase();
     if let Some(v) = t.strip_suffix('M') {
@@ -785,7 +773,7 @@ fn baud_bps(s: &str) -> f64 {
     }
 }
 
-/// 录制文件格式
+
 #[derive(Clone, Copy, PartialEq)]
 enum RecFmt {
     Csv,
@@ -801,8 +789,8 @@ impl App {
         }
     }
 
-    // ---- 多 DBC 融合查询：按加载顺序遍历, 第一个命中的 DBC 生效 ----
-    /// 解码: 返回首个能解出信号的 DBC 结果
+
+
 pub(crate) fn dbc_decode(&self, id: u32, data: &[u8]) -> Vec<Decoded> {
         for d in &self.dbcs {
             let r = d.decode(id, data);
@@ -812,31 +800,31 @@ pub(crate) fn dbc_decode(&self, id: u32, data: &[u8]) -> Vec<Decoded> {
         }
         Vec::new()
     }
-    /// 编码: 首个成功。
+
 pub(crate) fn dbc_message_name(&self, id: u32) -> Option<&str> {
         self.dbcs.iter().find_map(|d| d.message_name(id))
     }
-    /// 报文定义: 首个匹配
+
 pub(crate) fn dbc_message(&self, id: u32) -> Option<&MessageDef> {
         self.dbcs.iter().find_map(|d| d.message(id))
     }
-    /// 编码: 首个成功
+
 pub(crate) fn dbc_encode(&self, id: u32, vals: &std::collections::HashMap<String, f64>) -> Option<Vec<u8>> {
         self.dbcs.iter().find_map(|d| d.encode(id, vals))
     }
-    /// 是否加载了任何 DBC。
+
 pub(crate) fn dbc_loaded(&self) -> bool {
         !self.dbcs.is_empty()
     }
 
-    /// 已加载的 DBC 里是否存在名为 name 的信号(供表达式引用名校验)。
+
     pub(crate) fn dbc_has_signal(&self, name: &str) -> bool {
         self.dbcs
             .iter()
             .any(|d| d.messages().any(|m| m.signals.iter().any(|s| s.name == name)))
     }
 
-    /// 触发动作：开始记录到 exe 同目录的 trigger_record.csv（无对话框）
+
 fn trig_start_record(&mut self) {
         let path = std::env::current_exe()
             .ok()
@@ -856,7 +844,7 @@ fn trig_start_record(&mut self) {
         }
     }
 
-    /// 触发动作：停止记录（与手动停止一致）
+
 fn trig_stop_record(&mut self) {
         self.recording = false;
         self.rec_file = None;
@@ -868,16 +856,22 @@ fn trig_stop_record(&mut self) {
         self.log("⚠ 触发停止记录".to_string());
     }
 
-    fn ingest(&mut self, f: CanFrame) {
-        // 首帧记录墙钟起点(epoch = now - f.t), 供绝对/系统时间显示
-        if self.capture_wall_epoch.is_none() {
+    fn ingest(&mut self, f: CanFrame, playback_frame: bool) {
+
+        let new_time_source = if playback_frame { 1 } else { 0 };
+        if self.chart_time_source != new_time_source {
+            self.chart_time_mode = if playback_frame { 0 } else { 1 };
+        }
+        self.chart_time_source = new_time_source;
+
+        if !playback_frame && self.capture_wall_epoch.is_none() {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0);
             self.capture_wall_epoch = Some(now - f.t);
         }
-        // CAN 报文日志(printf-over-CAN): 把匹配帧(仅 RX)的数据域字节重组成文本
+
         if self.console_enabled
             && !f.tx
             && self.console_id.is_none_or(|id| id == f.id)
@@ -885,7 +879,7 @@ fn trig_stop_record(&mut self) {
         {
             self.console.feed(&f.data);
         }
-        // 触发条件求值（节流 300ms），命中执行动作
+
         let fire = if let Some(tr) = self.trigger.as_mut() {
             if tr.matches(&f) {
                 let now = std::time::Instant::now();
@@ -952,7 +946,7 @@ fn trig_stop_record(&mut self) {
             byte_change_t: vec![f.t; f.data.len()],
         });
         let delta = (f.t - li.t).max(0.0);
-        // 逐字节变
+
 let mut changed_mask = vec![false; f.data.len()];
         if li.count > 0 {
             for (i, b) in f.data.iter().enumerate() {
@@ -993,10 +987,10 @@ let mut changed_mask = vec![false; f.data.len()];
         if f.error {
             self.err += 1;
         }
-        // 实时统计窗口累计（全局）
+
         self.win_frames += 1;
         self.win_bits += bits;
-        // 按通道分桶累计
+
         let cs = self.chan_stats.entry(f.ch).or_default();
         if f.tx {
             cs.tx += 1;
@@ -1011,7 +1005,7 @@ let mut changed_mask = vec![false; f.data.len()];
 
         let name = self.dbc_message_name(f.id).unwrap_or("").to_string();
 
-        // 记录文件（CSV / Vector ASC / BLF
+
 if self.recording && self.rec_fmt == RecFmt::Blf {
             self.rec_blf_buf.push(f.clone());
         }
@@ -1051,9 +1045,9 @@ if self.recording && self.rec_fmt == RecFmt::Blf {
             }
         }
 
-        // 曲线采样
+
         let mut log_lines: Vec<String> = Vec::new();
-        // 需要解码本帧吗? ① 有匹配此 id 的普通 DBC 系列, 或 ② 本 id 被某表达式引用
+
         let need_dbc_series =
             self.series.iter().any(|s| s.expr.is_none() && s.id == f.id);
         let need_expr =
@@ -1061,7 +1055,7 @@ if self.recording && self.rec_fmt == RecFmt::Blf {
         if self.dbc_loaded() && (need_dbc_series || need_expr) {
             let decoded = self.dbc_decode(f.id, &f.data);
             let logging = self.sig_log.is_some();
-            // ① 普通 DBC 系列: 按 id 采样
+
             for s in self.series.iter_mut().filter(|s| s.expr.is_none() && s.id == f.id) {
                 if let Some(dec) = decoded.iter().find(|x| x.name == s.signal) {
                     s.cur = dec.physical;
@@ -1070,19 +1064,19 @@ if self.recording && self.rec_fmt == RecFmt::Blf {
                         s.samples.pop_front();
                     }
                     if logging {
-                        // 信号记录器：流式写盘，不受 chart_cap 限制
+
                         log_lines.push(format!("{:.6},{},{},{}", f.t, s.signal, dec.physical, s.unit));
                     }
                 }
             }
-            // ② 表达式系列: 更新最新信号值, 再对每个表达式系列实时求值采样
+
             if need_expr {
                 for dec in &decoded {
                     self.sig_latest.insert(dec.name.clone(), dec.physical);
                 }
                 let cap = self.chart_cap;
                 let t = f.t;
-                // 先算(不可变借用 sig_latest), 再写回(可变借用 series), 避开借用冲突
+
                 let evals: Vec<(usize, f64)> = self
                     .series
                     .iter()
@@ -1146,7 +1140,7 @@ pub(crate) fn id_str(id: u32, ext: bool) -> String {
     }
 }
 
-/// 报文表各列默认宽度(逻辑 px)。隐藏时改写 ColW.<key>=0。
+
 const COL_DEFAULTS: &[(&str, f32)] = &[
     ("no", 52.0),
     ("time", 96.0),
@@ -1166,7 +1160,7 @@ const COL_DEFAULTS: &[(&str, f32)] = &[
     ("comment", 140.0),
 ];
 
-/// 按隐藏集合改写 ColW 全局各列宽度(隐藏列=0)并重算 total。
+
 fn apply_col_widths(ui: &AppWindow, hidden: &std::collections::HashSet<String>) {
     let cw = ui.global::<ColW>();
     let mut total = 0.0_f32;
@@ -1196,7 +1190,7 @@ fn apply_col_widths(ui: &AppWindow, hidden: &std::collections::HashSet<String>) 
     cw.set_total(total);
 }
 
-/// 发送任务的可序列化形态（用于发送列表保存/加载；handle/sent 重新生成）。
+
 pub(crate) fn fmt_wall(unix_secs: f64, with_date: bool) -> String {
     let secs = unix_secs.floor() as i64;
     let nanos = ((unix_secs - secs as f64) * 1e9) as u32;
@@ -1213,7 +1207,7 @@ pub(crate) fn fmt_wall(unix_secs: f64, with_date: bool) -> String {
     }
 }
 
-/// 信号发生器当前输出值（基于 tick 计数的无状态波形）。
+
 const PALETTE: [(u8, u8, u8); 8] = [
     (37, 99, 235),
     (220, 38, 38),
@@ -1229,10 +1223,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     windows_dpi::force_system_dpi_awareness();
 
+    // 渲染器选择(必须在创建任何窗口之前): GPU(femtovg) 在远程桌面/虚拟显示器下会回退到
+    // 软件 OpenGL(WARP), 内存暴涨数百 MB; 此时改用 Slint 原生 software 渲染器(几十 MB)。
+    select_renderer();
+
     let ui = AppWindow::new()?;
     let chart_window = ChartWindow::new()?;
     let signal_window = SignalSelectWindow::new()?;
     let tx_window = TxWindow::new()?;
+    let uds_window = UdsWindow::new()?;
+    let xcp_window = XcpWindow::new()?;
     let channel_window = ChannelConfigWindow::new()?;
     let playback_window = PlaybackWindow::new()?;
     let convert_window = ConvertWindow::new()?;
@@ -1245,11 +1245,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let script_runner_window = ScriptRunnerWindow::new()?;
     let (cmd_tx, evt_rx) = can::spawn();
 
-    // Python 自动化 IPC 服务端：绑定 127.0.0.1:0，App 构造前创建以便把 snapshot/registry 移入。
+
     let dbc_snap0 = std::sync::Arc::new(ipc::DbcSnapshot::empty());
     let ipc_snapshot = std::sync::Arc::new(std::sync::Mutex::new(ipc::Snapshot::new(dbc_snap0.clone())));
     let (ipc_port, ipc_token, ipc_req_rx, ipc_subs) = ipc::spawn_ipc_server(ipc_snapshot.clone());
-    // 可选：把 IPC 端点写入文件，供 CI / 外部 REPL / pytest 附加（脚本运行器内的脚本走环境变量，无需此项）。
+
     if let Ok(info_path) = std::env::var("PCANWORK_IPC_INFO_FILE") {
         let _ = std::fs::write(&info_path, format!("{ipc_port}\n{ipc_token}\n"));
     }
@@ -1351,7 +1351,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         chart_cap: CHART_CAP,
         tree_collapsed: HashSet::new(),
         tree_row_keys: Vec::new(),
+        tree_dbc_index: Vec::new(),
         signal_pick_items: Vec::new(),
+        signal_pick_cache: u64::MAX,
         signal_pick_selected: None,
         signal_pick_msg_expanded: HashSet::new(),
         signal_pick_root_open: true,
@@ -1361,6 +1363,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         chart_normalize: false,
         chart_cursor: false,
         chart_dual: false,
+        chart_time_mode: 0,
+        chart_time_source: 0,
         chart_view: None,
         chart_pause_view: None,
         chart_frozen_series: None,
@@ -1397,12 +1401,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
     app.borrow_mut()
         .log("PcanWork 启动。点击“连接设备”自动尝试 PCAN，无卡则回退虚拟总线。");
-    // 报文表绑定常驻模型（只设一次，之后原地更新
+
 ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
-    // 曲线绑定常驻模型（原地更新，避免重建行元素打断游标拖动）
+
     ui.set_series(ModelRc::from(app.borrow().chart_model.clone()));
     chart_window.set_series(ModelRc::from(app.borrow().chart_model.clone()));
-    // 仿真面板绑定常驻模型
+
     sim_panel_window.set_sim_widgets(ModelRc::from(app.borrow().sim_model.clone()));
 
     // ---- callback wiring (grouped by window; see wire_*.rs) ----
@@ -1410,14 +1414,15 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
     wire_dialogs(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_chart(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_tx(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
+    wire_ota_windows(app.clone(), &ui, &uds_window, &xcp_window);
     wire_playback(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_sim(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_pyauto(app.clone(), &ui, &script_runner_window, ipc_port, ipc_token.clone());
 
-    // ---------------- 启动即自动连接 + 接收 + 加载示例 DBC ----------------
+
     {
         let mut a = app.borrow_mut();
-        // 自动加载 DBC：先找 sample.dbc(cwd→exe 目录)，找不到再取目录里第一个 *.dbc
+
         let first_dbc_in = |dir: &std::path::Path| -> Option<std::path::PathBuf> {
             let mut found: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
                 .ok()?
@@ -1456,17 +1461,19 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
             }
         }
         rebuild_dbc_snap(&mut a);
-        // 启动后不自动连接/接收，等用户点「连接」「启动」再开始（避免一打开就跑模拟数据
+
 a.log("就绪。点击「连接」选择设备，再点「启动」开始接收。".to_string());
 
-        // ---- 恢复上次配置（通道/主题/缓存/过滤/布局/DBC）----
+
         if let Some(s) = settings::load() {
             apply_settings(&mut a, &ui, &s);
-            // 主题应用到所有窗
+
 for t in [
                 ui.global::<Theme>(),
                 chart_window.global::<Theme>(),
                 tx_window.global::<Theme>(),
+                uds_window.global::<Theme>(),
+                xcp_window.global::<Theme>(),
                 signal_window.global::<Theme>(),
                 channel_window.global::<Theme>(),
                 playback_window.global::<Theme>(),
@@ -1481,11 +1488,13 @@ for t in [
                 t.set_dark(s.dark);
                 t.set_big(s.big);
             }
-            // 恢复界面语言
+
             for g in [
                 ui.global::<I18n>(),
                 chart_window.global::<I18n>(),
                 tx_window.global::<I18n>(),
+                uds_window.global::<I18n>(),
+                xcp_window.global::<I18n>(),
                 signal_window.global::<I18n>(),
                 channel_window.global::<I18n>(),
                 playback_window.global::<I18n>(),
@@ -1499,12 +1508,12 @@ for t in [
             ] {
                 g.set_en(s.lang_en);
             }
-            a.lang_en = s.lang_en; // 镜像到 Rust 端，供工程树等翻译
+            a.lang_en = s.lang_en;
             a.log("已恢复上次配置".to_string());
         }
     }
 
-    // ---------------- 100ms 批量刷新 ----------------
+
     let timer = Timer::default();
     {
         let app = app.clone();
@@ -1512,10 +1521,12 @@ for t in [
         let chartw = chart_window.as_weak();
         let signalw = signal_window.as_weak();
         let txw = tx_window.as_weak();
+        let udsw = uds_window.as_weak();
+        let xcpw = xcp_window.as_weak();
         let rw = script_runner_window.as_weak();
         timer.start(TimerMode::Repeated, Duration::from_millis(100), move || {
-            // Python 自动化 IPC：在任何窗口 upgrade（关闭子窗口会 return）之前先处理，
-            // 保证脚本调用不被"关闭了曲线/信号/发送窗口"卡死。仅触碰 a + 通道，不碰窗口。
+
+
             {
                 let mut a = app.borrow_mut();
                 while let Ok(ureq) = ipc_req_rx.try_recv() {
@@ -1524,9 +1535,9 @@ for t in [
                 reap_child(&mut a);
                 drain_py_output(&mut a);
                 publish_snapshot(&mut a);
-                // 把脚本输出/状态回写到运行器窗口（与主窗口解耦：运行器关了就跳过）。
+
                 if a.py_dirty {
-                    // 日志文件只在脚本结束后写一次(运行中靠面板看实时输出，避免每拍全量重写)。
+
                     if a.py_child.is_none() {
                         let _ = std::fs::write(run_log_path(), &a.py_output);
                     }
@@ -1562,14 +1573,30 @@ for t in [
                 Some(w) => w,
                 None => return,
             };
+            let uds_window = match udsw.upgrade() {
+                Some(w) => w,
+                None => return,
+            };
+            let xcp_window = match xcpw.upgrade() {
+                Some(w) => w,
+                None => return,
+            };
             let mut a = app.borrow_mut();
 
-            // 1) 收事
+
 while let Ok(evt) = evt_rx.try_recv() {
                 match evt {
                     Evt::Frame(f) => {
                         ipc_fanout(&a, &f);
-                        a.ingest(f);
+                        uds_observe_frame(&uds_window, &f);
+                        xcp_observe_frame(&xcp_window, &f);
+                        a.ingest(f, false);
+                    }
+                    Evt::PlaybackFrame(f) => {
+                        ipc_fanout(&a, &f);
+                        uds_observe_frame(&uds_window, &f);
+                        xcp_observe_frame(&xcp_window, &f);
+                        a.ingest(f, true);
                     }
                     Evt::Log(s) => a.log(s),
                     Evt::Connected(c, name) => {
@@ -1588,21 +1615,29 @@ while let Ok(evt) = evt_rx.try_recv() {
                         a.pb_playing = playing;
                     }
                     Evt::PeriodicDone(handle) => {
-                        // 后端周期任务发够次数自动停止：同步 UI 状态
+
                         if let Some(t) = a.txs.iter_mut().find(|t| t.handle == handle) {
                             t.periodic = false;
-                            a.tx_list_cache = u64::MAX; // 强制刷新列表
+                            a.tx_list_cache = u64::MAX;
                         }
+                    }
+                    Evt::OtaProgress(done, total, text) => {
+                        let progress = if total == 0 { 0.0 } else { done as f32 / total as f32 };
+                        tx_window.set_tx_file_progress(progress.clamp(0.0, 1.0));
+                        tx_window.set_tx_file_status(text.clone().into());
+                        uds_window.set_ota_status(text.clone().into());
+                        xcp_window.set_ota_status(text.clone().into());
+                        a.log(text);
                     }
                 }
             }
 
-            // 每约 1 秒计算一次 FPS / 总线负载（全局 + 按通道）
+
             let dt = a.win_start.elapsed().as_secs_f64();
             if dt >= 1.0 {
                 a.fps = a.win_frames as f64 / dt;
                 let default_bps = baud_bps(&a.device_cfg.baud);
-                // 各通道按各自配置的波特率算负载（CAN1/CAN2 可能是不同总线、不同速率）
+
                 let bps_of: std::collections::HashMap<u8, f64> = a
                     .channels
                     .iter()
@@ -1623,14 +1658,14 @@ while let Ok(evt) = evt_rx.try_recv() {
                     cs.win_frames = 0;
                     cs.win_bits = 0;
                 }
-                a.bus_load = max_load; // 全局显示=最忙通道
+                a.bus_load = max_load;
                 a.win_frames = 0;
                 a.win_bits = 0;
                 a.win_start = std::time::Instant::now();
             }
 
-            // 仿真面板步进（TX 发帧 / RX 读值）+ 刷新显示
-            // (信号变化 vary 任务改由下方独立 5ms 高频定时器驱动, 不再受 100ms 刷新限速)
+
+
             sim_tick(&mut a);
             refresh_sim(&a);
 
@@ -1638,8 +1673,8 @@ while let Ok(evt) = evt_rx.try_recv() {
         });
     }
 
-    // 信号变化(vary)任务的高频驱动：独立 5ms 定时器，不受 100ms UI 刷新限速。
-    // 配合 step_signal_changes 的追帧逻辑，10ms/20ms/50ms 等周期能按设定速率发送。
+
+
     let change_timer = Timer::default();
     {
         let app = app.clone();
@@ -1649,7 +1684,7 @@ while let Ok(evt) = evt_rx.try_recv() {
         });
     }
 
-    // 独立刷新定时器（不动 codex 的主刷新
+
 let pb_timer = Timer::default();
     {
         let app = app.clone();
@@ -1676,7 +1711,7 @@ let pb_timer = Timer::default();
         });
     }
 
-    // 标题栏锁品牌深蓝(与 modbus/serial 统一), 低频定时器兼顾后开的子窗口
+
     #[cfg(windows)]
     let _titlebar_timer = {
         let t = slint::Timer::default();
@@ -1693,8 +1728,8 @@ let pb_timer = Timer::default();
     Ok(())
 }
 
-/// 把本进程所有可见顶层窗口的标题栏锁成品牌深蓝 #11406f + 白字(Win11),
-/// 不再跟随系统强调色, 三个工具外观统一。
+
+
 #[cfg(windows)]
 fn apply_brand_titlebar() {
     use std::os::raw::c_void;
@@ -1733,8 +1768,146 @@ fn apply_brand_titlebar() {
     }
 }
 
-/// 把 a.pb_files 按当前合并方式重组进 a.pb_raw，更新文件名/通道显示，再构建下发。
-/// concat=false 按各自时间戳交错；concat=true 顺序拼接（后文件接到前文件末尾）。
+
+#[cfg(windows)]
+pub(crate) fn set_window_topmost(window: &slint::Window, on: bool) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    type Hwnd = isize;
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetWindowPos(h: Hwnd, after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+    }
+    const HWND_TOPMOST: Hwnd = -1;
+    const HWND_NOTOPMOST: Hwnd = -2;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    let slint_handle = window.window_handle();
+    let Ok(handle) = slint_handle.window_handle() else { return };
+    if let RawWindowHandle::Win32(w) = handle.as_raw() {
+        let hwnd: Hwnd = w.hwnd.get() as Hwnd;
+        unsafe {
+            SetWindowPos(
+                hwnd,
+                if on { HWND_TOPMOST } else { HWND_NOTOPMOST },
+                0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn set_window_topmost(_window: &slint::Window, _on: bool) {}
+
+/// 决定用哪个 Slint 渲染器, 在创建任何窗口前设置 SLINT_BACKEND 环境变量。
+/// 优先级: 环境变量 PCANWORK_RENDERER > 配置文件 settings.renderer > "auto"。
+/// auto = 远程桌面/虚拟显示器下用 software(CPU), 否则用 femtovg(GPU)。
+fn select_renderer() {
+    // 已被外部显式指定后端就不覆盖(尊重用户/调试)
+    if std::env::var_os("SLINT_BACKEND").is_some() {
+        return;
+    }
+    let mode = std::env::var("PCANWORK_RENDERER")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| settings::load().map(|s| s.renderer))
+        .unwrap_or_else(|| "auto".to_string());
+    let use_software = match mode.to_ascii_lowercase().as_str() {
+        "cpu" | "software" => true,
+        "gpu" | "femtovg" => false,
+        _ => detect_virtual_display(), // "auto"
+    };
+    let backend = if use_software { "winit-software" } else { "winit-femtovg" };
+    // 编辑 2024: set_var 为 unsafe
+    unsafe {
+        std::env::set_var("SLINT_BACKEND", backend);
+    }
+}
+
+/// 检测是否处于远程/虚拟显示环境(RDP 会话, 或 ToDesk/向日葵/RustDesk/AnyDesk/TeamViewer 等
+/// 远程控制软件在运行)。这类环境下 GPU OpenGL 会回退到软件实现(WARP), 极吃内存,
+/// 应改用 Slint 原生 software 渲染。
+/// 注: ToDesk/向日葵是"控制台会话"(非 RDP), 故 SM_REMOTESESSION 抓不到, 改用进程名判断。
+#[cfg(windows)]
+fn detect_virtual_display() -> bool {
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetSystemMetrics(index: i32) -> i32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> isize;
+        fn Process32FirstW(snap: isize, entry: *mut ProcessEntry32W) -> i32;
+        fn Process32NextW(snap: isize, entry: *mut ProcessEntry32W) -> i32;
+        fn CloseHandle(h: isize) -> i32;
+    }
+    const SM_REMOTESESSION: i32 = 0x1000;
+    const TH32CS_SNAPPROCESS: u32 = 0x2;
+    const INVALID_HANDLE_VALUE: isize = -1;
+
+    #[repr(C)]
+    struct ProcessEntry32W {
+        dw_size: u32,
+        cnt_usage: u32,
+        th32_process_id: u32,
+        th32_default_heap_id: usize,
+        th32_module_id: u32,
+        cnt_threads: u32,
+        th32_parent_process_id: u32,
+        pc_pri_class_base: i32,
+        dw_flags: u32,
+        sz_exe_file: [u16; 260],
+    }
+
+    // 1) RDP 会话直接判软件
+    if unsafe { GetSystemMetrics(SM_REMOTESESSION) } != 0 {
+        return true;
+    }
+
+    // 2) 远程控制软件进程在跑 → 多半在远程使用, 用软件渲染更稳更省
+    const REMOTE_EXE: [&str; 10] = [
+        "todesk", "sunlogin", "oray", "aweray", "awesun", // 向日葵: SunloginClient / AweSun / AweRay
+        "rustdesk", "anydesk", "teamviewer", "splashtop", "vncserver",
+    ];
+    let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snap == INVALID_HANDLE_VALUE {
+        return false;
+    }
+    let mut found = false;
+    let mut entry = ProcessEntry32W {
+        dw_size: std::mem::size_of::<ProcessEntry32W>() as u32,
+        cnt_usage: 0,
+        th32_process_id: 0,
+        th32_default_heap_id: 0,
+        th32_module_id: 0,
+        cnt_threads: 0,
+        th32_parent_process_id: 0,
+        pc_pri_class_base: 0,
+        dw_flags: 0,
+        sz_exe_file: [0; 260],
+    };
+    let mut ok = unsafe { Process32FirstW(snap, &mut entry) };
+    while ok != 0 {
+        let len = entry.sz_exe_file.iter().position(|&c| c == 0).unwrap_or(entry.sz_exe_file.len());
+        let name = String::from_utf16_lossy(&entry.sz_exe_file[..len]).to_ascii_lowercase();
+        if REMOTE_EXE.iter().any(|k| name.contains(k)) {
+            found = true;
+            break;
+        }
+        ok = unsafe { Process32NextW(snap, &mut entry) };
+    }
+    unsafe { CloseHandle(snap) };
+    found
+}
+
+#[cfg(not(windows))]
+fn detect_virtual_display() -> bool {
+    false
+}
+
+
+
 fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
     let concat = w.get_merge_concat();
     let mut out: Vec<CanFrame> = Vec::new();
@@ -1752,7 +1925,7 @@ fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
                 g.t += shift;
                 out.push(g);
             }
-            cursor += (fmax - fmin) + 0.001; // 文件之间留 1ms 间隙
+            cursor += (fmax - fmin) + 0.001;
         }
     } else {
         for (_, fr) in &a.pb_files {
@@ -1762,7 +1935,7 @@ fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
     out.sort_by(|x, y| x.t.partial_cmp(&y.t).unwrap_or(std::cmp::Ordering::Equal));
     a.pb_raw = out;
 
-    // 文件名显示：单文件显名，多文件显个数+名字
+
     let en = a.lang_en;
     let total = a.pb_raw.len();
     let names: Vec<String> = a.pb_files.iter().map(|(n, _)| n.clone()).collect();
@@ -1773,7 +1946,7 @@ fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
     };
     w.set_file_name(fname.into());
 
-    // 通道并集
+
     let mut chans: Vec<u8> = a.pb_raw.iter().map(|f| f.ch).collect();
     chans.sort_unstable();
     chans.dedup();
@@ -1784,7 +1957,7 @@ fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
     };
     w.set_src_channels(ctxt.into());
 
-    // 文件列表模型（可展开列表用）
+
     let rows: Vec<PbFileRow> = a
         .pb_files
         .iter()
@@ -1798,7 +1971,7 @@ fn pb_apply_files(a: &mut App, w: &PlaybackWindow) {
     pb_build_and_load(a, w);
 }
 
-/// 按当前过滤/时间段设置，从原始帧构建回放序列并下发（通道统一映射到 CAN1）。
+
 fn pb_build_and_load(a: &App, w: &PlaybackWindow) {
     let lo = parse_hex_u32(&w.get_id_lo()).unwrap_or(0);
     let hi = parse_hex_u32(&w.get_id_hi()).unwrap_or(u32::MAX);
@@ -1810,7 +1983,7 @@ fn pb_build_and_load(a: &App, w: &PlaybackWindow) {
         .iter()
         .filter(|f| f.id >= lo && f.id <= hi && f.t >= ss && f.t <= se)
         .filter_map(|f| {
-            // 通道映射：源→目标；目标 0 = 忽略；未列出则保持原通道
+
             let dst = map.get(&f.ch).copied().unwrap_or(f.ch);
             if dst == 0 {
                 return None;
@@ -1823,7 +1996,7 @@ fn pb_build_and_load(a: &App, w: &PlaybackWindow) {
     let _ = a.cmd.send(Cmd::PlaybackLoad(frames));
 }
 
-/// 解析通道映射串 "src:dst,src:dst"。
+
 fn parse_channel_map(s: &slint::SharedString) -> std::collections::HashMap<u8, u8> {
     let mut m = std::collections::HashMap::new();
     for tok in s.as_str().split(',') {
@@ -1872,13 +2045,13 @@ fn step_signal_changes(a: &mut App) {
         .collect();
     for i in idxs {
         let handle = a.txs[i].handle;
-        // 追帧：自"应发时刻"起欠几帧补几帧。高频定时器驱动 + 这里按调度时刻
-        // (prev+period, 不是 now+period)推进，使平均速率严格等于设定周期、不漂移、
-        // 也不再被 UI 刷新间隔限速。单次 tick 上限 64 帧，防 app 卡顿后积压暴发刷爆总线。
+
+
+
         let mut guard = 0u32;
         while a.change_next.get(&handle).is_some_and(|x| now >= *x) {
             if guard >= 64 {
-                // 积压过多：重新对齐到当前，丢弃积压
+
                 let period = eff_period(a.txs[i].period_ms, a.tx_speed);
                 a.change_next
                     .insert(handle, now + std::time::Duration::from_millis(period));
@@ -1888,7 +2061,7 @@ fn step_signal_changes(a: &mut App) {
 
             let id = a.txs[i].id;
             let n = a.txs[i].sent;
-            // 重算每个带变化规则(非 None)的信号，按发送序号 n
+
             let updates: Vec<(String, f64)> = {
                 let t = &a.txs[i];
                 t.varies
@@ -1928,15 +2101,15 @@ fn step_signal_changes(a: &mut App) {
             }
             a.txs[i].sent += 1; // n advances each send
 
-            // 发送次数限制：repeat>=1 时发够即自动停止（-1=无限循环）
+
             let rep = a.txs[i].repeat;
             if rep >= 1 && a.txs[i].sent >= rep as u64 {
                 a.txs[i].periodic = false;
                 a.change_next.remove(&handle);
-                a.tx_list_cache = u64::MAX; // 强制刷新列表状态
+                a.tx_list_cache = u64::MAX;
                 break;
             }
-            // 下次应发 = 本次应发时刻 + period（从调度时刻推进，不漂移）
+
             let period = eff_period(a.txs[i].period_ms, a.tx_speed);
             let prev = a.change_next.get(&handle).copied().unwrap_or(now);
             a.change_next
@@ -1945,7 +2118,7 @@ fn step_signal_changes(a: &mut App) {
     }
 }
 
-/// 按发送速度倍率换算实际间隔：speed>1 缩短间隔(更快)，speed<1 拉长(更慢)。
+
 fn eff_period(period_ms: u64, speed: f64) -> u64 {
     if speed <= 0.0 {
         return period_ms.max(1);
@@ -1953,13 +2126,13 @@ fn eff_period(period_ms: u64, speed: f64) -> u64 {
     ((period_ms as f64 / speed).round() as u64).max(1)
 }
 
-/// 切换任务的周期/启动状态后调用：信号变化任务由 app 驱动，其它走控制线程周期。
+
 fn toggle_task_periodic(a: &mut App, idx: usize) {
     let is_change = has_vary(&a.txs[idx]);
     let on = a.txs[idx].periodic;
     let handle = a.txs[idx].handle;
     if on {
-        a.txs[idx].sent = 0; // 每次启动从头计数（同时让信号变化从 n=0 起算）
+        a.txs[idx].sent = 0;
     }
     if is_change {
         if on {
@@ -2003,7 +2176,7 @@ fn display_key(a: &App, row: i32) -> Option<u64> {
     }
 }
 
-// ---- 报文行动作：右键菜单(ctx_*) 与 选中条(sel_*) 共用，仅"取键方式"不同 ----
+
 fn act_only_id(a: &mut App, k: u64) {
     let id = (k & 0xFFFF_FFFF) as u32;
     a.filter.allow = vec![(id, id)];
@@ -2131,7 +2304,7 @@ fn add_signal_to_chart(a: &mut App, id: u32, signal: &str) -> String {
     format!("已添加信号到曲线: {signal}")
 }
 
-/// 把一个表达式派生信号加到曲线。重名直接提示。
+
 fn add_expr_to_chart(a: &mut App, name: &str) -> String {
     let Some(ev) = a.expr_vars.iter().find(|e| e.name == name).cloned() else {
         return format!("找不到表达式: {name}");
@@ -2155,7 +2328,7 @@ fn add_expr_to_chart(a: &mut App, name: &str) -> String {
     format!("已添加表达式到曲线: {name}")
 }
 
-/// 重算"被任一表达式引用到的报文 id"集合(表达式或 DBC 变化时调用)。
+
 pub(crate) fn recompute_expr_ids(a: &mut App) {
     let mut names: std::collections::HashSet<String> = std::collections::HashSet::new();
     for ev in &a.expr_vars {
@@ -2202,7 +2375,7 @@ pub(crate) fn parse_tx_bytes(value: &str, max_len: usize) -> Vec<u8> {
     data
 }
 
-/// 从通道名（如 "CAN1"）解析软件通道号。
+
 fn ch_from_name(s: &str) -> u8 {
     s.trim()
         .to_ascii_lowercase()
@@ -2229,14 +2402,14 @@ fn default_channel() -> DeviceConfig {
     }
 }
 
-/// 重排软件通道号为 1..N
+
 fn renumber_channels(a: &mut App) {
     for (i, c) in a.channels.iter_mut().enumerate() {
         c.sw_channel = (i + 1) as u8;
     }
 }
 
-/// 把通道配置写入通道配置窗口的表单字段
+
 fn set_chan_form(w: &ChannelConfigWindow, c: &DeviceConfig) {
     w.set_is_fd(c.is_fd);
     w.set_device_type(c.device_type.clone().into());
@@ -2250,7 +2423,7 @@ fn set_chan_form(w: &ChannelConfigWindow, c: &DeviceConfig) {
     w.set_port(c.port.clone().into());
 }
 
-/// 通道列表显示字符串
+
 fn chan_list_strings(a: &App) -> Vec<SharedString> {
     a.channels
         .iter()
@@ -2267,7 +2440,7 @@ fn chan_list_strings(a: &App) -> Vec<SharedString> {
         .collect()
 }
 
-/// 每帧刷新各窗口属性与模型：状态栏、报文表、信号面板、曲线、发送列表、统计、工程树、日志。
+
 fn refresh_ui(
     a: &mut App,
     ui: &AppWindow,
@@ -2275,7 +2448,7 @@ fn refresh_ui(
     signal_window: &SignalSelectWindow,
     tx_window: &TxWindow,
 ) {
-    // ----- 发送表 -----
+
     ui.set_connected(a.connected);
     ui.set_running(a.running);
     ui.set_recording(a.recording);
@@ -2288,7 +2461,7 @@ fn refresh_ui(
     ui.set_fps(format!("{:.0}", a.fps).into());
     ui.set_bus_load(format!("{:.1}%", a.bus_load).into());
     ui.set_load_high(a.bus_load >= 70.0);
-    // 多卡时给出每通道负载明细（单通道时留空，避免与全局 Load 重复）
+
     let chan_load = if a.chan_stats.len() >= 2 {
         a.chan_stats
             .iter()
@@ -2315,20 +2488,20 @@ fn refresh_ui(
         .unwrap_or_else(|| "无".into());
     ui.set_sel_id(sel_id_txt.into());
 
-    // 选中高亮（廉价属性，每帧都更新，无需重建模型
+
 ui.set_selected(a.selected_index);
 
-    // ----- 报文表（暂停时不重建；无变化时跳过整表重建） -----
+
     build_msg_table(a, ui);
 
-    // ----- 信号解析面板 -----
+
     build_signal_panel(a, ui);
 
-    // ----- DBC 信号候选（曲线信号列表处直接添加） -----
+
     a.dbc_signal_choices.clear();
     let mut dbc_signal_rows: Vec<SharedString> = Vec::new();
     {
-        // 合并全部 DBC 的信号(按 id+信号名去重, 先加载者优先)
+
         let mut choices: Vec<(u32, String, String, String)> = Vec::new();
         let mut seen: std::collections::HashSet<(u32, String)> = std::collections::HashSet::new();
         for d in &a.dbcs {
@@ -2358,12 +2531,12 @@ ui.set_selected(a.selected_index);
     ui.set_dbc_signals(dbc_signal_model);
     refresh_signal_picker(a, signal_window);
 
-    // ----- 曲线 -----
+
     refresh_chart(a, ui, chart_window);
 
-    // ----- 发送表 -----
-    // 仅在内容变化时重建列表（避免每 100ms 重建模型导致 ListView 委托被反复销毁重建，
-    // 造成点击「周期」等按钮明显的卡顿/延迟）。
+
+
+
     {
         let sig = tx_list_sig(a);
         if sig != a.tx_list_cache {
@@ -2371,7 +2544,7 @@ ui.set_selected(a.selected_index);
             push_tx_list(a, ui, tx_window);
         }
     }
-    // 通道名（CAN1..CANn）—— 所有页面统一来源
+
     let chan_names: Vec<SharedString> = a
         .channels
         .iter()
@@ -2388,20 +2561,20 @@ ui.set_selected(a.selected_index);
         }
     }
 
-    // ----- DBC 发送页：报文选择列表 + 信号编辑器 -----
+
     build_tx_dbc_page(a, tx_window);
 
-    // ----- 统计 -----
+
     build_stats(a, ui);
 
-    // ----- 发送表 -----
+
     tree::build_tree(a, ui);
 
-    // ----- 日志 -----
+
     let logs: Vec<SharedString> = a.logs.iter().map(|s| s.clone().into()).collect();
     ui.set_logs(ModelRc::from(Rc::new(VecModel::from(logs))));
 
-    // ----- CAN 报文日志(printf-over-CAN 控制台) -----
+
     let console_rows: Vec<SharedString> = a.console.rows().into_iter().map(|s| s.into()).collect();
     ui.set_console_lines(ModelRc::from(Rc::new(VecModel::from(console_rows))));
 }
@@ -2416,10 +2589,10 @@ pub(crate) fn fmtf(v: f64) -> String {
     }
 }
 
-// ---------------- Python 自动化 IPC：UI 线程侧（需 App 私有项，故在 main.rs）----------------
 
-/// 把当前 App 状态发布到只读快照（tick 每 100ms 调一次），供 IPC 只读操作即时读取。
-/// last 表只在变化时(last_dirty)才整表深拷贝，避免每拍 O(n) 克隆。
+
+
+
 fn publish_snapshot(a: &mut App) {
     let last_rebuild = if a.last_dirty {
         let mut last = HashMap::with_capacity(a.last.len());
@@ -2454,7 +2627,7 @@ fn publish_snapshot(a: &mut App) {
             .collect();
         snap.console_enabled = a.console_enabled;
         if a.console_enabled {
-            // 仅启用时重建(避免空跑时每拍 join 大字符串); 停用后保留最后捕获文本供读取
+
             snap.console_text = a.console.export_text();
         }
         if let Some(last) = last_rebuild {
@@ -2464,25 +2637,25 @@ fn publish_snapshot(a: &mut App) {
     }
 }
 
-/// DBC 集变化后重建不可变 DBC 快照（供 IPC decode/encode 在 handler 线程无 App 访问）。
+
 fn rebuild_dbc_snap(a: &mut App) {
     a.dbc_snap = std::sync::Arc::new(ipc::DbcSnapshot::from_dbcs(&a.dbcs));
-    // DBC 变了, 表达式引用的报文 id 映射可能变, 重算
+
     recompute_expr_ids(a);
 }
 
-/// 停掉一个内部周期 handle（发 enable=false）。
+
 fn stop_internal_periodic(a: &App, internal: u64) {
     let dummy = CanFrame { t: 0.0, ch: 1, tx: true, id: 0, ext: false, fd: false, brs: false, remote: false, error: false, data: Vec::new() };
     let _ = a.cmd.send(Cmd::SetPeriodic { handle: internal, frame: dummy, period_ms: 1, repeat: -1, enable: false });
 }
 
-/// 处理一条来自 IPC handler 线程的状态变更请求；每条恰好回一条 IpcResp；绝不碰窗口、不再借用 a。
+
 fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
     use ipc::{IpcReq, IpcResp};
     let cid = ureq.client_id;
     let ok = || IpcResp::Ok(serde_json::json!({}));
-    // 若回复发送失败(客户端已超时离开)，需回滚的已提交副作用：刚建的内部周期 handle。
+
     let mut periodic_rollback: Option<u64> = None;
     let resp = match ureq.req {
         IpcReq::SendOnce { ch, id, data, ext, fd, brs, remote } => {
@@ -2491,12 +2664,12 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
             ok()
         }
         IpcReq::SetPeriodic { client_handle, ch, id, data, period_ms, repeat, ext, fd, brs, remote } => {
-            // 内部 handle 用高位置 1 的不相交空间，绝不与 UI 周期任务相撞。
+
             let internal = a.next_handle | (1u64 << 63);
             a.next_handle += 1;
             periodic_rollback = Some(internal);
-            // 同一 client_handle 重新 set_periodic 时，先停掉旧的内部周期任务，
-            // 否则它变成孤儿、一直刷总线且不可停（仅 ClientGone 能清）。
+
+
             if let Some(old) = a.ipc_handle_map.insert((cid, client_handle), internal) {
                 stop_internal_periodic(a, old);
             }
@@ -2511,14 +2684,14 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
             ok()
         }
         IpcReq::Connect { channels } => {
-            // 空通道列表直接报错, 避免脚本误把主界面已配置的通道清空
+
             if channels.is_empty() {
                 IpcResp::Err {
                     code: "BAD_ARG".into(),
                     msg: "channels 不能为空(至少给一个通道配置)".into(),
                 }
             } else {
-                // 同步到 App 通道列表：让 per-channel 负载用对的波特率、GUI 通道名也反映实连
+
                 a.channels = channels.clone();
                 let _ = a.cmd.send(Cmd::ConnectChannels(channels));
                 ok()
@@ -2529,12 +2702,12 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
             ok()
         }
         IpcReq::ConnectConfigured => {
-            // 连接主界面"设备"对话框里已配置的全部通道（支持多卡）。
+
             let _ = a.cmd.send(Cmd::ConnectChannels(a.channels.clone()));
             IpcResp::Ok(serde_json::json!({ "channels": a.channels.len() }))
         }
         IpcReq::LoadDbc { path, loaded } => {
-            // 解析已在 handler 线程完成(loaded)；此处仅去重+推入+重建快照(快，不阻塞 tick)。
+
             if a.dbc_paths.iter().any(|x| x == &path) {
                 IpcResp::Ok(serde_json::json!({ "loaded": false, "name": path, "note": "已加载" }))
             } else {
@@ -2589,7 +2762,7 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
             ok()
         }
         IpcReq::ClientGone => {
-            // 停掉该客户端所有周期任务并清理映射（防止脚本崩溃后心跳继续刷总线）。
+
             let internals: Vec<u64> = a.ipc_handle_map.iter().filter(|((c, _), _)| *c == cid).map(|(_, h)| *h).collect();
             for internal in internals {
                 stop_internal_periodic(a, internal);
@@ -2598,7 +2771,7 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
             ok()
         }
     };
-    // 回复发送失败 = 客户端已在 8s 内超时离开：回滚刚建的周期任务，避免孤儿帧继续刷总线。
+
     if ureq.reply.send(resp).is_err()
         && let Some(internal) = periodic_rollback
     {
@@ -2607,7 +2780,7 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
     }
 }
 
-/// 把一帧分发到匹配的 IPC 订阅者（在 tick 里，仅 try_send，满则丢最新并计数）。
+
 fn ipc_fanout(a: &App, f: &CanFrame) {
     let subs = a.ipc_subs.subs.lock().unwrap();
     if subs.is_empty() {
@@ -2624,7 +2797,7 @@ fn ipc_fanout(a: &App, f: &CanFrame) {
     }
 }
 
-/// 子进程生命周期（仅在 UI 线程调用）：停止标志/超时则 kill；否则 try_wait 收尾设状态。
+
 fn reap_child(a: &mut App) {
     let timed_out = a.py_started.is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(a.py_timeout_secs));
     if (a.py_stop_flag || timed_out) && a.py_child.is_some() {
@@ -2644,7 +2817,7 @@ fn reap_child(a: &mut App) {
         let success = st.success();
         a.py_child = None;
         a.py_started = None;
-        // 脚本若已 run_result 设过 PASS/FAIL 则保留，否则用退出码。
+
         if !(a.run_status.starts_with("PASS") || a.run_status.starts_with("FAIL")) {
             a.run_status = if success { "PASS".into() } else { "FAIL".into() };
         }
@@ -2652,8 +2825,8 @@ fn reap_child(a: &mut App) {
     }
 }
 
-/// 把子进程输出行喂进日志面板（在 tick 里）。
-/// 脚本运行完整日志的落盘路径（临时目录，覆盖写最近一次运行）。
+
+
 fn run_log_path() -> std::path::PathBuf {
     std::env::temp_dir().join("pcanwork_last_run.log")
 }
@@ -2671,9 +2844,9 @@ fn drain_py_output(a: &mut App) {
     for line in lines {
         a.py_output.push_str(&line);
         a.py_output.push('\n');
-        a.log(line); // 同时进主窗口"运行日志"，便于运行器窗口关闭时仍有记录
+        a.log(line);
     }
-    // 限长：保留尾部 ~200KB（按字符边界裁剪，避免 UTF-8 截断 panic）
+
     const CAP: usize = 200_000;
     if a.py_output.len() > CAP {
         let mut cut = a.py_output.len() - CAP;
@@ -2685,9 +2858,9 @@ fn drain_py_output(a: &mut App) {
     a.py_dirty = true;
 }
 
-// ---------------- 过滤解析 ----------------
 
-/// 收集当前可持久化配置（退出时保存）
+
+
 fn gather_settings(a: &App, ui: &AppWindow) -> settings::Settings {
     let th = ui.global::<Theme>();
     settings::Settings {
@@ -2701,7 +2874,7 @@ fn gather_settings(a: &App, ui: &AppWindow) -> settings::Settings {
         f_name: ui.get_f_name().to_string(),
         f_data: ui.get_f_data().to_string(),
         dir_filter: ui.get_dir_filter(),
-        dbc_path: None, // 旧字段不再写
+        dbc_path: None,
 dbc_paths: a.dbc_paths.clone(),
         left_w: ui.get_left_w(),
         bottom_h: ui.get_bottom_h(),
@@ -2720,10 +2893,11 @@ dbc_paths: a.dbc_paths.clone(),
         console_enabled: a.console_enabled,
         console_id: a.console_id.map(|x| x as i64).unwrap_or(-1),
         console_ch: a.console_ch as i32,
+        renderer: ui.get_renderer_mode().to_string(),
     }
 }
 
-/// 把配置应用到 App 与主窗口属性（主题由调用方按需分发到各窗口）
+
 fn apply_settings(a: &mut App, ui: &AppWindow, s: &settings::Settings) {
     if !s.channels.is_empty() {
         a.channels = s.channels.clone();
@@ -2732,8 +2906,10 @@ fn apply_settings(a: &mut App, ui: &AppWindow, s: &settings::Settings) {
     a.python_interpreter = s.python_interpreter_path.clone();
     a.last_script_path = s.last_script_path.clone();
     a.expr_vars = s.expr_vars.clone();
-    recompute_expr_ids(a); // DBC 此时可能已加载; 若 DBC 之后才加载, 加载处会再次重算
-    // CAN 报文日志配置 + 一次性同步到界面输入框(之后以界面为准, 不每帧覆盖)
+    let rmode = if s.renderer.is_empty() { "auto".to_string() } else { s.renderer.clone() };
+    ui.set_renderer_mode(rmode.into());
+    recompute_expr_ids(a);
+
     a.console_enabled = s.console_enabled;
     a.console_id = if s.console_id < 0 { None } else { Some(s.console_id as u32) };
     a.console_ch = s.console_ch.clamp(0, 255) as u8;
@@ -2760,7 +2936,7 @@ fn apply_settings(a: &mut App, ui: &AppWindow, s: &settings::Settings) {
     if s.chart_cap >= 500 {
         a.chart_cap = s.chart_cap;
     }
-    // DBC 路径：优先用多 DBC 列表 dbc_paths，否则回退旧版单一 dbc_path（替换当前列表）
+
     let effective: Vec<String> = if !s.dbc_paths.is_empty() {
         s.dbc_paths.clone()
     } else {
@@ -2796,7 +2972,7 @@ fn apply_settings(a: &mut App, ui: &AppWindow, s: &settings::Settings) {
     }
 }
 
-/// 方向过滤下拉索引 → Option<bool>（0=全部 None, 1=Rx Some(false), 2=Tx Some(true)）。
+
 fn dir_idx_to_opt(idx: i32) -> Option<bool> {
     match idx {
         1 => Some(false),
@@ -2867,33 +3043,33 @@ mod tests {
     #[test]
     fn console_reassembles_printf_lines() {
         let mut c = ConsoleBuf::default();
-        // 分两帧到达的一行 + 一个完整行(含 0x00 填充与 \r\n)
+
         c.feed(b"Hello, ");
         c.feed(b"world!\r\n");
-        c.feed(&[b'A', b'B', b'C', 0x0A, 0x00, 0x00]); // ABC + 换行 + 填充
-        // 已完成行
+        c.feed(&[b'A', b'B', b'C', 0x0A, 0x00, 0x00]);
+
         assert_eq!(c.lines.len(), 2);
         assert_eq!(c.lines[0], "Hello, world!");
         assert_eq!(c.lines[1], "ABC");
-        // 未完成行(无换行)出现在 rows 末尾
+
         c.feed(b"partial");
         let rows = c.rows();
         assert_eq!(rows.last().unwrap(), "partial");
         assert_eq!(rows.len(), 3);
-        // 导出文本
+
         assert_eq!(c.export_text(), "Hello, world!\nABC\npartial");
-        // UTF-8 中文(下位机发 UTF-8)
+
         let mut c2 = ConsoleBuf::default();
         c2.feed("温度=25℃\n".as_bytes());
         assert_eq!(c2.lines[0], "温度=25℃");
-        // CAN FD: 单帧可达 64 字节, 解码器吃任意长度字节数组 -> 经典/FD 同一条路径
+
         let mut c3 = ConsoleBuf::default();
-        let fd_line = b"FD log #07 temp=25C volt=72.1 current=12.3 state=OK\n"; // 51 字节, >8
+        let fd_line = b"FD log #07 temp=25C volt=72.1 current=12.3 state=OK\n";
         assert!(fd_line.len() > 8 && fd_line.len() <= 64);
         c3.feed(fd_line);
         assert_eq!(c3.lines.len(), 1);
         assert_eq!(c3.lines[0], "FD log #07 temp=25C volt=72.1 current=12.3 state=OK");
-        // 经典分帧(每 8 字节)拼成同一行
+
         let mut c4 = ConsoleBuf::default();
         for chunk in b"hello FD vs classic same line\n".chunks(8) {
             c4.feed(chunk);
@@ -2904,8 +3080,8 @@ mod tests {
         assert!(c.rows().is_empty());
     }
 
-    /// 工程文件 (.zcp) 的序列化往返：配置 + 发送列表 round-trip 后字段不丢失，
-/// 且加载后周期任务强制停发（into_task 的安全约定）
+
+
 #[test]
     fn project_roundtrip() {
         let proj = Project {
@@ -2949,20 +3125,20 @@ mod tests {
         assert_eq!(back.txs[0].data, vec![0x11, 0x22, 0x33]);
         assert_eq!(back.txs[0].sig_values, vec![("rpm".to_string(), 1500.0)]);
 
-        // 加载后默认停发（避免一打开工程就周期发送）
+
         let task = back.txs.into_iter().next().unwrap().into_task(7);
         assert!(!task.periodic);
         assert_eq!(task.handle, 7);
         assert_eq!(task.id, 0x123);
     }
 
-    /// 缺字段的旧工程文件应能用默认值容错加载（serde default）
+
 #[test]
     fn project_partial_load() {
         let json = r#"{ "txs": [] }"#;
         let back: Project = serde_json::from_str(json).expect("partial deserialize");
         assert!(back.txs.is_empty());
-        // settings 缺省：big 默认 true（default_true
+
 assert!(back.settings.big);
     }
 
@@ -2994,7 +3170,7 @@ assert!(back.settings.big);
         }
     }
 
-    /// 信号发生器波形：恒定取 min；斜坡/正弦始终落在 [min,max]。
+
 #[test]
     fn sim_gen_waveforms() {
         let mut c = mkwidget(SimKind::SignalGen, GenMode::Constant);
@@ -3015,7 +3191,7 @@ assert!(back.settings.big);
         }
     }
 
-    /// 仿真控件 JSON 往返：配置(含画布位置/尺寸/绑定信号)序列化后保留, 运行期字段(skip)复位为默认值。
+
     #[test]
     fn sim_widget_roundtrip() {
         let w = mkwidget(SimKind::Dial, GenMode::Sine);
@@ -3028,12 +3204,12 @@ assert!(back.settings.big);
         assert_eq!(back[0].w, 120.0);
         assert_eq!(back[0].slider_val, 5.0);
         assert!(back[0].enabled);
-        // 运行期字段未持久化, 反序列化后为默认
+
         assert_eq!(back[0].tick, 0);
         assert!(back[0].last_fire.is_none());
     }
 
-    /// SimKind 整数映射往返
+
 #[test]
     fn sim_kind_mapping() {
         for k in 0..8 {
@@ -3041,10 +3217,10 @@ assert!(back.settings.big);
         }
     }
 
-    /// 控件↔DBC 信号绑定取值: 走真实 DBC 解码路径(同 aaaaa.dbc 的 New_Message_1/New_Signal_1 布局)。
+
 #[test]
     fn sim_binding_decodes_dbc_signal() {
-        // 0x100 New_Message_1, New_Signal_1 @ bit7 Motorola 8位 = byte0
+
         let txt = "VERSION \"\"\nBO_ 256 New_Message_1: 8 ECU\n SG_ New_Signal_1 : 7|8@0+ (1,0) [0|255] \"\" Vector__XXX\n";
         let p = std::env::temp_dir().join("pcanwork_sim_bind.dbc");
         std::fs::write(&p, txt).unwrap();
@@ -3052,17 +3228,17 @@ assert!(back.settings.big);
         let dbcs = vec![db];
         let frame = [42u8, 0, 0, 0, 0, 0, 0, 0];
 
-        // 绑定 DBC 信号名 → 解出 New_Signal_1 = 42
+
         let v = sim_decode_value(&dbcs, 0x100, "New_Signal_1", &frame);
         assert_eq!(v, Some(42.0), "DBC 信号绑定应解出 byte0=42");
 
-        // 信号名为空 → byte0 兜底路径同样 = 42
+
         let v0 = sim_decode_value(&dbcs, 0x100, "", &frame);
         assert_eq!(v0, Some(42.0));
 
-        // 不存在的信号 → None
+
         assert_eq!(sim_decode_value(&dbcs, 0x100, "Nope", &frame), None);
-        // 未知的 ID + 指定信号 → None
+
         assert_eq!(sim_decode_value(&dbcs, 0x222, "New_Signal_1", &frame), None);
         let _ = std::fs::remove_file(&p);
     }

@@ -250,7 +250,13 @@ pub enum Cmd {
     SlaveStart(SlaveCfg),
     SlaveStop,
     SlaveEdit { address: u16, text: String },
+    SlaveEditAt { area: Area, address: u16, text: String },
     SlaveName { address: u16, name: String },
+    SlaveCellFormat { address: u16, format: Option<RegFormat> },
+    /// 导出全部数据到 CSV。server=true: 服务端扫 4 表。
+    /// client: active_csv = UI 端活动窗口的当前行(保证名字/功能码正确, 因为未连接窗口
+    /// 的预览数据只在 UI), 其余窗口从后端 cache 取(已连接/已轮询的)。
+    ExportCsv { path: String, server: bool, active_id: u32, active_csv: String },
     SlaveView { area: Area, address: u16, quantity: u16, format: RegFormat },
     SlaveScaling(Scaling),
     SlaveColors(ColorRules),
@@ -288,6 +294,25 @@ struct Win {
     engine: Option<MasterHandle>,
     cache: Arc<Mutex<WinCache>>,
     float: Arc<Mutex<Option<slint::Weak<crate::PollFloat>>>>,
+}
+
+/// UI 功能码索引(0-7)→ 数据表(与 main.rs::func_area 一致)。
+fn func_area_be(function: i32) -> Area {
+    match function {
+        0 | 4 | 6 => Area::Coils,
+        1 => Area::DiscreteInputs,
+        3 => Area::InputRegisters,
+        _ => Area::HoldingRegisters,
+    }
+}
+
+/// CSV 字段转义(同 main.rs::csv_escape)。
+fn csv_field(s: &str) -> String {
+    if s.contains(',') || s.contains('"') || s.contains('\n') {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 fn save_cfg(windows: &mut [Win], id: u32, cfg: UiCfg) {
@@ -492,9 +517,50 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     s.send(SlaveMsg::Edit { address, text });
                 }
             }
+            Cmd::SlaveEditAt { area, address, text } => {
+                if let Some(s) = &slave {
+                    s.send(SlaveMsg::EditAt { area, address, text });
+                }
+            }
             Cmd::SlaveName { address, name } => {
                 if let Some(s) = &slave {
                     s.send(SlaveMsg::SetName { address, name });
+                }
+            }
+            Cmd::SlaveCellFormat { address, format } => {
+                if let Some(s) = &slave {
+                    s.send(SlaveMsg::SetCellFormat { address, format });
+                }
+            }
+            Cmd::ExportCsv { path, server, active_id, active_csv } => {
+                if server {
+                    // 服务端: 交给 updater(它有 names + store 访问)扫 4 表导出
+                    if let Some(s) = &slave {
+                        s.send(SlaveMsg::ExportCsv(path));
+                    }
+                } else {
+                    // 客户端: 活动窗口用 UI 传来的当前行(名字/功能码正确), 其余窗口从 cache 取。
+                    let mut out = String::from("Import,Function,Address,Name,Value\n");
+                    out.push_str(&active_csv);
+                    for w in windows.iter().filter(|w| w.id != active_id) {
+                        let area = func_area_be(w.cfg.function);
+                        let c = w.cache.lock().unwrap();
+                        for (i, r) in c.rows.iter().enumerate() {
+                            let name = c
+                                .names
+                                .get(i)
+                                .map(|n| n.to_string())
+                                .unwrap_or_else(|| r.name.to_string());
+                            out.push_str(&format!(
+                                "yes,{},{},{},{}\n",
+                                area.csv_name(),
+                                r.address,
+                                csv_field(&name),
+                                csv_field(&r.value)
+                            ));
+                        }
+                    }
+                    let _ = std::fs::write(&path, out);
                 }
             }
             Cmd::SlaveView { area, address, quantity, format } => {
@@ -610,6 +676,49 @@ impl<T: AsyncWrite + Unpin> AsyncWrite for Tap<T> {
     }
 }
 
+/// 把一个已 connect 的 UDP socket 包装成 AsyncRead+AsyncWrite 流，
+/// 使 tokio-modbus 的 MBAP 帧编解码(tcp::attach_slave)能跑在 UDP 之上 = Modbus/UDP。
+/// 语义: 一次 poll_write = 发一个请求数据报; 一次 poll_read = 收一个响应数据报。
+/// Modbus 的请求/响应天然一来一回、每个 ADU 一个数据报，与 MBAP 长度字段一致。
+#[derive(Debug)]
+struct UdpStream {
+    sock: tokio::net::UdpSocket,
+}
+
+impl AsyncRead for UdpStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        self.get_mut().sock.poll_recv(cx, buf)
+    }
+}
+
+impl AsyncWrite for UdpStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        data: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        self.get_mut().sock.poll_send(cx, data)
+    }
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+    fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut TaskContext<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+/// 绑定本地任意端口并 connect 到目标，返回可做 MBAP 帧的 UDP 流。
+async fn udp_connect(host: &str, port: u16) -> anyhow::Result<UdpStream> {
+    let addr = resolve(host, port)?;
+    let sock = tokio::net::UdpSocket::bind(("0.0.0.0", 0)).await?;
+    sock.connect(addr).await?;
+    Ok(UdpStream { sock })
+}
+
 type TrafficRx = mpsc::UnboundedReceiver<(bool, Vec<u8>)>;
 
 async fn connect_tapped(
@@ -634,6 +743,21 @@ async fn connect_tapped(
                 None => tcp::attach_slave(Tap { inner: stream, tx: tap_tx }, Slave(slave_id)),
             }
         }
+        Transport::Udp { host, port } => {
+            // Modbus/UDP 用 MBAP 帧(同 TCP)，故仍走 tcp::attach_slave，只是底层是 UDP 流。
+            let udp = udp_connect(host, *port).await?;
+            tcp::attach_slave(Tap { inner: udp, tx: tap_tx }, Slave(slave_id))
+        }
+        Transport::RtuOverTcp { host, port } => {
+            // RTU 帧(CRC)走 TCP：用 rtu::attach_slave 做 RTU 编解码，底层是 TCP 流。
+            let addr = resolve(host, *port)?;
+            let stream = tokio::net::TcpStream::connect(addr).await?;
+            rtu::attach_slave(Tap { inner: stream, tx: tap_tx }, Slave(slave_id))
+        }
+        Transport::RtuOverUdp { host, port } => {
+            let udp = udp_connect(host, *port).await?;
+            rtu::attach_slave(Tap { inner: udp, tx: tap_tx }, Slave(slave_id))
+        }
         Transport::Rtu { path, baud, data_bits, parity, stop_bits } => {
             let serial = SerialStream::open(&serial_builder(path, *baud, *data_bits, *parity, *stop_bits))?;
             rtu::attach_slave(Tap { inner: serial, tx: tap_tx }, Slave(slave_id))
@@ -647,6 +771,19 @@ async fn connect_plain(t: &Transport, slave_id: u8) -> anyhow::Result<Context> {
         Transport::Tcp { host, port } => {
             let addr = resolve(host, *port)?;
             Ok(tcp::connect_slave(addr, Slave(slave_id)).await?)
+        }
+        Transport::Udp { host, port } => {
+            let udp = udp_connect(host, *port).await?;
+            Ok(tcp::attach_slave(udp, Slave(slave_id)))
+        }
+        Transport::RtuOverTcp { host, port } => {
+            let addr = resolve(host, *port)?;
+            let stream = tokio::net::TcpStream::connect(addr).await?;
+            Ok(rtu::attach_slave(stream, Slave(slave_id)))
+        }
+        Transport::RtuOverUdp { host, port } => {
+            let udp = udp_connect(host, *port).await?;
+            Ok(rtu::attach_slave(udp, Slave(slave_id)))
         }
         Transport::Rtu { path, baud, data_bits, parity, stop_bits } => {
             let serial = SerialStream::open(&serial_builder(path, *baud, *data_bits, *parity, *stop_bits))?;
@@ -963,7 +1100,8 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
         let timeout_ms = if cfg.timeout_ms == 0 { RESPONSE_TIMEOUT_MS } else { cfg.timeout_ms };
         let reconnect = cfg.reconnect;
         let reconnect_ms = cfg.reconnect_ms.max(200);
-        let is_tcp = matches!(cfg.transport, Transport::Tcp { .. }); // 解析时区分 MBAP 头 vs RTU CRC
+        // MBAP 帧(TCP/UDP 同) vs RTU CRC: UDP 也是 MBAP，按 TCP 口径解析
+        let is_tcp = matches!(cfg.transport, Transport::Tcp { .. } | Transport::Udp { .. });
         // 流量转发器: tokio JoinHandle drop 即 detach, 任务照跑; 旧连接断开时其通道关闭会自然结束
         let _ = spawn_traffic_forwarder(traffic_rx, sink.clone(), is_tcp);
         let conn_desc = match &tls_desc {
@@ -1593,7 +1731,10 @@ enum SlaveEvent {
 
 enum SlaveMsg {
     Edit { address: u16, text: String },
+    EditAt { area: Area, address: u16, text: String },
     SetName { address: u16, name: String },
+    SetCellFormat { address: u16, format: Option<RegFormat> },
+    ExportCsv(String),
     SetView { area: Area, address: u16, quantity: u16, format: RegFormat },
     SetScaling(Scaling),
     SetColors(ColorRules),
@@ -1711,6 +1852,10 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
     let tls = cfg.tls.clone();
     let server = tokio::spawn(async move {
         match transport {
+            // 从站(模拟器)只支持 TCP/RTU —— UDP / RTU-over-IP 为主站专用，UI 从站模式不提供。
+            Transport::Udp { .. } | Transport::RtuOverTcp { .. } | Transport::RtuOverUdp { .. } => {
+                ui_srv.slave_status("从站仅支持 TCP / RTU(串口)", false);
+            }
             Transport::Tcp { host, port } => {
                 let listener = match TcpListener::bind((host.as_str(), port)).await {
                     Ok(l) => l,
@@ -1807,17 +1952,19 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         // Per-register auto-increment toggled from the row context menu.
         let mut auto_inc: std::collections::HashSet<(Area, u16)> = std::collections::HashSet::new();
         let mut ainc_tick = tokio::time::interval(Duration::from_millis(500));
+        // Per-cell display-format overrides (Set format… 右键菜单), 与主站对等。
+        let mut cell_formats: HashMap<u16, RegFormat> = HashMap::new();
         // Floating server monitors: independent views into the same store.
         let mut monitors: Vec<(u32, slint::Weak<crate::SlaveMonitor>, SlaveView)> = Vec::new();
 
-        render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+        render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
         loop {
             tokio::select! {
                 Some(ev) = events_rx.recv() => {
                     ui.slave_requests(upd_shared.requests.load(Ordering::Relaxed));
                     match ev {
                         SlaveEvent::Changed => {
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                             for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                         }
                         SlaveEvent::Log { dir, text } => ui.slave_log(push_log(&mut logbuf, dir, text)),
@@ -1846,7 +1993,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             let mut store = upd_shared.store.lock().unwrap();
                             apply_sim(&mut store, cfg, &mut rng);
                         }
-                        render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                        render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                     }
                 }
@@ -1857,7 +2004,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             bump_one(&mut store, *area, *addr);
                         }
                     }
-                    render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                    render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                     for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                 }
                 msg = ctrl_rx.recv() => {
@@ -1865,29 +2012,44 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         Some(SlaveMsg::SetView { area, address, quantity, format }) => {
                             view = SlaveView { area, address, quantity, format };
                             chart.reset();
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::Edit { address, text }) => {
-                            apply_edit(&upd_shared, &view, address, &text);
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            apply_edit(&upd_shared, view.area, address, &text);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                             for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
+                        }
+                        Some(SlaveMsg::EditAt { area, address, text }) => {
+                            // 导入按 Function 列写到指定表(与当前视图无关)
+                            apply_edit(&upd_shared, area, address, &text);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::SetName { address, name }) => {
                             if name.trim().is_empty() { names.remove(&address); } else { names.insert(address, name); }
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
+                        }
+                        Some(SlaveMsg::SetCellFormat { address, format }) => {
+                            match format { Some(f) => { cell_formats.insert(address, f); }, None => { cell_formats.remove(&address); } }
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
+                        }
+                        Some(SlaveMsg::ExportCsv(path)) => {
+                            let store = upd_shared.store.lock().unwrap();
+                            let out = build_server_csv(&store, &names);
+                            drop(store);
+                            let _ = std::fs::write(&path, out);
                         }
                         Some(SlaveMsg::SetScaling(s)) => {
                             scaling = s;
                             chart.reset();
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::SetColors(c)) => {
                             colors = c;
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::SetValueNames(v)) => {
                             value_names = v;
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::SimStart(c)) => {
                             sim_tick = tokio::time::interval(Duration::from_millis(c.interval_ms.max(50)));
@@ -1899,7 +2061,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             if !auto_inc.remove(&key) {
                                 auto_inc.insert(key);
                             }
-                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                            render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
                         Some(SlaveMsg::AddMonitor { id, weak, view: mv }) => {
                             render_monitor(&upd_shared, &mv, &weak);
@@ -1917,8 +2079,8 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         Some(SlaveMsg::MonitorEdit { id, address, text }) => {
                             if let Some(m) = monitors.iter().find(|m| m.0 == id) {
                                 let mv = m.2;
-                                apply_edit(&upd_shared, &mv, address, &text);
-                                render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &ui);
+                                apply_edit(&upd_shared, mv.area, address, &text);
+                                render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                                 for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                             }
                         }
@@ -2164,10 +2326,37 @@ fn describe_request(req: &Request) -> String {
     }
 }
 
-fn apply_edit(shared: &SlaveShared, view: &SlaveView, address: u16, text: &str) {
+/// 服务端"全部导出": 扫 4 表, 只导"有名字 或 值非零"的寄存器, 每行标功能码(表)。
+fn build_server_csv(store: &DataStore, names: &HashMap<u16, String>) -> String {
+    let mut out = String::from("Import,Function,Address,Name,Value\n");
+    let nm = |i: usize| names.get(&(i as u16)).map(|s| s.as_str()).unwrap_or("");
+    for (i, &b) in store.coils.iter().enumerate() {
+        if b || names.contains_key(&(i as u16)) {
+            out.push_str(&format!("yes,{},{},{},{}\n", Area::Coils.csv_name(), i, csv_field(nm(i)), if b { 1 } else { 0 }));
+        }
+    }
+    for (i, &b) in store.discrete_inputs.iter().enumerate() {
+        if b || names.contains_key(&(i as u16)) {
+            out.push_str(&format!("yes,{},{},{},{}\n", Area::DiscreteInputs.csv_name(), i, csv_field(nm(i)), if b { 1 } else { 0 }));
+        }
+    }
+    for (i, &v) in store.holding.iter().enumerate() {
+        if v != 0 || names.contains_key(&(i as u16)) {
+            out.push_str(&format!("yes,{},{},{},{}\n", Area::HoldingRegisters.csv_name(), i, csv_field(nm(i)), v));
+        }
+    }
+    for (i, &v) in store.input.iter().enumerate() {
+        if v != 0 || names.contains_key(&(i as u16)) {
+            out.push_str(&format!("yes,{},{},{},{}\n", Area::InputRegisters.csv_name(), i, csv_field(nm(i)), v));
+        }
+    }
+    out
+}
+
+fn apply_edit(shared: &SlaveShared, area: Area, address: u16, text: &str) {
     let mut store = shared.store.lock().unwrap();
     let idx = address as usize;
-    match view.area {
+    match area {
         Area::Coils => {
             if let Some(b) = parse_bit(text) {
                 if idx < store.coils.len() {
@@ -2210,17 +2399,17 @@ fn render_slave(
     chart: &mut ChartState,
     last_names: &mut Vec<slint::SharedString>,
     auto_inc: &std::collections::HashSet<(Area, u16)>,
+    cell_formats: &HashMap<u16, RegFormat>,
     ui: &UiSink,
 ) {
     let store = shared.store.lock().unwrap();
     let start = view.address as usize;
     let qty = view.quantity as usize;
-    let no_overrides: HashMap<u16, RegFormat> = HashMap::new();
     let rows = match view.area {
         Area::Coils => render_bits(view.address, window_bool(&store.coils, start, qty)),
         Area::DiscreteInputs => render_bits(view.address, window_bool(&store.discrete_inputs, start, qty)),
-        Area::HoldingRegisters => render_registers(view.address, window_u16(&store.holding, start, qty), view.format, &no_overrides, scaling),
-        Area::InputRegisters => render_registers(view.address, window_u16(&store.input, start, qty), view.format, &no_overrides, scaling),
+        Area::HoldingRegisters => render_registers(view.address, window_u16(&store.holding, start, qty), view.format, cell_formats, scaling),
+        Area::InputRegisters => render_registers(view.address, window_u16(&store.input, start, qty), view.format, cell_formats, scaling),
     };
     drop(store);
     update_chart(chart, &rows);
@@ -2797,6 +2986,93 @@ fn now_timestamp() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn udp_master_round_trip() {
+        use tokio::net::UdpSocket;
+        // 最小 UDP Modbus(MBAP)服务器: 对任意请求回 Read Coils 响应(coil 0,2,9 置位)。
+        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 260];
+            let (_n, peer) = server.recv_from(&mut buf).await.unwrap();
+            let (tid_hi, tid_lo, unit) = (buf[0], buf[1], buf[6]); // 回显 TID/unit
+            // MBAP: tid, proto=0, len=5 | PDU: func=01, bytecount=2, data=0x05,0x02
+            let resp = [tid_hi, tid_lo, 0x00, 0x00, 0x00, 0x05, unit, 0x01, 0x02, 0x05, 0x02];
+            server.send_to(&resp, peer).await.unwrap();
+        });
+        // 用新增的 Modbus/UDP 传输连过去读 10 个线圈
+        let mut ctx = connect_plain(&Transport::Udp { host: "127.0.0.1".into(), port }, 1)
+            .await
+            .expect("UDP connect");
+        let coils = ctx.read_coils(0, 10).await.unwrap().unwrap();
+        assert_eq!(coils.len(), 10);
+        assert_eq!(
+            coils,
+            vec![true, false, true, false, false, false, false, false, false, true]
+        );
+    }
+
+    #[tokio::test]
+    async fn rtu_over_tcp_round_trip() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        // 标准 Modbus CRC16
+        fn crc16(data: &[u8]) -> u16 {
+            let mut crc: u16 = 0xFFFF;
+            for &b in data {
+                crc ^= b as u16;
+                for _ in 0..8 {
+                    if crc & 1 != 0 { crc = (crc >> 1) ^ 0xA001 } else { crc >>= 1 }
+                }
+            }
+            crc
+        }
+        // 手写 RTU-over-TCP 服务端: 收到请求后回 Read Holding Registers(1 个寄存器=0x1092)。
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut stream, _peer) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 256];
+            let _ = stream.read(&mut buf).await.unwrap(); // 收请求(RTU 帧)
+            let mut resp = vec![0x01u8, 0x03, 0x02, 0x10, 0x92]; // unit,func,bytecount,data
+            let c = crc16(&resp);
+            resp.push((c & 0xff) as u8);
+            resp.push((c >> 8) as u8);
+            stream.write_all(&resp).await.unwrap();
+        });
+        let mut ctx =
+            connect_plain(&Transport::RtuOverTcp { host: "127.0.0.1".into(), port: addr.port() }, 1)
+                .await
+                .unwrap();
+        let h = ctx.read_holding_registers(0, 1).await.unwrap().unwrap();
+        assert_eq!(h, vec![0x1092]);
+    }
+
+    #[test]
+    fn server_csv_export() {
+        let mut store = DataStore::new();
+        store.holding[0] = 28;
+        store.holding[5] = 1000;
+        store.coils[2] = true;
+        let mut names: HashMap<u16, String> = HashMap::new();
+        names.insert(0, "Temp".into());
+        let csv = build_server_csv(&store, &names);
+        assert_eq!(csv.lines().next().unwrap(), "Import,Function,Address,Name,Value");
+        assert!(csv.contains("yes,Coils,2,,1"), "{csv}");                  // 线圈 2 = ON
+        assert!(csv.contains("yes,HoldingRegisters,0,Temp,28"), "{csv}");  // 命名 + 值
+        assert!(csv.contains("yes,HoldingRegisters,5,,1000"), "{csv}");    // 仅非零值
+        // 命名地址 0 全局 → 各表都出一行(含值为 0 的); 但绝不导出 26 万空寄存器
+        assert!(csv.lines().count() < 50, "filtered empties, got {}", csv.lines().count());
+        assert!(!csv.contains("yes,HoldingRegisters,6,"), "空寄存器不应导出\n{csv}");
+    }
+
+    #[test]
+    fn csv_address_lenient() {
+        assert_eq!(Area::from_csv_name("HoldingRegisters"), Some(Area::HoldingRegisters));
+        assert_eq!(Area::from_csv_name("coils"), Some(Area::Coils));
+        assert_eq!(Area::from_csv_name("4x"), Some(Area::HoldingRegisters));
+        assert_eq!(Area::from_csv_name("9"), None);
+    }
 
     #[test]
     fn modbus_adu_parsing() {

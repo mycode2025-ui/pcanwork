@@ -1,0 +1,573 @@
+// Common types, globals and reusable widgets split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+
+
+export struct ByteCell {
+    hex: string,
+    hot: bool,
+}
+
+// 仿真面板画布上一个控件的显示态
+export struct SimRow {
+    kind: int,       // 0指示灯 1仪表盘 2进度条 3数值 4标签 5按钮 6滑块 7信号发生器
+    name: string,
+    info: string,
+    status: string,
+    x: float,        // 画布坐标(逻辑px)
+    y: float,
+    w: float,
+    h: float,
+    on: bool,        // 指示灯点亮
+    level: float,    // 0..1: 仪表盘角度 / 进度条 / 滑块位置
+    selected: bool,
+    primary: bool,   // 主控件(等高/等宽的模板基准)
+    align: int,      // 文本对齐: 0左 1中 2右
+}
+
+export struct MsgRow {
+    no: string,
+    time: string,
+    delta: string,
+    ch: string,
+    dir: string,
+    id: string,
+    name: string,
+    kind: string,
+    fd: string,
+    brs: string,
+    dlc: string,
+    len: string,
+    data-bytes: [ByteCell],
+    data-text: string,
+    cycle: string,
+    count: string,
+    comment: string,
+    is-tx: bool,
+    is-error: bool,
+    is-new: bool,
+    timeout: bool,
+    is-signal: bool,
+    can-expand: bool,
+    expanded: bool,
+    signal-name: string,
+    signal-out-of-range: bool,
+}
+
+export struct SigRow {
+    signal: string,
+    raw: string,
+    physical: string,
+    unit: string,
+    min: string,
+    max: string,
+    enum-txt: string,
+    startbit: string,
+    length: string,
+    byteorder: string,
+    signed: string,
+    factor: string,
+    offset: string,
+    status: string,
+    out-of-range: bool,
+}
+
+export struct TxSigRow {
+    signal: string,
+    phys: string,
+    raw: string,
+    unit: string,
+    factor: string,
+    offset: string,
+    startbit: string,
+    length: string,
+    factor-num: float,
+    offset-num: float,
+}
+
+export struct TxRow {
+    enabled: bool,
+    checked: bool,
+    name: string,
+    ch: string,
+    id: string,
+    dbcname: string,
+    kind: string,
+    fd: string,
+    brs: string,
+    dlc: string,
+    data: string,
+    mode: string,
+    period: string,
+    count: string,
+    sent: string,
+    status: string,
+    running: bool,
+}
+
+export struct PbFileRow {
+    name: string,
+    count: string,
+}
+
+export struct TreeRow {
+    level: int,
+    label: string,
+    kind: string,
+    accent: bool,
+    expandable: bool,
+    expanded: bool,
+}
+
+export struct ChanStat {
+    ch: string,
+    state: string,
+    rx: string,
+    tx: string,
+    err: string,
+    load: string,
+    fps: string,
+    active-ids: string,
+}
+
+export struct IdStat {
+    ch: string,
+    id: string,
+    name: string,
+    count: string,
+    avg-cycle: string,
+    min: string,
+    max: string,
+    last-time: string,
+    timeout: string,
+}
+
+export struct ChartSeries {
+    name: string,
+    commands: string,
+    clr: color,
+    cur: string,
+    unit: string,
+    axis-max: string,
+    axis-mid: string,
+    axis-min: string,
+    cursor-value: string,
+    cursor-y: float,
+    cursor-valid: bool,
+    cursor2-value: string,
+    cursor2-y: float,
+    cursor2-valid: bool,
+    visible: bool,
+    highlight: bool,
+    smin: string,
+    smax: string,
+}
+
+export struct DbcSignalRow {
+    label: string,
+}
+
+export struct SignalPickRow {
+    level: int,
+    name: string,
+    desc: string,
+    kind: string,
+    expandable: bool,
+    expanded: bool,
+    selectable: bool,
+    selected: bool,
+}
+
+// ======================= Theme =======================
+
+// 中英切换: en=true 显示英文。各处文案写 I18n.en ? "English" : "中文"。
+export global I18n {
+    in-out property <bool> en: false;
+}
+
+export global Theme {
+    in-out property <bool> dark: false;
+    in-out property <bool> big: true; // 触摸友好的大布局
+
+    // 学术蓝（Academic Blue）配色：冷蓝灰中性 + 海军/宝蓝主色
+    out property <color> bg: dark ? #0d1726 : #eef3f9;
+    out property <color> panel: dark ? #132237 : #ffffff;
+    out property <color> panel2: dark ? #1a2c44 : #e3ecf6;
+    out property <color> border: dark ? #2a3f5c : #cdd9e8;
+    out property <color> text: dark ? #e4ecf7 : #16243a;
+    out property <color> text-dim: dark ? #93a6c0 : #5a6b85;
+    out property <color> header: dark ? #16273d : #e0eaf5;
+    out property <color> accent: dark ? #5b9bf0 : #1c5aa6;
+    out property <color> accent-soft: dark ? #1e3556 : #dbe7f6;
+    out property <color> tx-bg: dark ? #14253f : #e8f1fc;
+    out property <color> err-bg: dark ? #3a1f23 : #fdecec;
+    out property <color> new-bg: dark ? #16301f : #e8f8ee;
+    out property <color> timeout-bg: dark ? #3a2e16 : #fff4e2;
+    out property <color> changed-bg: dark ? #4a4420 : #fff3bf;
+    out property <color> ok: dark ? #4ade80 : #16a34a;
+    out property <color> warn: dark ? #fbbf24 : #d97706;
+    out property <color> bad: dark ? #f87171 : #dc2626;
+    out property <color> sel: dark ? #21406a : #cfe0f5;
+    out property <color> zebra: dark ? #101c2e : #f6f9fd;
+    out property <color> sigrow: dark ? #122138 : #eef5fd;
+
+    out property <length> rowh: big ? 32px : 26px;
+    out property <length> ctrl-h: big ? 38px : 30px;
+    out property <length> fs: big ? 14px : 12px;
+    out property <length> fs-sm: big ? 13px : 11px;
+    out property <length> radius: 6px;
+    out property <string> mono: "Cascadia Mono, Consolas";
+}
+
+// 列宽（0px = 隐藏该列）。Rust 端在切换列可见性时改写这些值。
+export global ColW {
+    in-out property <length> no: 52px;
+    in-out property <length> time: 96px;
+    in-out property <length> delta: 80px;
+    in-out property <length> ch: 56px;
+    in-out property <length> dir: 44px;
+    in-out property <length> id: 88px;
+    in-out property <length> name: 150px;
+    in-out property <length> kind: 48px;
+    in-out property <length> fd: 40px;
+    in-out property <length> brs: 40px;
+    in-out property <length> dlc: 44px;
+    in-out property <length> len: 44px;
+    in-out property <length> data: 230px;
+    in-out property <length> cycle: 72px;
+    in-out property <length> count: 72px;
+    in-out property <length> comment: 140px;
+    in-out property <length> total: 1268px;
+}
+
+export component Cell inherits Rectangle {
+    in property <string> text;
+    in property <length> w;
+    in property <color> txt-clr: Theme.text;
+    in property <bool> mono: false;
+    in property <TextHorizontalAlignment> align: left;
+    width: w;
+    clip: true;
+    HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 7px;
+        Text {
+            text: text;
+            color: txt-clr;
+            vertical-alignment: center;
+            horizontal-alignment: align;
+            font-family: mono ? Theme.mono : "";
+            font-size: Theme.fs;
+            overflow: elide;
+        }
+    }
+}
+
+export component HCell inherits Rectangle {
+    in property <string> text;
+    in property <length> w;
+    width: w;
+    background: Theme.header;
+    Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
+    Text {
+        text: text;
+        x: 7px;
+        color: Theme.text;
+        font-weight: 700;
+        font-size: Theme.fs;
+        vertical-alignment: center;
+    }
+}
+
+export component SortHeader inherits Rectangle {
+    in property <string> text;
+    in property <length> w;
+    in property <int> cidx;
+    in property <int> sort-col: -1;
+    in property <bool> sort-desc: false;
+    callback clicked(int);
+    width: w;
+    background: ta.has-hover ? Theme.accent-soft : Theme.header;
+    Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
+    ta := TouchArea { clicked => { root.clicked(cidx); } }
+    HorizontalLayout {
+        padding-left: 7px; padding-right: 3px;
+        Text {
+            text: text; color: Theme.text; font-weight: 700; font-size: Theme.fs;
+            vertical-alignment: center; horizontal-stretch: 1; overflow: elide;
+        }
+        Text {
+            text: root.sort-col == cidx ? (sort-desc ? "v" : "^") : "";
+            color: Theme.accent; font-size: Theme.fs-sm; vertical-alignment: center;
+        }
+    }
+}
+
+export component TBtn inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    in property <bool> boxed: false;   // always render a button box (border + surface), even when idle
+    in property <bool> primary: false; // filled accent (primary action button)
+    in property <bool> btn-enabled: true;
+    in property <length> h: Theme.ctrl-h;
+    callback clicked;
+    width: txt.preferred-width + 22px;
+    height: h;
+    border-radius: Theme.radius;
+    background: !root.btn-enabled ? Theme.panel2
+        : ta.pressed ? ((root.primary || root.active) ? Theme.accent.darker(0.22) : Theme.panel2.darker(0.10))
+        : (root.primary || root.active) ? Theme.accent
+        : ta.has-hover ? Theme.panel2
+        : root.boxed ? Theme.panel
+        : transparent;
+    animate background { duration: 90ms; }
+    border-width: 1px;
+    border-color: (root.primary || root.active) ? Theme.accent
+        : (root.boxed || ta.has-hover) ? Theme.border
+        : transparent;
+    txt := Text {
+        text: text;
+        width: 100%;
+        color: !root.btn-enabled ? Theme.text-dim : ((root.primary || root.active) ? white : Theme.text);
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: Theme.fs;
+    }
+    ta := TouchArea { enabled: root.btn-enabled; clicked => { root.clicked(); } }
+}
+
+
+// ======================= 矢量图标 =======================
+
+export component Icon inherits Rectangle {
+    in property <string> name;
+    in property <color> clr: Theme.text;
+    property <string> fcmd:
+        name == "start" ? "M8 5 L19 12 L8 19 Z" :
+        name == "stop" ? "M7 7 H17 V17 H7 Z" :
+        name == "record" ? "M12 6 A6 6 0 0 0 12 18 A6 6 0 0 0 12 6 Z" :
+        name == "pause" ? "M7 6 H10 V18 H7 Z M14 6 H17 V18 H14 Z" :
+        name == "theme" ? "M12 4 A8 8 0 0 0 12 20 Z" : "";
+    property <string> scmd:
+        name == "demo" ? "M3 14 C6 6 9 6 12 14 C15 22 18 22 21 14" :
+        name == "connect" ? "M5 12 H10 M14 12 H19 M10 8 V16 M14 8 V16" :
+        name == "disconnect" ? "M5 12 H9 M15 12 H19 M5 5 L19 19" :
+        name == "channel" ? "M4 9 H18 M15 6 L18 9 L15 12 M20 15 H6 M9 12 L6 15 L9 18" :
+        name == "database" ? "M5 6 A7 2.5 0 0 0 19 6 A7 2.5 0 0 0 5 6 V18 A7 2.5 0 0 0 19 18 V6 M5 12 A7 2.5 0 0 0 19 12" :
+        name == "send" ? "M3 6 H21 V18 H3 Z M3 6 L12 13 L21 6" :
+        name == "curve" ? "M3 18 L9 11 L13 15 L21 5" :
+        name == "playback" ? "M8 6 L18 12 L8 18 Z" :
+        name == "clear" ? "M6 6 L18 18 M18 6 L6 18" :
+        name == "layout" ? "M4 4 H20 V20 H4 Z M4 12 H20 M12 4 V20" :
+        name == "modbus" ? "M4 5 H20 V19 H4 Z M9 5 V19 M4 10 H20 M4 14 H20" :
+        name == "file" ? "M7 3 H14 L19 8 V21 H7 Z M14 3 V8 H19" :
+        name == "folder" ? "M3 7 H9 L11 9 H21 V19 H3 Z" :
+        name == "save" ? "M4 4 H16 L20 8 V20 H4 Z M8 4 V9 H15 M8 20 V14 H16 V20" :
+        name == "filter" ? "M4 5 H20 L14 12 V19 L10 17 V12 Z" :
+        name == "window" ? "M4 5 H20 V19 H4 Z M4 9 H20" : "";
+    Path {
+        visible: fcmd != "";
+        commands: fcmd; fill: clr;
+        viewbox-width: 24; viewbox-height: 24; width: 100%; height: 100%;
+    }
+    Path {
+        visible: scmd != "";
+        commands: scmd; stroke: clr; stroke-width: 1.7px;
+        viewbox-width: 24; viewbox-height: 24; width: 100%; height: 100%;
+    }
+    Text {
+        visible: name == "language";
+        text: I18n.en ? "CN" : "EN";
+        color: clr;
+        font-size: 11px;
+        font-weight: 800;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// ======================= Ribbon (ZXDoc 风格功能区) =======================
+
+export component RibbonBtn inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <color> icon-clr: Theme.accent;
+    in property <bool> active: false;
+    callback clicked;
+    width: Theme.big ? 62px : 54px;
+    border-radius: Theme.radius;
+    background: active ? Theme.accent : (ta.has-hover ? Theme.accent-soft : transparent);
+    VerticalLayout {
+        padding: 4px;
+        spacing: 3px;
+        Rectangle {
+            height: Theme.big ? 36px : 30px;
+            tile := Rectangle {
+                width: Theme.big ? 36px : 30px; height: self.width;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                border-radius: Theme.radius;
+                background: active ? #ffffff33 : (ta.has-hover ? Theme.panel : Theme.panel2);
+                border-width: 1px;
+                border-color: active ? #ffffff44 : Theme.border;
+                drop-shadow-blur: 2px;
+                drop-shadow-color: active ? transparent : #00000018;
+                drop-shadow-offset-y: 1px;
+                Icon {
+                    name: icon; clr: active ? white : icon-clr;
+                    width: Theme.big ? 22px : 18px; height: self.width;
+                    x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+        Text {
+            text: label; font-size: Theme.fs-sm;
+            color: active ? white : Theme.text;
+            horizontal-alignment: center; vertical-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component RibbonGroup inherits Rectangle {
+    in property <string> caption;
+    Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
+    VerticalLayout {
+        padding-left: 5px; padding-right: 6px; padding-top: 4px; padding-bottom: 8px;
+        spacing: 2px;
+        HorizontalLayout { spacing: 1px; vertical-stretch: 1; @children }
+        Text {
+            text: caption; font-size: Theme.fs-sm; color: Theme.text-dim;
+            horizontal-alignment: center; height: 16px;
+        }
+    }
+}
+
+export component RibbonTab inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    callback clicked;
+    width: txt.preferred-width + 22px;
+    height: 28px;
+    background: active ? Theme.panel : transparent;
+    border-top-left-radius: 4px; border-top-right-radius: 4px;
+    txt := Text {
+        text: text; color: active ? Theme.accent : Theme.text;
+        font-weight: active ? 700 : 400; font-size: Theme.fs;
+        horizontal-alignment: center; vertical-alignment: center;
+    }
+    Rectangle {
+        visible: active; height: 2px; width: 100%; y: parent.height - 2px; background: Theme.accent;
+    }
+    ta := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component ConvTab inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    callback clicked();
+    height: 32px;
+    width: 110px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: active ? Theme.accent : Theme.panel2;
+    Text {
+        text: label;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        font-size: 13px;
+        color: active ? #ffffff : Theme.text;
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component SimGlyph inherits Rectangle {
+    in property <SimRow> w;
+    // 指示灯
+    if w.kind == 0: Rectangle {
+        Rectangle {
+            width: min(parent.width, parent.height) - 34px; height: self.width; border-radius: self.width / 2;
+            x: (parent.width - self.width) / 2; y: 6px;
+            background: w.on ? Theme.ok : Theme.text-dim;
+            border-width: 2px; border-color: w.on ? #ffffff80 : Theme.border;
+            drop-shadow-blur: w.on ? 8px : 0px; drop-shadow-color: Theme.ok;
+        }
+        Text { text: w.name; y: parent.height - 18px; width: 100%; horizontal-alignment: center; font-size: 11px; color: Theme.text; }
+    }
+    // 仪表盘(圆盘 + 沿弧移动的指示珠 + 中心读数)
+    if w.kind == 1: Rectangle {
+        dial := Rectangle {
+            width: min(parent.width, parent.height) - 28px; height: self.width; border-radius: self.width / 2;
+            x: (parent.width - self.width) / 2; y: 4px;
+            background: Theme.panel2; border-width: 2px; border-color: Theme.border;
+            // 量程 0 弧端标记(左下)
+            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
+                x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(-120deg);
+                y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(-120deg);
+            }
+            // 量程 max 弧端标记(右下)
+            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
+                x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(120deg);
+                y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(120deg);
+            }
+            // 指示珠(沿 240° 弧移动)
+            Rectangle { width: 13px; height: 13px; border-radius: 7px; background: Theme.accent; border-width: 2px; border-color: #ffffff80;
+                x: parent.width / 2 - 7px + (parent.width / 2 - 14px) * sin(-120deg + 240deg * w.level);
+                y: parent.height / 2 - 7px - (parent.height / 2 - 14px) * cos(-120deg + 240deg * w.level);
+            }
+            // 中心读数
+            Text { text: w.status; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; font-weight: 700; font-family: Theme.mono; color: Theme.accent; }
+        }
+        Text { text: w.name; y: parent.height - 16px; width: 100%; horizontal-alignment: center; font-size: 10px; color: Theme.text-dim; }
+    }
+    // 进度条
+    if w.kind == 2: VerticalLayout {
+        padding: 6px; spacing: 3px;
+        Text { text: w.name; font-size: 11px; color: Theme.text-dim; }
+        Rectangle {
+            height: 16px; background: Theme.panel2; border-radius: 4px; border-width: 1px; border-color: Theme.border;
+            Rectangle { x: 0; y: 0; height: parent.height; width: parent.width * w.level; background: Theme.accent; border-radius: 4px; }
+        }
+        Text { text: w.status; font-size: 11px; color: Theme.text; horizontal-alignment: right; }
+    }
+    // 数值
+    if w.kind == 3: VerticalLayout {
+        padding: 4px;
+        Text { text: w.name; font-size: 11px; color: Theme.text-dim; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; }
+        Text { text: w.status; font-size: 22px; font-weight: 700; font-family: Theme.mono; color: Theme.accent; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; vertical-alignment: center; }
+    }
+    // 标签
+    if w.kind == 4: Text { text: w.name; width: 100%; height: 100%; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; vertical-alignment: center; font-size: 14px; font-weight: 700; color: Theme.text; }
+    // 按钮
+    if w.kind == 5: Rectangle {
+        background: Theme.accent; border-radius: 5px;
+        Text { text: w.name; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: 13px; font-weight: 700; color: white; }
+    }
+    // 滑块
+    if w.kind == 6: VerticalLayout {
+        padding: 6px; spacing: 3px;
+        Text { text: w.name + ": " + w.status; font-size: 11px; color: Theme.text; }
+        Rectangle {
+            height: 18px;
+            Rectangle { y: (parent.height - 4px) / 2; height: 4px; width: 100%; background: Theme.panel2; border-radius: 2px; }
+            Rectangle {
+                width: 14px; height: 14px; border-radius: 7px;
+                x: (parent.width - self.width) * w.level; y: (parent.height - self.height) / 2;
+                background: Theme.accent; border-width: 1px; border-color: #ffffff80;
+            }
+        }
+    }
+    // 信号发生器
+    if w.kind == 7: VerticalLayout {
+        padding: 6px; spacing: 2px;
+        HorizontalLayout {
+            spacing: 4px;
+            Text { text: "∿"; font-size: 16px; color: Theme.accent; }
+            Text { text: w.name; font-size: 12px; font-weight: 700; color: Theme.text; }
+        }
+        Text { text: w.info + " = " + w.status; font-size: 11px; color: Theme.text-dim; }
+    }
+}

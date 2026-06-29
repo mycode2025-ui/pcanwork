@@ -1,0 +1,633 @@
+﻿// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component TxWindow inherits Window {
+    title: root.tx-page == 0 ? (I18n.en ? "Normal Send" : "普通发送") : (root.tx-page == 1 ? (I18n.en ? "DBC Send" : "DBC发送") : (root.tx-page == 2 ? (I18n.en ? "DBC Send (vary)" : "DBC发送(信号变化)") : (I18n.en ? "File Send" : "文件发送")));
+    icon: @image-url("logo.svg");
+    preferred-width: 1320px;
+    preferred-height: 760px;
+    // ensure the window opens wide/tall enough to show the whole form + list (no clipped controls)
+    min-width: 1200px;
+    min-height: 680px;
+    background: Theme.bg;
+
+    in property <[TxRow]> txs;
+    in-out property <int> tx-page: 0;
+    in-out property <string> tx-form-ch: "CAN1";
+    in-out property <string> tx-form-id: "100";
+    in-out property <string> tx-form-kind: "Std";
+    in-out property <string> tx-form-fd: "No";    // No=CAN, Yes=CAN FD
+    in-out property <string> tx-form-brs: "No";
+    in-out property <string> tx-form-remote: "No"; // No=data frame, Yes=remote(RTR), classic CAN only
+    in-out property <string> tx-form-dlc: "8";
+    in-out property <string> tx-form-data: "00 11 22 33 44 55 66 77";
+    in-out property <string> tx-form-period: "0";
+    in-out property <string> tx-form-count: "1";    // 每次帧数(burst)
+    in-out property <string> tx-form-repeat: "1";   // 发送次数
+    in-out property <bool> tx-form-id-inc: false;   // ID 递增
+    in-out property <bool> tx-form-data-inc: false; // 数据递增
+    in-out property <string> tx-form-name: "";
+
+    callback tx-add();
+    callback tx-remove(int);
+    callback tx-send-once(int);
+    callback tx-toggle-periodic(int);
+    callback tx-all(bool);
+    callback tx-clear();
+    callback tx-apply-all(int, string); // 把第 i 行的 "repeat"/"period" 套用到所有任务
+    callback tx-speed-set(string);      // 设置发送速度倍率（字符串便于解析 0.5/1/2/5）
+    in-out property <string> tx-speed: "1";
+    callback tx-save-list();
+    callback tx-load-list();
+    callback tx-toggle-check(int);   // toggle a row's checkbox
+    callback tx-select-all();        // check every row
+    callback tx-invert();            // invert checks
+    callback tx-move-up();           // move checked rows up
+    callback tx-move-down();         // move checked rows down
+    callback tx-remove-checked();    // delete checked rows
+    // 文件发送
+    in-out property <string> tx-file-path: "";
+    in-out property <string> tx-file-id: "0";
+    in-out property <string> tx-file-len: "8";
+    in-out property <int> tx-file-mode: 0;
+    in-out property <string> tx-file-addr: "0";
+    in-out property <string> tx-file-crc: "0";
+    in-out property <string> tx-file-interval: "0";
+    in-out property <string> tx-file-repeat: "1";
+    in property <string> tx-file-status: "请选择要发送的文件!";
+    in property <float> tx-file-progress: 0.0;
+    callback tx-file-pick();
+    callback tx-file-send();
+    callback tx-file-stop();
+    callback tx-update(int, string, string);
+    callback tx-form-add(string, string, string, string, string, string, string, string, string);
+    callback tx-form-send(string, string, string, string, string, string, string, string, string);
+    callback tx-form-dlc-edited(string);    // DLC typing -> grow data (never drop bytes mid-edit)
+    callback tx-form-dlc-committed(string); // DLC committed (Enter) -> full pad/truncate to match
+    callback tx-form-data-edited(string);   // data changed -> recompute DLC byte count
+    in property <[string]> channel-names;
+    in-out property <string> tx-dbc-ch: "CAN1";
+    in property <[string]> tx-dbc-msgs;
+    in property <[TxSigRow]> tx-dbc-sigs;
+    in property <string> tx-sel-title: "未选择 DBC 发送任务";
+    in-out property <int> tx-sel: -1;
+    callback tx-dbc-add(int);
+    callback tx-row-sel(int);
+    callback tx-sig-edit(int, string);
+    // 信号变化页：选中信号 + 信号信息 + 实际值变化配置
+    in-out property <int> tx-sig-sel: -1;          // 选中的信号行(索引到 tx-dbc-sigs)
+    in property <string> tx-sel-sig-name: "";
+    in-out property <string> tx-sel-sig-phys: "0"; // 可编辑实际值
+    in-out property <string> tx-sel-sig-raw: "0";  // 可编辑原始值
+    in property <string> tx-sel-sig-unit: "";
+    in property <string> tx-sel-sig-factor: "1";
+    in property <string> tx-sel-sig-offset: "0";
+    in property <string> tx-sel-sig-startbit: "0";
+    in property <string> tx-sel-sig-length: "0";
+    in property <string> tx-sel-sig-comment: "";
+    in-out property <int> tx-vary-mode: 0;         // 0无变化 1等差 2等比 3正弦 4三角 5矩形 6随机 7序列
+    in-out property <string> tx-vp1: "";
+    in-out property <string> tx-vp2: "";
+    in-out property <string> tx-vp3: "";
+    in-out property <string> tx-vp4: "";
+    in-out property <string> tx-vp5: "";
+    in-out property <string> tx-vp6: "";
+    in-out property <string> tx-vseq: "";          // 自定义序列文本
+    callback tx-sig-row-sel(int);                  // 选中信号行
+    callback tx-sig-edit-phys(string);             // 编辑选中信号实际值
+    callback tx-sig-edit-raw(string);              // 编辑选中信号原始值
+    callback tx-vary-apply(int, string, string, string, string, string, string, string); // mode,p1..p6,seq
+
+    VerticalLayout {
+        spacing: 6px;
+        Rectangle {
+            height: Theme.ctrl-h + 12px; background: Theme.panel2;
+            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 6px; padding-top: 6px; padding-bottom: 6px; spacing: 4px; alignment: start;
+                TBtn { text: "+"; clicked => { root.tx-add(); } }
+                TBtn { text: I18n.en ? "Normal" : "普通发送"; active: root.tx-page == 0; clicked => { root.tx-page = 0; } }
+                TBtn { text: I18n.en ? "DBC Send" : "DBC发送"; active: root.tx-page == 1; clicked => { root.tx-page = 1; } }
+                TBtn { text: I18n.en ? "Signal Vary" : "信号变化"; active: root.tx-page == 2; clicked => { root.tx-page = 2; } }
+                TBtn { text: I18n.en ? "File Send" : "文件发送"; active: root.tx-page == 3; clicked => { root.tx-page = 3; } }
+            }
+        }
+
+        if root.tx-page == 0: VerticalLayout {
+            Rectangle {
+                height: 250px;
+                background: Theme.panel;
+                border-width: 1px; border-color: Theme.border;
+                Rectangle { x: 0; y: 0; width: 100%; height: 26px; background: Theme.header;
+                    Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Frame Send" : "帧发送"; x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                }
+                GridLayout {
+                    x: 12px; y: 34px; width: parent.width - 24px; height: 180px;
+                    spacing: 6px;
+                    Row {
+                        Text { text: I18n.en ? "Channel:" : "通道:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        ComboBox { width: 150px; height: Theme.ctrl-h; model: root.channel-names; current-value <=> root.tx-form-ch; }
+                        Text { text: I18n.en ? "Frame type:" : "帧类型:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        TBtn { boxed: true; text: root.tx-form-kind == "Ext" ? (I18n.en ? "Extended" : "扩展帧") : (I18n.en ? "Standard" : "标准帧"); active: root.tx-form-kind == "Ext"; clicked => { root.tx-form-kind = root.tx-form-kind == "Ext" ? "Std" : "Ext"; } }
+                        Text { text: I18n.en ? "Protocol:" : "类型:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        TBtn { boxed: true; text: root.tx-form-fd == "Yes" ? "CAN FD" : "CAN"; active: root.tx-form-fd == "Yes"; clicked => {
+                            root.tx-form-fd = root.tx-form-fd == "Yes" ? "No" : "Yes";
+                            if (root.tx-form-fd == "Yes") { root.tx-form-remote = "No"; } else { root.tx-form-brs = "No"; }
+                        } }
+                        Text { text: I18n.en ? "Frame fmt:" : "帧格式:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        TBtn { boxed: true; btn-enabled: root.tx-form-fd != "Yes"; text: root.tx-form-remote == "Yes" ? (I18n.en ? "Remote" : "远程帧") : (I18n.en ? "Data" : "数据帧"); active: root.tx-form-remote == "Yes"; clicked => { root.tx-form-remote = root.tx-form-remote == "Yes" ? "No" : "Yes"; } }
+                        TBtn { boxed: true; btn-enabled: root.tx-form-fd == "Yes"; text: root.tx-form-brs == "Yes" ? "BRS" : "No BRS"; active: root.tx-form-brs == "Yes"; clicked => { root.tx-form-brs = root.tx-form-brs == "Yes" ? "No" : "Yes"; } }
+                    }
+                    Row {
+                        Text { text: I18n.en ? "ID:0x" : "帧ID:0x"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-id; width: 110px; height: Theme.ctrl-h; accepted(v) => { root.tx-form-id = v; } }
+                        Text { text: I18n.en ? "Data len:" : "数据长度:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-dlc; width: 64px; height: Theme.ctrl-h; edited(v) => { root.tx-form-dlc-edited(v); } accepted(v) => { root.tx-form-dlc-committed(v); } }
+                        Text { text: I18n.en ? "Data:0x" : "数据:0x"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-data; width: 240px; height: Theme.ctrl-h; edited(v) => { root.tx-form-data-edited(v); } accepted(v) => { root.tx-form-data-edited(v); } }
+                    }
+                    Row {
+                        Text { text: I18n.en ? "Frames/burst:" : "每次帧数:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-count; width: 110px; height: Theme.ctrl-h; accepted(v) => { root.tx-form-count = v; } edited(v) => { root.tx-form-count = v; } }
+                        Text { text: I18n.en ? "Repeat:" : "发送次数:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-repeat; width: 64px; height: Theme.ctrl-h; accepted(v) => { root.tx-form-repeat = v; } edited(v) => { root.tx-form-repeat = v; } }
+                        Text { text: I18n.en ? "Interval(ms):" : "间隔(ms):"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-period; width: 90px; height: Theme.ctrl-h; accepted(v) => { root.tx-form-period = v; } }
+                    }
+                    Row {
+                        Text { text: I18n.en ? "Name(opt):" : "名称(可选):"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                        LineEdit { text: root.tx-form-name; width: 180px; height: Theme.ctrl-h; accepted(v) => { root.tx-form-name = v; } }
+                        CheckBox { text: I18n.en ? "ID++" : "ID递增"; checked: root.tx-form-id-inc; toggled => { root.tx-form-id-inc = self.checked; } }
+                        CheckBox { text: I18n.en ? "Data++" : "数据递增"; checked: root.tx-form-data-inc; toggled => { root.tx-form-data-inc = self.checked; } }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: I18n.en ? "Add to list" : "添加到列表"; clicked => { root.tx-form-add(root.tx-form-ch, root.tx-form-id, root.tx-form-kind, root.tx-form-fd, root.tx-form-brs, root.tx-form-dlc, root.tx-form-data, root.tx-form-period, root.tx-form-name); } }
+                        TBtn { primary: true; text: I18n.en ? "Send Now" : "立即发送"; clicked => { root.tx-form-send(root.tx-form-ch, root.tx-form-id, root.tx-form-kind, root.tx-form-fd, root.tx-form-brs, root.tx-form-dlc, root.tx-form-data, root.tx-form-period, root.tx-form-name); } }
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px; border-color: Theme.border;
+                Rectangle { x: 0; y: 0; width: 100%; height: 26px; background: Theme.header;
+                    Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "List Send" : "列表发送"; x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                }
+                ScrollView {
+                    x: 12px; y: 34px; width: parent.width - 24px; height: parent.height - 88px;
+                    viewport-width: 1152px;
+                    VerticalLayout {
+                        width: 1152px;
+                        Rectangle {
+                            height: 28px; background: Theme.header;
+                            HorizontalLayout {
+                                HCell { text: I18n.en ? "Sel" : "选"; w: 32px; }
+                                HCell { text: I18n.en ? "No." : "序号"; w: 46px; }
+                                HCell { text: I18n.en ? "Status" : "状态"; w: 58px; }
+                                HCell { text: "ID(0x)"; w: 86px; }
+                                HCell { text: I18n.en ? "Proto" : "协议"; w: 64px; }
+                                HCell { text: I18n.en ? "Len" : "长度"; w: 56px; }
+                                HCell { text: I18n.en ? "Name" : "名称"; w: 120px; }
+                                HCell { text: I18n.en ? "Data" : "数据"; w: 250px; }
+                                HCell { text: I18n.en ? "Type" : "帧类型"; w: 76px; }
+                                HCell { text: I18n.en ? "Tx Count" : "发送次数"; w: 80px; }
+                                HCell { text: I18n.en ? "Interval(ms)" : "间隔(ms)"; w: 86px; }
+                                HCell { text: I18n.en ? "Sent" : "已发"; w: 58px; }
+                                HCell { text: I18n.en ? "Action" : "操作"; w: 140px; }
+                            }
+                        }
+                        ListView {
+                            for t[i] in root.txs: Rectangle {
+                                height: 32px;
+                                background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra; // 原 white 深色下突兀
+                                HorizontalLayout {
+                                    padding-top: 3px; padding-bottom: 3px;
+                                    Rectangle { width: 32px; CheckBox { checked: t.checked; toggled => { root.tx-toggle-check(i); } } }
+                                    Cell { text: i + 1; w: 46px; mono: true; align: right; }
+                                    Cell { text: t.status; w: 58px; txt-clr: t.running ? Theme.ok : Theme.text-dim; }
+                                    LineEdit { text: t.id; width: 86px; height: 26px; accepted(v) => { root.tx-update(i, "id", v); } }
+                                    TBtn { h: 26px; boxed: true; text: t.fd == "Yes" ? "CAN FD" : "CAN"; active: t.fd == "Yes"; clicked => { root.tx-update(i, "fd", t.fd == "Yes" ? "No" : "Yes"); } }
+                                    LineEdit { text: t.dlc; width: 56px; height: 26px; accepted(v) => { root.tx-update(i, "dlc", v); } }
+                                    LineEdit { text: t.name; width: 120px; height: 26px; accepted(v) => { root.tx-update(i, "name", v); } }
+                                    LineEdit { text: t.data; width: 250px; height: 26px; accepted(v) => { root.tx-update(i, "data", v); } }
+                                    TBtn { h: 26px; boxed: true; text: t.kind == "Ext" ? (I18n.en ? "Extended" : "扩展帧") : (I18n.en ? "Standard" : "标准帧"); active: t.kind == "Ext"; clicked => { root.tx-update(i, "type", t.kind == "Ext" ? "Std" : "Ext"); } }
+                                    Cell { text: "1"; w: 80px; mono: true; align: right; }
+                                    LineEdit { text: t.period; width: 86px; height: 26px; accepted(v) => { root.tx-update(i, "period", v); } }
+                                    Cell { text: t.sent; w: 58px; mono: true; align: right; }
+                                    Rectangle {
+                                        width: 140px;
+                                        HorizontalLayout {
+                                            spacing: 2px; padding: 2px;
+                                            TBtn { h: 26px; boxed: true; text: I18n.en ? "Send" : "发"; clicked => { root.tx-send-once(i); } }
+                                            TBtn { h: 26px; boxed: true; text: t.running ? (I18n.en ? "Stop" : "停") : (I18n.en ? "Cyclic" : "周期"); active: t.running; clicked => { root.tx-toggle-periodic(i); } }
+                                            TBtn { h: 26px; boxed: true; text: I18n.en ? "Del" : "删"; clicked => { root.tx-remove(i); } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 42px; y: parent.height - self.height;
+                    background: Theme.panel2;
+                    HorizontalLayout {
+                        padding: 5px; spacing: 5px;
+                        TBtn { boxed: true; text: I18n.en ? "Select All" : "全选"; clicked => { root.tx-select-all(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Invert" : "反选"; clicked => { root.tx-invert(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Up" : "上移"; clicked => { root.tx-move-up(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Down" : "下移"; clicked => { root.tx-move-down(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Delete" : "删除"; clicked => { root.tx-remove-checked(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Clear" : "清空"; clicked => { root.tx-clear(); } }
+                        Rectangle { width: 1px; background: Theme.border; }
+                        TBtn { boxed: true; text: I18n.en ? "Save List" : "保存列表"; clicked => { root.tx-save-list(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Load List" : "加载列表"; clicked => { root.tx-load-list(); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: I18n.en ? "Start All" : "启动全部"; clicked => { root.tx-all(true); } }
+                        TBtn { boxed: true; text: I18n.en ? "Stop All" : "停止全部"; clicked => { root.tx-all(false); } }
+                    }
+                }
+            }
+        }
+
+        if root.tx-page == 1: HorizontalLayout {
+            // 左：DBC 报文选择（双击添加）
+            Rectangle {
+                width: 300px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle { height: 38px; background: Theme.panel2;
+                        HorizontalLayout { padding: 4px; spacing: 6px;
+                            Text { text: I18n.en ? "Target Ch" : "目标通道"; vertical-alignment: center; font-size: Theme.fs; }
+                            ComboBox { width: 120px; model: root.channel-names; current-value <=> root.tx-dbc-ch; }
+                        }
+                    }
+                    ListView {
+                        for m[i] in root.tx-dbc-msgs: Rectangle {
+                            height: Theme.big ? 28px : 24px;
+                            background: mta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra);
+                            mta := TouchArea { clicked => { root.tx-dbc-add(i); } }
+                            HorizontalLayout {
+                                padding-left: 8px; spacing: 5px;
+                                Rectangle { width: 16px; Icon { name: "send"; clr: Theme.accent; width: 13px; height: 13px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; } }
+                                Text { text: m; color: Theme.text; vertical-alignment: center; font-size: Theme.fs; overflow: elide; }
+                            }
+                        }
+                    }
+                    Rectangle { height: 24px; background: Theme.panel2;
+                        Text { text: I18n.en ? "Tip: empty when no DBC loaded" : "提示：未加载 DBC 时此处为空"; x: 8px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; }
+                    }
+                }
+            }
+            // 右：发送列表 + 信号编辑
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding: 6px;
+                spacing: 6px;
+                Rectangle { height: 26px; background: Theme.header; border-radius: 4px;
+                    Text { text: root.tx-sel-title; x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                }
+                // 发送任务列表（单击选中以编辑信号）
+                Rectangle { height: 24px; background: Theme.panel2;
+                    HorizontalLayout {
+                        HCell { text: I18n.en ? "Name" : "名称"; w: 130px; } HCell { text: "ID"; w: 80px; } HCell { text: "DLC"; w: 46px; }
+                        HCell { text: I18n.en ? "Data" : "数据"; w: 230px; } HCell { text: I18n.en ? "Count" : "次数"; w: 58px; } HCell { text: I18n.en ? "Interval" : "间隔ms"; w: 70px; } HCell { text: I18n.en ? "Status" : "状态"; w: 56px; } HCell { text: I18n.en ? "Action" : "操作"; w: 150px; }
+                        Rectangle { horizontal-stretch: 1; background: Theme.panel2; }
+                    }
+                }
+                Rectangle { height: 200px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                    ListView {
+                        for t[i] in root.txs: Rectangle {
+                            height: Theme.big ? 30px : 26px;
+                            background: i == root.tx-sel ? Theme.sel : (tta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra));
+                            HorizontalLayout {
+                                // 行选中只包左侧只读单元格（按内容收缩，行尾弹性占位吸收余量，绝不覆盖右侧可编辑框/按钮）
+                                tta := TouchArea { horizontal-stretch: 0; clicked => { root.tx-row-sel(i); }
+                                    HorizontalLayout {
+                                        Cell { text: t.name; w: 130px; }
+                                        Cell { text: t.id; w: 80px; mono: true; }
+                                        Cell { text: t.dlc; w: 46px; align: right; }
+                                        Cell { text: t.data; w: 230px; mono: true; }
+                                    }
+                                }
+                                Rectangle { width: 58px;
+                                    LineEdit { text: t.count; width: 52px; height: Theme.ctrl-h - 6px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; horizontal-alignment: right;
+                                               accepted(v) => { root.tx-update(i, "repeat", v); } }
+                                }
+                                Rectangle { width: 70px;
+                                    LineEdit { text: t.period; width: 62px; height: Theme.ctrl-h - 6px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2; horizontal-alignment: right;
+                                               accepted(v) => { root.tx-update(i, "period", v); } }
+                                }
+                                Cell { text: t.status; w: 56px; txt-clr: t.running ? Theme.ok : Theme.text-dim; }
+                                Rectangle { width: 150px;
+                                    HorizontalLayout { spacing: 2px; padding: 2px; alignment: center;
+                                        TBtn { text: I18n.en ? "Send" : "发"; h: parent.height - 4px; clicked => { root.tx-send-once(i); } }
+                                        TBtn { text: t.running ? (I18n.en ? "Stop" : "停") : (I18n.en ? "Cyclic" : "周期"); h: parent.height - 4px; active: t.running; clicked => { root.tx-toggle-periodic(i); } }
+                                        TBtn { text: I18n.en ? "Del" : "删"; h: parent.height - 4px; clicked => { root.tx-remove(i); } }
+                                    }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+                // 信号编辑（改实际值自动编码 Data）
+                Rectangle { height: 24px; background: Theme.panel2;
+                    Text { text: I18n.en ? "Signal edit (edit Phys → auto Raw/Data)" : "信号编辑 (改 实际值 自动算 原始值/Data)"; x: 8px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; }
+                }
+                Rectangle { height: 24px; background: Theme.panel2;
+                    HorizontalLayout {
+                        HCell { text: I18n.en ? "Signal" : "信号"; w: 150px; } HCell { text: I18n.en ? "Phys" : "实际值"; w: 90px; } HCell { text: I18n.en ? "Raw" : "原始值"; w: 80px; }
+                        HCell { text: I18n.en ? "Unit" : "单位"; w: 54px; } HCell { text: I18n.en ? "Factor" : "比例"; w: 60px; } HCell { text: I18n.en ? "Offset" : "偏移"; w: 60px; }
+                        HCell { text: I18n.en ? "StartBit" : "起始位"; w: 56px; } HCell { text: I18n.en ? "Bits" : "位宽"; w: 50px; }
+                        Rectangle { horizontal-stretch: 1; background: Theme.panel2; }
+                    }
+                }
+                ListView {
+                    for s[i] in root.tx-dbc-sigs: sigrow := Rectangle {
+                        height: Theme.big ? 30px : 26px;
+                        background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra;
+                        // 实时跟随输入框，用于即时换算原始值
+                        property <float> pv: s.phys.to-float();
+                        HorizontalLayout {
+                            Cell { text: s.signal; w: 150px; }
+                            Rectangle { width: 90px;
+                                LineEdit { text: s.phys; width: 86px; height: Theme.ctrl-h - 6px; y: (parent.height - self.height)/2;
+                                           edited(v) => { sigrow.pv = v.to-float(); }
+                                           accepted(v) => { root.tx-sig-edit(i, v); } }
+                            }
+                            Cell { text: s.factor-num == 0 ? s.raw : round((sigrow.pv - s.offset-num) / s.factor-num); w: 80px; mono: true; align: right; }
+                            Cell { text: s.unit; w: 54px; }
+                            Cell { text: s.factor; w: 60px; mono: true; align: right; }
+                            Cell { text: s.offset; w: 60px; mono: true; align: right; }
+                            Cell { text: s.startbit; w: 56px; align: right; }
+                            Cell { text: s.length; w: 50px; align: right; }
+                        }
+                    }
+                }
+                // 底部：列表发送/停止全部 + 应用到全部 + 速度倍率 + 清空
+                Rectangle { height: 34px; vertical-stretch: 0;
+                    HorizontalLayout { spacing: 6px; padding: 2px; alignment: start;
+                        TBtn { boxed: true; primary: true; text: I18n.en ? "Send List" : "列表发送"; clicked => { root.tx-all(true); } }
+                        TBtn { boxed: true; text: I18n.en ? "Stop List" : "列表停止"; clicked => { root.tx-all(false); } }
+                        Rectangle { width: 10px; }
+                        TBtn { boxed: true; text: I18n.en ? "Count→All" : "次数→全部"; clicked => { root.tx-apply-all(root.tx-sel, "repeat"); } }
+                        TBtn { boxed: true; text: I18n.en ? "Interval→All" : "间隔→全部"; clicked => { root.tx-apply-all(root.tx-sel, "period"); } }
+                        Rectangle { width: 10px; }
+                        Text { text: I18n.en ? "Speed" : "速度"; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; }
+                        TBtn { boxed: true; text: "0.5×"; active: root.tx-speed == "0.5"; clicked => { root.tx-speed-set("0.5"); } }
+                        TBtn { boxed: true; text: "1×"; active: root.tx-speed == "1"; clicked => { root.tx-speed-set("1"); } }
+                        TBtn { boxed: true; text: "2×"; active: root.tx-speed == "2"; clicked => { root.tx-speed-set("2"); } }
+                        TBtn { boxed: true; text: "5×"; active: root.tx-speed == "5"; clicked => { root.tx-speed-set("5"); } }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: I18n.en ? "Clear" : "清空"; clicked => { root.tx-clear(); } }
+                    }
+                }
+            }
+        }
+
+        if root.tx-page == 2: HorizontalLayout {
+            // 左：DBC 报文选择
+            Rectangle {
+                width: 300px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle { height: 38px; background: Theme.panel2;
+                        HorizontalLayout { padding: 4px; spacing: 6px;
+                            Text { text: I18n.en ? "Target Ch" : "目标通道"; vertical-alignment: center; font-size: Theme.fs; }
+                            ComboBox { width: 110px; model: root.channel-names; current-value <=> root.tx-dbc-ch; }
+                        }
+                    }
+                    ListView {
+                        for m[i] in root.tx-dbc-msgs: Rectangle {
+                            height: Theme.big ? 28px : 24px;
+                            background: cmta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra);
+                            cmta := TouchArea { clicked => { root.tx-dbc-add(i); } }
+                            Text { text: m; x: 8px; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; overflow: elide; }
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                padding: 6px;
+                spacing: 6px;
+                Rectangle { height: 26px; background: Theme.header; border-radius: 4px;
+                    Text { text: (root.tx-sel-title == "" ? (I18n.en ? "DBC send tasks (double-click a message on the left to add)" : "DBC 发送任务（双击左侧报文添加）") : root.tx-sel-title); x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; overflow: elide; } }
+                // 任务列表
+                Rectangle { height: 24px; background: Theme.panel2;
+                    HorizontalLayout {
+                        HCell { text: I18n.en ? "Name" : "名称"; w: 130px; } HCell { text: "ID"; w: 80px; } HCell { text: I18n.en ? "Data" : "数据"; w: 230px; }
+                        HCell { text: I18n.en ? "Sent" : "已发"; w: 60px; } HCell { text: I18n.en ? "Status" : "状态"; w: 60px; } HCell { text: I18n.en ? "Action" : "操作"; w: 150px; }
+                        Rectangle { horizontal-stretch: 1; background: Theme.panel2; }
+                    } }
+                Rectangle { vertical-stretch: 1; min-height: 0px; preferred-height: 0px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                    ListView {
+                        for t[i] in root.txs: Rectangle {
+                            height: 30px;
+                            background: i == root.tx-sel ? Theme.sel : (ctta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra));
+                            ctta := TouchArea { clicked => { root.tx-row-sel(i); } }
+                            HorizontalLayout {
+                                padding-top: 3px; padding-bottom: 3px;
+                                Cell { text: t.name; w: 130px; }
+                                Cell { text: t.id; w: 80px; mono: true; }
+                                Cell { text: t.data; w: 230px; mono: true; }
+                                Cell { text: t.sent; w: 60px; mono: true; align: right; }
+                                Cell { text: t.status; w: 60px; txt-clr: t.running ? Theme.ok : Theme.text-dim; }
+                                Rectangle { width: 150px;
+                                    HorizontalLayout { spacing: 2px; padding: 2px;
+                                        TBtn { h: 24px; boxed: true; text: I18n.en ? "Send" : "发"; clicked => { root.tx-send-once(i); } }
+                                        TBtn { h: 24px; boxed: true; text: t.running ? (I18n.en ? "Stop" : "停止") : (I18n.en ? "Start vary" : "开始变化"); active: t.running; clicked => { root.tx-toggle-periodic(i); } }
+                                        TBtn { h: 24px; boxed: true; text: I18n.en ? "Del" : "删"; clicked => { root.tx-remove(i); } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 信号表（点选一行 → 下方编辑实际值/原始值与变化方式）
+                Rectangle { height: 24px; background: Theme.panel2;
+                    HorizontalLayout {
+                        HCell { text: I18n.en ? "Signal" : "信号"; w: 200px; }
+                        HCell { text: I18n.en ? "Actual" : "实际值"; w: 100px; }
+                        HCell { text: I18n.en ? "Raw" : "原始值"; w: 90px; }
+                        HCell { text: I18n.en ? "Unit" : "单位"; w: 60px; }
+                        HCell { text: I18n.en ? "Start" : "起始位"; w: 64px; }
+                        HCell { text: I18n.en ? "Len" : "位宽"; w: 56px; }
+                        Rectangle { horizontal-stretch: 1; background: Theme.panel2; }
+                    } }
+                sigtbl := Rectangle { vertical-stretch: 1; min-height: 0px; preferred-height: 0px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                    ListView {
+                        for s[i] in root.tx-dbc-sigs: Rectangle {
+                            height: 24px;
+                            background: i == root.tx-sig-sel ? Theme.sel : (sgta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra));
+                            sgta := TouchArea { clicked => { root.tx-sig-row-sel(i); } }
+                            HorizontalLayout {
+                                Cell { text: s.signal; w: 200px; }
+                                Cell { text: s.phys; w: 100px; mono: true; align: right; }
+                                Cell { text: s.raw; w: 90px; mono: true; align: right; }
+                                Cell { text: s.unit; w: 60px; }
+                                Cell { text: s.startbit; w: 64px; mono: true; align: right; }
+                                Cell { text: s.length; w: 56px; mono: true; align: right; }
+                            }
+                        }
+                    }
+                }
+                // 下方：信号信息 + 信号实际值变化
+                // preferred/min 高度钉为 0，使本区与上方两个列表区一样不上抛内容高度，
+                // 三个 vertical-stretch 区才能被严格三等分（否则面板内表单会把本区撑高）。
+                Rectangle { vertical-stretch: 1; min-height: 0px; preferred-height: 0px;
+                    // Use explicit positioning here so the variation panel reaches the right edge.
+                    Rectangle {
+                        x: 0px; y: 0px; width: 525px; height: parent.height;
+                        background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                            VerticalLayout { padding: 8px; spacing: 6px; alignment: start;
+                                Text { text: I18n.en ? "Signal Info" : "信号信息"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                                HorizontalLayout { spacing: 6px;
+                                    Text { text: I18n.en ? "Signal" : "信号名"; width: 64px; vertical-alignment: center; font-size: Theme.fs; }
+                                    Text { text: root.tx-sel-sig-name == "" ? "—" : root.tx-sel-sig-name; vertical-alignment: center; font-size: Theme.fs; color: Theme.accent; overflow: elide; horizontal-stretch: 1; }
+                                }
+                                HorizontalLayout { spacing: 6px;
+                                    Text { text: I18n.en ? "Actual" : "实际值"; width: 64px; vertical-alignment: center; font-size: Theme.fs; }
+                                    LineEdit { width: 120px; height: Theme.ctrl-h; text: root.tx-sel-sig-phys; edited(v) => { root.tx-sig-edit-phys(v); } }
+                                    Text { text: I18n.en ? "Raw" : "原始值"; width: 56px; vertical-alignment: center; font-size: Theme.fs; }
+                                    LineEdit { width: 120px; height: Theme.ctrl-h; text: root.tx-sel-sig-raw; edited(v) => { root.tx-sig-edit-raw(v); } }
+                                }
+                                HorizontalLayout { spacing: 6px;
+                                    Text { text: I18n.en ? "Unit" : "单位"; width: 64px; vertical-alignment: center; font-size: Theme.fs; }
+                                    Text { text: root.tx-sel-sig-unit; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; width: 120px; }
+                                    Text { text: I18n.en ? "Scale" : "比例"; width: 56px; vertical-alignment: center; font-size: Theme.fs; }
+                                    Text { text: root.tx-sel-sig-factor; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; }
+                                }
+                                HorizontalLayout { spacing: 6px;
+                                    Text { text: I18n.en ? "Offset" : "偏移"; width: 64px; vertical-alignment: center; font-size: Theme.fs; }
+                                    Text { text: root.tx-sel-sig-offset; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; width: 120px; }
+                                    Text { text: I18n.en ? "Start/Len" : "起始/位宽"; width: 56px; vertical-alignment: center; font-size: Theme.fs; }
+                                    Text { text: root.tx-sel-sig-startbit + " / " + root.tx-sel-sig-length; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; }
+                                }
+                                Text { text: root.tx-sel-sig-comment; font-size: Theme.fs-sm; color: Theme.text-dim; wrap: word-wrap; }
+                            }
+                        }
+                        // 信号实际值变化
+                        varybox := Rectangle {
+                            x: 533px; y: 0px; width: parent.width - self.x; height: parent.height;
+                            background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                            property <int> vpc: root.tx-vary-mode == 1 ? 3 : root.tx-vary-mode == 2 ? 4 : root.tx-vary-mode == 3 ? 6 : root.tx-vary-mode == 4 ? 6 : root.tx-vary-mode == 5 ? 4 : root.tx-vary-mode == 6 ? 2 : 0;
+                            VerticalLayout { padding: 8px; spacing: 6px; alignment: start;
+                                Text { text: I18n.en ? "Signal value variation" : "信号实际值变化"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                                HorizontalLayout { spacing: 6px;
+                                    Text { text: I18n.en ? "Mode" : "变化方式"; width: 64px; vertical-alignment: center; font-size: Theme.fs; }
+                                    ComboBox { horizontal-stretch: 1; current-index <=> root.tx-vary-mode;
+                                        model: I18n.en
+                                            ? ["None", "Arithmetic", "Geometric", "Sine", "Triangle", "Rect", "Random", "Sequence"]
+                                            : ["无变化", "等差循环", "等比循环", "正弦", "三角波", "矩形波", "随机", "自定义序列"]; }
+                                }
+                                // 参数说明（按变化方式给出参数顺序）
+                                Text { font-size: Theme.fs-sm; color: Theme.text-dim; wrap: word-wrap;
+                                    text: root.tx-vary-mode == 1 ? (I18n.en ? "Params: diff, lo, hi (step from lo up to hi then loop; clamp to bit width)" : "参数: 差值, 下限, 上限（由下限递增至上限循环，超范围按位宽截断）")
+                                        : root.tx-vary-mode == 2 ? (I18n.en ? "Params: init, ratio, lo, hi (geometric loop; clamp to bit width)" : "参数: 初值, 比值, 下限, 上限（等比循环，超范围按位宽截断）")
+                                        : root.tx-vary-mode == 3 ? (I18n.en ? "Params: amp, omega, phase, offset, lo, hi (offset+amp·sin(ω·n+φ), saturated)" : "参数: 振幅, 角速度, 初相, 偏移, 下限, 上限（offset+amp·sin(ω·n+φ)，饱和到上下限）")
+                                        : root.tx-vary-mode == 4 ? (I18n.en ? "Params: period, amp, h-offset, v-offset, lo, hi (triangle, saturated)" : "参数: 周期, 幅值, 横偏, 纵偏, 下限, 上限（三角波，饱和到上下限）")
+                                        : root.tx-vary-mode == 5 ? (I18n.en ? "Params: period, duty(0~1), high, low (rectangle wave)" : "参数: 周期, 占空比(0~1), 高值, 低值（矩形波）")
+                                        : root.tx-vary-mode == 6 ? (I18n.en ? "Params: min, max (random in range)" : "参数: 最小, 最大（范围内随机）")
+                                        : root.tx-vary-mode == 7 ? (I18n.en ? "Enter a comma-separated value sequence below; sent in a loop" : "在下方输入用逗号分隔的数值序列，循环发送")
+                                        : (I18n.en ? "No variation: send the actual value edited above" : "无变化：发送上方编辑的实际值"); }
+                                if root.tx-vary-mode != 0 && root.tx-vary-mode != 7: HorizontalLayout { spacing: 6px;
+                                    if varybox.vpc >= 1: LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "1"; text: root.tx-vp1; edited(v) => { root.tx-vp1 = v; } }
+                                    if varybox.vpc >= 2: LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "2"; text: root.tx-vp2; edited(v) => { root.tx-vp2 = v; } }
+                                    if varybox.vpc >= 3: LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "3"; text: root.tx-vp3; edited(v) => { root.tx-vp3 = v; } }
+                                }
+                                if root.tx-vary-mode != 0 && root.tx-vary-mode != 7 && varybox.vpc >= 4: HorizontalLayout { spacing: 6px;
+                                    LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "4"; text: root.tx-vp4; edited(v) => { root.tx-vp4 = v; } }
+                                    if varybox.vpc >= 5: LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "5"; text: root.tx-vp5; edited(v) => { root.tx-vp5 = v; } }
+                                    if varybox.vpc >= 6: LineEdit { width: 80px; height: Theme.ctrl-h; placeholder-text: "6"; text: root.tx-vp6; edited(v) => { root.tx-vp6 = v; } }
+                                }
+                                if root.tx-vary-mode == 7: LineEdit { height: Theme.ctrl-h; placeholder-text: I18n.en ? "1, 2, 3.5, ..." : "如 1, 2, 3.5, ..."; text: root.tx-vseq; edited(v) => { root.tx-vseq = v; } }
+                                TBtn { primary: true; text: I18n.en ? "Apply variation" : "应用变化"; clicked => { root.tx-vary-apply(root.tx-vary-mode, root.tx-vp1, root.tx-vp2, root.tx-vp3, root.tx-vp4, root.tx-vp5, root.tx-vp6, root.tx-vseq); } }
+                            }
+                        }
+                }
+            }
+        }
+
+        if root.tx-page == 3: HorizontalLayout {
+            VerticalLayout {
+                width: 560px;
+                padding: 6px;
+                spacing: 6px;
+                Rectangle { background: Theme.panel; border-width: 1px; border-color: Theme.border; vertical-stretch: 0;
+                    VerticalLayout {
+                        Rectangle { height: 26px; background: Theme.header;
+                            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                            Text { text: I18n.en ? "Send params" : "发送参数"; x: 8px; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+                        }
+                        GridLayout {
+                            padding: 12px; spacing: 6px;
+                            Row {
+                                Text { text: I18n.en ? "File type:" : "文件类型:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                Text { text: I18n.en ? "Text frames" : "文本帧"; width: 140px; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                Rectangle { }
+                                Rectangle { }
+                            }
+                            Row {
+                                Text { text: I18n.en ? "ID:0x" : "帧ID:0x"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                LineEdit { text: root.tx-file-id; width: 140px; height: Theme.ctrl-h; edited(v) => { root.tx-file-id = v; } }
+                                Text { text: I18n.en ? "Frame len:" : "帧长度:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                LineEdit { text: root.tx-file-len; width: 140px; height: Theme.ctrl-h; edited(v) => { root.tx-file-len = v; } }
+                            }
+                            Row {
+                                Text { text: I18n.en ? "Interval(ms):" : "间隔(ms):"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                LineEdit { text: root.tx-file-interval; width: 140px; height: Theme.ctrl-h; edited(v) => { root.tx-file-interval = v; } }
+                                Text { text: I18n.en ? "Repeat:" : "发送次数:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                LineEdit { text: root.tx-file-repeat; width: 140px; height: Theme.ctrl-h; edited(v) => { root.tx-file-repeat = v; } }
+                            }
+                            Row {
+                                Text { text: I18n.en ? "File fmt:" : "文件格式:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                                Text { text: I18n.en ? "Text: one frame per line as hex (e.g. 01 02 03)" : "文本:每行一帧十六进制数据(如 01 02 03)"; font-size: Theme.fs-sm; vertical-alignment: center; color: Theme.text-dim; }
+                                Rectangle { }
+                                Rectangle { }
+                            }
+                        }
+                    }
+                }
+                Rectangle { height: 8px; }
+                Rectangle { background: Theme.panel; border-width: 1px; border-color: Theme.border; vertical-stretch: 0;
+                    VerticalLayout {
+                        padding: 12px; spacing: 10px;
+                        Text { text: I18n.en ? "File" : "文件"; font-weight: 700; color: Theme.text; font-size: Theme.fs; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Text { text: I18n.en ? "File:" : "文件:"; width: 90px; horizontal-alignment: left; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
+                            LineEdit { text: root.tx-file-path; height: Theme.ctrl-h; horizontal-stretch: 1; read-only: true; }
+                            TBtn { text: "..."; clicked => { root.tx-file-pick(); } }
+                        }
+                        Text { text: root.tx-file-status; font-size: Theme.fs; color: Theme.text; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Rectangle { height: 28px; horizontal-stretch: 1; background: Theme.panel2; border-width: 1px; border-color: Theme.border;
+                                Rectangle { x: 0; y: 0; height: 100%; width: parent.width * root.tx-file-progress; background: Theme.accent; }
+                            }
+                            Text { text: Math.round(root.tx-file-progress * 100) + "%"; width: 48px; horizontal-alignment: right; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; }
+                        }
+                        HorizontalLayout {
+                            spacing: 8px; alignment: end;
+                            TBtn { text: I18n.en ? "Send" : "发送"; clicked => { root.tx-file-send(); } }
+                            TBtn { text: I18n.en ? "Stop" : "停止"; clicked => { root.tx-file-stop(); } }
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+            Rectangle {
+                horizontal-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                Text { text: I18n.en ? "Custom interval list" : "自定义发送间隔列表"; x: 10px; y: 10px; font-size: Theme.fs; font-weight: 700; color: Theme.text; }
+                Rectangle { x: 8px; y: 48px; width: parent.width - 16px; height: 34px; background: Theme.header;
+                    Text { text: I18n.en ? "Frame idx        Delay(ms)        Multi-frame delay" : "帧索引        延时(ms)        倍数帧延时"; x: 42px; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; }
+                }
+                Text { text: I18n.en ? "Delay is applied after the frame at the given index is sent.\nCustom delays override the per-send interval.\nFrame index starts from 1." : "帧索引对应的帧发送之后进行延时操作\n自定义延时会覆盖每次发送间隔\n帧索引从1开始"; x: 10px; y: parent.height - 100px; color: Theme.text; font-size: 14px; }
+            }
+        }
+    }
+}
+

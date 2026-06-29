@@ -3,7 +3,7 @@
 //! turns the live/frozen series into the `ChartSeries` model and axis labels.
 //! Extracted from main.rs. Chinese text below lives only in string literals (UI data).
 
-use crate::{App, AppWindow, ChartSeries, ChartWindow, Series};
+use crate::{fmt_wall, App, AppWindow, ChartSeries, ChartWindow, Series};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -93,6 +93,40 @@ pub(crate) fn chart_full_range(series: &[Series]) -> (f64, f64) {
     }
 }
 
+fn playback_original_time_label(t: f64, precise: bool) -> String {
+    if t > 946_684_800.0 {
+        fmt_wall(t, false)
+    } else if precise {
+        format!("{t:.3}s")
+    } else {
+        format!("{t:.1}s")
+    }
+}
+
+fn chart_time_label(a: &App, t: f64, rel_base: f64) -> String {
+    match (a.chart_time_source, a.chart_time_mode) {
+        (0, 1) => a
+            .capture_wall_epoch
+            .map(|epoch| fmt_wall(epoch + t, false))
+            .unwrap_or_else(|| format!("{t:.1}s")),
+        (1, 1) => playback_original_time_label(t, false),
+        (1, _) => format!("{:.1}s", t - rel_base),
+        _ => format!("{t:.1}s"),
+    }
+}
+
+fn chart_cursor_time_label(a: &App, t: f64, rel_base: f64) -> String {
+    match (a.chart_time_source, a.chart_time_mode) {
+        (0, 1) => a
+            .capture_wall_epoch
+            .map(|epoch| fmt_wall(epoch + t, false))
+            .unwrap_or_else(|| format!("{t:.3}s")),
+        (1, 1) => playback_original_time_label(t, true),
+        (1, _) => format!("{:.3}s", t - rel_base),
+        _ => format!("{t:.3}s"),
+    }
+}
+
 /// Rebuild the chart series model + axis labels and push to both windows.
 pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow) {
     ui.set_chart_paused(a.chart_paused);
@@ -100,6 +134,7 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
     ui.set_chart_cursor(a.chart_cursor);
     chart_window.set_chart_paused(a.chart_paused);
     chart_window.set_chart_cursor(a.chart_cursor);
+    chart_window.set_chart_time_mode(a.chart_time_mode);
     chart_window.set_chart_sig_logging(a.sig_log.is_some());
     // Data source: when paused use the frozen snapshot (curves stay still while new
     // samples accumulate in the background unseen); otherwise the live series.
@@ -239,8 +274,10 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
     // Cursor readout (matches the curve points exactly: reuse each curve's interpolated value).
     let readout = if a.chart_cursor && has && dual {
         let dt = (cursor_time2 - cursor_time).abs();
+        let cursor_time_text = chart_cursor_time_label(a, cursor_time, dmin);
+        let cursor_time2_text = chart_cursor_time_label(a, cursor_time2, dmin);
         let mut parts = vec![format!(
-            "Δt={dt:.3}s  (游标1 t={cursor_time:.3}s · 游标2 t={cursor_time2:.3}s)"
+            "dt={dt:.3}s  (cursor1 {cursor_time_text} / cursor2 {cursor_time2_text})"
         )];
         for r in &rows {
             if r.visible
@@ -249,14 +286,14 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
                 && let (Some(v1), Some(v2)) = (parse_lead(r.cursor_value.as_str()), parse_lead(r.cursor2_value.as_str()))
             {
                 parts.push(format!(
-                    "{}: {} → {}  Δ{:.2}",
+                    "{}: {} -> {}  d{:.2}",
                     r.name, r.cursor_value, r.cursor2_value, v2 - v1
                 ))
             }
         }
         parts.join("   |   ")
     } else if a.chart_cursor && has {
-        let mut parts = vec![format!("t={cursor_time:.3}s")];
+        let mut parts = vec![format!("t={}", chart_cursor_time_label(a, cursor_time, dmin))];
         for r in &rows {
             if r.visible && r.cursor_valid {
                 parts.push(format!("{}={}", r.name, r.cursor_value));
@@ -266,7 +303,6 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
     } else {
         String::new()
     };
-
     // Update the resident chart model in place (avoid swapping the model each frame).
     {
         let m = &a.chart_model;
@@ -288,13 +324,15 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
     ui.set_chart_ymid_label("".into());
     ui.set_chart_ymin_label("".into());
     if has {
+        let chart_xstart = chart_time_label(a, tmin, dmin);
+        let chart_xend = chart_time_label(a, tmax, dmin);
         ui.set_chart_xstart_label(format!("{tmin:.1}s").into());
         ui.set_chart_xend_label(format!("{tmax:.1}s").into());
-        chart_window.set_chart_xstart_label(format!("{tmin:.1}s").into());
-        chart_window.set_chart_xend_label(format!("{tmax:.1}s").into());
+        chart_window.set_chart_xstart_label(chart_xstart.into());
+        chart_window.set_chart_xend_label(chart_xend.into());
         // 5 evenly spaced time tick labels.
         let xlabels: Vec<SharedString> = (0..5)
-            .map(|k| format!("{:.1}s", tmin + (tmax - tmin) * (k as f64) / 4.0).into())
+            .map(|k| chart_time_label(a, tmin + (tmax - tmin) * (k as f64) / 4.0, dmin).into())
             .collect();
         chart_window.set_chart_xlabels(ModelRc::from(Rc::new(VecModel::from(xlabels))));
     } else {

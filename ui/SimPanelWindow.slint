@@ -1,0 +1,148 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component SimPanelWindow inherits Window {
+    title: I18n.en ? "Simulation Panel" : "仿真面板";
+    icon: @image-url("logo.svg");
+    preferred-width: 1000px;
+    preferred-height: 660px;
+    background: Theme.bg;
+
+    in property <[SimRow]> sim-widgets;
+    in property <bool> running: false;
+
+    callback sim-add(int);
+    callback sim-select(int, bool);           // (index, 是否 Ctrl 追加多选)
+    callback sim-edit(int);                    // 双击 → 打开独立属性窗口
+    callback sim-drag(int, length, length);
+    // sim-resize 传绝对尺寸(指针相对控件左上角=目标宽高), 避免增量反馈半速
+    callback sim-resize(int, float, float);
+    callback sim-clear();
+    callback sim-run-toggle();
+    callback sim-button(int, bool);           // 运行模式按钮 按下(true)/释放(false)
+    callback sim-slider(int, float);
+    callback sim-select-all();                 // 全选
+    callback sim-align(int);                   // 对齐: 0左 1右 2顶 3底 4水平居中 5垂直居中
+
+    VerticalLayout {
+        // 顶部工具栏
+        Rectangle {
+            height: 40px; background: Theme.panel;
+            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 8px; padding-right: 8px; spacing: 4px;
+                Text { text: root.running ? (I18n.en ? "Running (locked)" : "运行中(已锁定)") : (I18n.en ? "Edit mode" : "编辑模式"); font-weight: 700; font-size: Theme.fs; color: root.running ? Theme.ok : Theme.text; vertical-alignment: center; }
+                Rectangle { width: 8px; }
+                // 控件调色板(编辑模式) — 横向滚动, Clear/Run 常驻右侧
+                ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 4px;
+                Button { text: I18n.en ? "Indicator" : "指示灯"; enabled: !root.running; clicked => { root.sim-add(0); } }
+                Button { text: I18n.en ? "Dial" : "仪表盘"; enabled: !root.running; clicked => { root.sim-add(1); } }
+                Button { text: I18n.en ? "Bar" : "进度条"; enabled: !root.running; clicked => { root.sim-add(2); } }
+                Button { text: I18n.en ? "Value" : "数值"; enabled: !root.running; clicked => { root.sim-add(3); } }
+                Button { text: I18n.en ? "Label" : "标签"; enabled: !root.running; clicked => { root.sim-add(4); } }
+                Button { text: I18n.en ? "Button" : "按钮"; enabled: !root.running; clicked => { root.sim-add(5); } }
+                Button { text: I18n.en ? "Slider" : "滑块"; enabled: !root.running; clicked => { root.sim-add(6); } }
+                Button { text: I18n.en ? "Generator" : "发生器"; enabled: !root.running; clicked => { root.sim-add(7); } }
+                } }
+                Button { text: I18n.en ? "Clear" : "清空"; enabled: !root.running; clicked => { root.sim-clear(); } }
+                Button { text: root.running ? (I18n.en ? "Stop Sim" : "停止仿真") : (I18n.en ? "Run Sim" : "运行仿真"); clicked => { root.sim-run-toggle(); } }
+            }
+        }
+        // 对齐工具栏(编辑模式): 全选 + 6 种对齐
+        if !root.running: Rectangle {
+            height: 36px; background: Theme.panel2;
+            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 8px; padding-right: 8px; spacing: 4px;
+                Text { text: I18n.en ? "Align:" : "对齐:"; font-size: Theme.fs-sm; vertical-alignment: center; color: Theme.text-dim; }
+                ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 4px;
+                Button { text: I18n.en ? "Select All" : "全选"; clicked => { root.sim-select-all(); } }
+                Rectangle { width: 6px; }
+                Button { text: I18n.en ? "Left" : "左对齐"; clicked => { root.sim-align(0); } }
+                Button { text: I18n.en ? "Right" : "右对齐"; clicked => { root.sim-align(1); } }
+                Button { text: I18n.en ? "Top" : "顶部对齐"; clicked => { root.sim-align(2); } }
+                Button { text: I18n.en ? "Bottom" : "底部对齐"; clicked => { root.sim-align(3); } }
+                Button { text: I18n.en ? "Center H" : "水平居中"; clicked => { root.sim-align(4); } }
+                Button { text: I18n.en ? "Center V" : "垂直居中"; clicked => { root.sim-align(5); } }
+                Rectangle { width: 6px; }
+                Button { text: I18n.en ? "Equal W" : "等宽"; clicked => { root.sim-align(6); } }
+                Button { text: I18n.en ? "Equal H" : "等高"; clicked => { root.sim-align(7); } }
+                } }
+                Rectangle { width: 12px; }
+                Text { text: I18n.en ? "Tip: click=select / Ctrl+click=multi / dbl-click=edit" : "提示: 单击选中 / Ctrl+单击多选 / 双击编辑属性"; font-size: Theme.fs-sm; vertical-alignment: center; color: Theme.text-dim; }
+            }
+        }
+        // 画布(全宽)
+        Rectangle {
+            background: Theme.bg; clip: true;
+            // 空提示
+            if root.sim-widgets.length == 0: Text {
+                text: I18n.en ? "Blank canvas: add controls from the toolbar, drag to place, double-click a control to edit & bind a DBC signal, then click \"Run Sim\" to lock & go live." : "空白画布：点上方控件按钮添加，拖动摆放，双击控件编辑属性绑定 DBC 信号，点「运行仿真」锁定并联动。";
+                width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center;
+                color: Theme.text-dim; font-size: Theme.fs;
+            }
+            for w[i] in root.sim-widgets: Rectangle {
+                x: w.x * 1px; y: w.y * 1px; width: w.w * 1px; height: w.h * 1px;
+                background: w.kind == 4 ? transparent : Theme.panel;
+                border-width: w.primary ? 3px : (w.selected ? 2px : (w.kind == 4 ? 0px : 1px));
+                border-color: w.primary ? Theme.ok : (w.selected ? Theme.accent : Theme.border);
+                border-radius: 5px;
+                drop-shadow-blur: w.selected ? 6px : 2px; drop-shadow-color: #00000022;
+
+                SimGlyph { width: 100%; height: 100%; w: w; }
+
+                // 主控件(模板)角标：等高/等宽以它为基准
+                if w.primary: Rectangle {
+                    x: 0; y: 0; width: 44px; height: 16px;
+                    background: Theme.ok; border-radius: 3px;
+                    Text { text: I18n.en ? "Ref" : "模板"; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; color: white; font-size: 11px; }
+                }
+
+                // 编辑模式：拖动/缩放 + 选中(右下角 20px 内按下=缩放, 其余=移动; 双击=编辑属性)
+                if !root.running: TouchArea {
+                    width: 100%; height: 100%;
+                    property <bool> resizing: false;
+                    pointer-event(ev) => {
+                        if (ev.button == PointerEventButton.left && ev.kind == PointerEventKind.down) {
+                            root.sim-select(i, ev.modifiers.control);
+                            self.resizing = (self.mouse-x > parent.width - 20px) && (self.mouse-y > parent.height - 20px);
+                        }
+                    }
+                    double-clicked => { root.sim-edit(i); }
+                    moved => {
+                        if (self.pressed) {
+                            if (self.resizing) {
+                                // 绝对尺寸: 指针相对控件左上角(左上角拖动期间不变)=目标宽高
+                                root.sim-resize(i, self.mouse-x / 1px, self.mouse-y / 1px);
+                            } else {
+                                root.sim-drag(i, self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                            }
+                        }
+                    }
+                }
+                // 编辑模式：右下角缩放视觉手柄(纯提示, 不拦截事件)
+                if !root.running: Rectangle {
+                    width: 16px; height: 16px; x: parent.width - 16px; y: parent.height - 16px;
+                    background: w.selected ? Theme.accent : Theme.border; border-radius: 3px;
+                }
+                // 运行模式：按钮 按下发「按下值」、释放发「释放值」
+                if root.running && w.kind == 5: TouchArea {
+                    width: 100%; height: 100%;
+                    pointer-event(ev) => {
+                        if (ev.button == PointerEventButton.left) {
+                            if (ev.kind == PointerEventKind.down) { root.sim-button(i, true); }
+                            if (ev.kind == PointerEventKind.up) { root.sim-button(i, false); }
+                        }
+                    }
+                }
+                // 运行模式：滑块可拖动设值(frac 对齐手柄行程, 消除偏移)
+                if root.running && w.kind == 6: TouchArea {
+                    width: 100%; height: 100%;
+                    moved => { if (self.pressed) { root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1)); } }
+                    clicked => { root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1)); }
+                }
+            }
+        }
+    }
+}

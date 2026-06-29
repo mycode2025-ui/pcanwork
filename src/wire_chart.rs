@@ -31,6 +31,27 @@ fn wire_chart(
         });
     }
     {
+        let cw = chart_window.as_weak();
+        chart_window.on_chart_topmost_toggle(move |on| {
+            if let Some(w) = cw.upgrade() {
+                set_window_topmost(w.window(), on);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let uiw = ui.as_weak();
+        let chartw = chart_window.as_weak();
+        chart_window.on_chart_set_time_mode(move |mode| {
+            let mut a = app.borrow_mut();
+            a.chart_time_mode = mode.clamp(0, 1);
+            let (Some(ui), Some(cw)) = (uiw.upgrade(), chartw.upgrade()) else {
+                return;
+            };
+            refresh_chart(&a, &ui, &cw);
+        });
+    }
+    {
         let app = app.clone();
         chart_window.on_clear_chart(move || {
             let mut a = app.borrow_mut();
@@ -56,7 +77,7 @@ let (mut vmin, mut vmax) = a.chart_view.unwrap_or_else(|| {
             let span = (vmax - vmin).max(1e-6);
             let center = vmin + (frac as f64).clamp(0.0, 1.0) * span;
             // delta<0（向上滚）放大，>0 缩小
-            let factor = if delta < 0.0 { 0.8 } else { 1.25 };
+            let factor = if delta < 0.0 { 0.6 } else { 1.67 };
             // 数据范围：窗口不得超出数据，否则波形挤在中间、游标按整宽走就对不
 let src: &[Series] = if a.chart_paused {
                 a.chart_frozen_series.as_deref().unwrap_or(&a.series)

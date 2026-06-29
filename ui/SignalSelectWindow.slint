@@ -1,0 +1,171 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component SignalSelectWindow inherits Window {
+    title: I18n.en ? "Select Signal" : "选择信号";
+    icon: @image-url("logo.svg");
+    preferred-width: 900px;
+    preferred-height: 560px;
+    background: Theme.bg;
+
+    in property <[SignalPickRow]> signal-pick-rows;
+    in property <string> signal-pick-summary;
+    in property <string> signal-pick-dbc-name: "(无)";
+    in-out property <string> signal-pick-filter;
+    // 左侧分类: 0=CAN/DBC, 1=System, 2=User Defined, 3=Expression, 4=Function
+    in-out property <int> sig-cat: 0;
+    // 表达式编辑器(sig-cat==3 时显示)
+    in-out property <string> expr-name;
+    in-out property <string> expr-formula;
+    in-out property <string> expr-unit;
+    in property <string> expr-error;
+
+    callback signal-pick-search(string);
+    callback signal-pick-row-clicked(int);
+    callback signal-pick-row-double-clicked(int);
+    callback signal-pick-ok();
+    callback signal-pick-apply();
+    callback signal-pick-cancel();
+    callback sig-cat-changed(int);
+    callback expr-save();   // 添加/更新表达式(用 expr-name/formula/unit)
+    callback expr-delete(); // 删除当前选中的表达式
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            spacing: 0px;
+            // 左侧导航
+            Rectangle {
+                width: 220px;
+                background: Theme.panel;
+                border-width: 1px; border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle {
+                        height: 52px;
+                        background: root.sig-cat == 0 ? Theme.accent-soft : (cana.has-hover ? Theme.accent-soft : transparent);
+                        cana := TouchArea { clicked => { root.sig-cat = 0; root.sig-cat-changed(0); } }
+                        HorizontalLayout {
+                            padding-left: 12px; spacing: 8px;
+                            Rectangle { width: 14px; Icon { name: "channel"; clr: Theme.accent; width: 14px; height: 14px; y: (parent.height - self.height)/2; } }
+                            VerticalLayout {
+                                alignment: center;
+                                Text { text: "CAN 1"; font-size: Theme.fs; font-weight: 700; color: Theme.text; }
+                                Text { text: root.signal-pick-dbc-name; font-size: Theme.fs-sm; color: Theme.text-dim; overflow: elide; }
+                            }
+                        }
+                    }
+                    for nav[i] in ["System Variables", "User Defined Variables", "Expression Variables", "Function Signals"]: Rectangle {
+                        height: 36px;
+                        background: root.sig-cat == i + 1 ? Theme.sel : (nta.has-hover ? Theme.accent-soft : transparent);
+                        nta := TouchArea { clicked => { root.sig-cat = i + 1; root.sig-cat-changed(i + 1); } }
+                        HorizontalLayout {
+                            padding-left: 12px; spacing: 8px;
+                            Rectangle { width: 16px; Icon { name: i == 2 ? "curve" : "filter"; clr: Theme.text-dim; width: 13px; height: 13px; y: (parent.height - self.height)/2; } }
+                            Text { text: nav; vertical-alignment: center; color: Theme.text; font-size: Theme.fs; }
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // 右侧 DBC 树
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px; border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle {
+                        height: 36px; background: Theme.panel2;
+                        HorizontalLayout {
+                            padding-left: 8px; padding-right: 8px; spacing: 8px;
+                            Text { text: I18n.en ? "Search" : "搜索"; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; }
+                            search-edit := LineEdit {
+                                text: root.signal-pick-filter;
+                                placeholder-text: I18n.en ? "filter by name" : "按名称过滤";
+                                height: Theme.ctrl-h - 4px;
+                                horizontal-stretch: 1;
+                                edited(v) => { root.signal-pick-search(v); }
+                                accepted(v) => { root.signal-pick-search(v); }
+                            }
+                            TBtn { text: I18n.en ? "Search" : "搜索"; clicked => { root.signal-pick-search(search-edit.text); } }
+                        }
+                    }
+                    // 表达式编辑器（仅 Expression Variables 分类显示）
+                    if root.sig-cat == 3: Rectangle {
+                        height: 46px; background: Theme.panel2;
+                        HorizontalLayout {
+                            padding: 7px; spacing: 6px;
+                            LineEdit { width: 120px; height: Theme.ctrl-h - 4px; placeholder-text: I18n.en ? "name" : "名称"; text <=> root.expr-name; }
+                            LineEdit { horizontal-stretch: 1; height: Theme.ctrl-h - 4px; placeholder-text: I18n.en ? "formula e.g. Voltage*Current/1000" : "表达式 如 Voltage*Current/1000"; text <=> root.expr-formula; accepted(v) => { root.expr-save(); } }
+                            LineEdit { width: 70px; height: Theme.ctrl-h - 4px; placeholder-text: I18n.en ? "unit" : "单位"; text <=> root.expr-unit; }
+                            TBtn { text: I18n.en ? "Add/Update" : "添加/更新"; clicked => { root.expr-save(); } }
+                            TBtn { text: I18n.en ? "Delete" : "删除"; clicked => { root.expr-delete(); } }
+                        }
+                    }
+                    if root.sig-cat == 3 && root.expr-error != "": Rectangle {
+                        height: 22px; background: Theme.panel2;
+                        Text { text: root.expr-error; x: 10px; width: parent.width - 16px; color: #e06c6c; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; }
+                    }
+                    Rectangle {
+                        height: 24px;
+                        HorizontalLayout {
+                            HCell { text: I18n.en ? "Name" : "名称"; w: 420px; }
+                            HCell { text: I18n.en ? "Desc" : "描述"; w: 220px; }
+                        }
+                    }
+                    ListView {
+                        for row[i] in root.signal-pick-rows: Rectangle {
+                            height: Theme.big ? 28px : 24px;
+                            background: row.selected ? Theme.sel : (ta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra));
+                            ta := TouchArea {
+                                clicked => { root.signal-pick-row-clicked(i); }
+                                double-clicked => { root.signal-pick-row-double-clicked(i); }
+                            }
+                            HorizontalLayout {
+                                spacing: 0px;
+                                Rectangle {
+                                    width: 420px; clip: true;
+                                    HorizontalLayout {
+                                        padding-left: 8px + row.level * 18px; spacing: 5px;
+                                        Text {
+                                            text: row.expandable ? (row.expanded ? "v" : ">") : "";
+                                            width: 12px; color: Theme.text-dim;
+                                            vertical-alignment: center; horizontal-alignment: center; font-size: Theme.fs-sm; font-family: Theme.mono;
+                                        }
+                                        Rectangle { width: 16px;
+                                            Icon {
+                                                name: row.kind == "dbc" ? "database" : (row.kind == "folder" ? "folder" : (row.kind == "message" ? "send" : "curve"));
+                                                clr: row.kind == "message" ? Theme.accent : Theme.text-dim;
+                                                width: 13px; height: 13px; x: (parent.width - self.width)/2; y: (parent.height - self.height)/2;
+                                            }
+                                        }
+                                        Text { text: row.name; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+                                    }
+                                }
+                                Rectangle { width: 1px; background: Theme.border; }
+                                Rectangle {
+                                    horizontal-stretch: 1; clip: true;
+                                    Text { text: row.desc; x: 8px; width: parent.width - 10px; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: root.signal-pick-summary; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; horizontal-stretch: 1; }
+                Button { text: I18n.en ? "OK" : "确定"; width: 96px; clicked => { root.signal-pick-ok(); } }
+                Button { text: I18n.en ? "Cancel" : "取消"; width: 96px; clicked => { root.signal-pick-cancel(); } }
+                Button { text: I18n.en ? "Apply" : "应用"; width: 96px; clicked => { root.signal-pick-apply(); } }
+            }
+        }
+    }
+}

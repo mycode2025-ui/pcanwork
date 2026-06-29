@@ -1,0 +1,179 @@
+import { LineEdit, TextEdit } from "std-widgets.slint";
+import { Theme, TBtn } from "common.slint";
+
+component FieldLabel inherits Text {
+    color: Theme.text;
+    font-size: Theme.fs;
+    vertical-alignment: center;
+}
+
+export component UdsWindow inherits Window {
+    title: "UDS";
+    icon: @image-url("logo.svg");
+    preferred-width: 980px;
+    preferred-height: 680px;
+    min-width: 920px;
+    min-height: 620px;
+    background: Theme.bg;
+
+    in property <string> ota-status: "Ready";
+    in-out property <string> diag-log: "";
+
+    in-out property <string> uds-id: "61A";
+    in-out property <string> uds-rx-id: "622";
+    in-out property <string> uds-session: "03";
+    in-out property <string> uds-reset-type: "01";
+    in-out property <string> uds-dtc-group: "FFFFFF";
+    in-out property <string> uds-dtc-status-mask: "FF";
+    in-out property <string> uds-dtc-subfn: "02";
+    in-out property <string> uds-did: "F190";
+    in-out property <string> uds-write-data: "";
+    in-out property <string> uds-mem-addr: "0";
+    in-out property <string> uds-mem-len: "10";
+    in-out property <string> uds-mem-data: "";
+    in-out property <string> uds-security-level: "01";
+    in-out property <string> uds-security-key: "";
+    in-out property <string> uds-routine-id: "CBA5";
+    in-out property <string> uds-custom: "22 F1 90";
+
+    callback uds-tester-present();
+    callback uds-session-send();
+    callback uds-reset-send();
+    callback uds-clear-dtc();
+    callback uds-read-dtc();
+    callback uds-read-did();
+    callback uds-write-did();
+    callback uds-read-memory();
+    callback uds-write-memory();
+    callback uds-security-seed();
+    callback uds-security-key-send();
+    callback uds-routine-start();
+    callback uds-custom-send();
+    callback diag-log-clear();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        Rectangle {
+            height: 42px;
+            background: Theme.panel2;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px;
+                Text { text: "UDS"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: root.ota-status; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 620px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    Text { text: "UDS services"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "TX ID"; width: 76px; }
+                        LineEdit { text: root.uds-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-id = v; } }
+                        FieldLabel { text: "RX ID"; width: 60px; }
+                        LineEdit { text: root.uds-rx-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-rx-id = v; } }
+                        TBtn { boxed: true; text: "3E"; clicked => { root.uds-tester-present(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "10 Session"; width: 76px; }
+                        LineEdit { text: root.uds-session; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-session = v; } }
+                        TBtn { boxed: true; text: "Send"; clicked => { root.uds-session-send(); } }
+                        FieldLabel { text: "11 Reset"; width: 76px; }
+                        LineEdit { text: root.uds-reset-type; width: 70px; height: Theme.ctrl-h; edited(v) => { root.uds-reset-type = v; } }
+                        TBtn { boxed: true; text: "Send"; clicked => { root.uds-reset-send(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "14 Group"; width: 76px; }
+                        LineEdit { text: root.uds-dtc-group; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-group = v; } }
+                        TBtn { boxed: true; text: "Clear"; clicked => { root.uds-clear-dtc(); } }
+                        FieldLabel { text: "19 Sub"; width: 58px; }
+                        LineEdit { text: root.uds-dtc-subfn; width: 56px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-subfn = v; } }
+                        FieldLabel { text: "Mask"; width: 42px; }
+                        LineEdit { text: root.uds-dtc-status-mask; width: 56px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-status-mask = v; } }
+                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-dtc(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "22/2E DID"; width: 76px; }
+                        LineEdit { text: root.uds-did; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-did = v; } }
+                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-did(); } }
+                        LineEdit { text: root.uds-write-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-write-data = v; } }
+                        TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-did(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "23/3D Mem"; width: 76px; }
+                        LineEdit { text: root.uds-mem-addr; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-addr = v; } }
+                        LineEdit { text: root.uds-mem-len; width: 64px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-len = v; } }
+                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-memory(); } }
+                        LineEdit { text: root.uds-mem-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-mem-data = v; } }
+                        TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-memory(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "27 Level"; width: 76px; }
+                        LineEdit { text: root.uds-security-level; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-security-level = v; } }
+                        TBtn { boxed: true; text: "Seed"; clicked => { root.uds-security-seed(); } }
+                        LineEdit { text: root.uds-security-key; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-security-key = v; } }
+                        TBtn { boxed: true; text: "Key"; clicked => { root.uds-security-key-send(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "31 Routine"; width: 76px; }
+                        LineEdit { text: root.uds-routine-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-routine-id = v; } }
+                        TBtn { boxed: true; text: "Start"; clicked => { root.uds-routine-start(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "Custom"; width: 76px; }
+                        LineEdit { text: root.uds-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-custom = v; } }
+                        TBtn { primary: true; text: "Send"; clicked => { root.uds-custom-send(); } }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        Text { text: "UDS log"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: "Clear"; clicked => { root.diag-log-clear(); } }
+                    }
+                    TextEdit { text: root.diag-log; read-only: true; vertical-stretch: 1; font-size: Theme.fs-sm; }
+                }
+            }
+        }
+    }
+}

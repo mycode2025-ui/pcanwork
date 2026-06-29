@@ -1,0 +1,136 @@
+import { LineEdit, TextEdit } from "std-widgets.slint";
+import { Theme, TBtn } from "common.slint";
+
+component FieldLabel inherits Text {
+    color: Theme.text;
+    font-size: Theme.fs;
+    vertical-alignment: center;
+}
+
+export component XcpWindow inherits Window {
+    title: "XCP";
+    icon: @image-url("logo.svg");
+    preferred-width: 980px;
+    preferred-height: 680px;
+    min-width: 920px;
+    min-height: 620px;
+    background: Theme.bg;
+
+    in property <string> ota-status: "Ready";
+    in-out property <string> diag-log: "";
+
+    in-out property <string> xcp-id: "1821FF10";
+    in-out property <string> xcp-rx-id: "";
+    in-out property <string> xcp-mta-addr: "0";
+    in-out property <string> xcp-mta-ext: "00";
+    in-out property <string> xcp-upload-len: "7";
+    in-out property <string> xcp-download-data: "";
+    in-out property <string> xcp-custom: "FF";
+
+    callback xcp-connect();
+    callback xcp-status();
+    callback xcp-disconnect();
+    callback xcp-set-mta();
+    callback xcp-upload();
+    callback xcp-download();
+    callback xcp-custom-send();
+    callback diag-log-clear();
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 8px;
+
+        Rectangle {
+            height: 42px;
+            background: Theme.panel2;
+            border-width: 1px;
+            border-color: Theme.border;
+            HorizontalLayout {
+                padding: 6px;
+                Text { text: "XCP"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Text { text: root.ota-status; color: Theme.text-dim; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 8px;
+            Rectangle {
+                width: 540px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 12px;
+                    spacing: 8px;
+                    Text { text: "XCP commands"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "TX ID"; width: 76px; }
+                        LineEdit { text: root.xcp-id; width: 130px; height: Theme.ctrl-h; edited(v) => { root.xcp-id = v; } }
+                        FieldLabel { text: "RX ID"; width: 58px; }
+                        LineEdit { text: root.xcp-rx-id; width: 130px; height: Theme.ctrl-h; edited(v) => { root.xcp-rx-id = v; } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        TBtn { boxed: true; text: "Connect FF"; clicked => { root.xcp-connect(); } }
+                        TBtn { boxed: true; text: "Status FD"; clicked => { root.xcp-status(); } }
+                        TBtn { boxed: true; text: "Disconnect FE"; clicked => { root.xcp-disconnect(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "MTA addr"; width: 76px; }
+                        LineEdit { text: root.xcp-mta-addr; width: 130px; height: Theme.ctrl-h; edited(v) => { root.xcp-mta-addr = v; } }
+                        FieldLabel { text: "ext"; width: 34px; }
+                        LineEdit { text: root.xcp-mta-ext; width: 56px; height: Theme.ctrl-h; edited(v) => { root.xcp-mta-ext = v; } }
+                        TBtn { boxed: true; text: "SetMTA"; clicked => { root.xcp-set-mta(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "Upload len"; width: 76px; }
+                        LineEdit { text: root.xcp-upload-len; width: 72px; height: Theme.ctrl-h; edited(v) => { root.xcp-upload-len = v; } }
+                        TBtn { boxed: true; text: "Upload"; clicked => { root.xcp-upload(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "Download"; width: 76px; }
+                        LineEdit { text: root.xcp-download-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-download-data = v; } }
+                        TBtn { boxed: true; text: "Download"; clicked => { root.xcp-download(); } }
+                    }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: "Custom"; width: 76px; }
+                        LineEdit { text: root.xcp-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-custom = v; } }
+                        TBtn { primary: true; text: "Send"; clicked => { root.xcp-custom-send(); } }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        Text { text: "XCP log"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn { boxed: true; text: "Clear"; clicked => { root.diag-log-clear(); } }
+                    }
+                    TextEdit { text: root.diag-log; read-only: true; vertical-stretch: 1; font-size: Theme.fs-sm; }
+                }
+            }
+        }
+    }
+}

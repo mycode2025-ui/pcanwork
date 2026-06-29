@@ -1,0 +1,65 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component SimPropWindow inherits Window {
+    title: I18n.en ? "Control Properties" : "控件属性";
+    icon: @image-url("logo.svg");
+    preferred-width: 320px;
+    preferred-height: 600px;
+    background: Theme.bg;
+
+    in property <[string]> dbc-signals;
+    in property <bool> has-sel: false;
+    in-out property <string> p-name: "";
+    in-out property <string> p-frame: "100";
+    in-out property <string> p-signal: "";
+    in-out property <string> p-bind: "";
+    in-out property <int> p-kind: 0;
+    in-out property <string> p-min: "0";
+    in-out property <string> p-max: "100";
+    in-out property <string> p-threshold: "0";
+    in-out property <int> p-genmode: 0;
+    in-out property <string> p-step: "1";
+    in-out property <string> p-period: "100";
+    in-out property <string> p-x: "0";
+    in-out property <string> p-y: "0";
+    in-out property <string> p-w: "100";
+    in-out property <string> p-h: "60";
+    in-out property <int> p-align: 1;
+    in-out property <string> p-chan: "1";
+    in-out property <string> p-pressval: "1";
+    in-out property <string> p-releaseval: "0";
+    callback prop-apply();
+    callback prop-signal(int);
+    callback prop-remove();
+
+    VerticalLayout {
+        padding: 10px; spacing: 6px;
+        Text { text: I18n.en ? "Control Properties" : "控件属性"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
+        if !root.has-sel: Text { text: I18n.en ? "Double-click a control on the canvas to edit. All controls share this window." : "双击画布上的控件以编辑其属性。所有控件共用此窗口。"; color: Theme.text-dim; font-size: Theme.fs-sm; wrap: word-wrap; }
+        if root.has-sel: ScrollView {
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Name" : "名称"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-name; edited(v) => { root.p-name = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Signal" : "信号"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: root.dbc-signals; selected(v) => { root.prop-signal(self.current-index); } } }
+                Text { text: (I18n.en ? "Bound: " : "当前绑定: ") + root.p-bind; font-size: Theme.fs-sm; color: Theme.accent; wrap: word-wrap; }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Channel" : "通道"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; placeholder-text: I18n.en ? "CAN ch (from 1)" : "CAN 通道(1起)"; text: root.p-chan; edited(v) => { root.p-chan = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "ID:0x" : "帧ID:0x"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-frame; edited(v) => { root.p-frame = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Sig name" : "信号名"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; placeholder-text: I18n.en ? "empty=byte0" : "空=byte0"; text: root.p-signal; edited(v) => { root.p-signal = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Pos X/Y" : "位置 X/Y"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-x; edited(v) => { root.p-x = v; } } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-y; edited(v) => { root.p-y = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Size W/H" : "大小 W/H"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-w; edited(v) => { root.p-w = v; } } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-h; edited(v) => { root.p-h = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Min" : "最小值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-min; edited(v) => { root.p-min = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Max" : "最大值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-max; edited(v) => { root.p-max = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Thresh" : "阈值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-threshold; edited(v) => { root.p-threshold = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Wave" : "波形"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: I18n.en ? ["Const", "Ramp", "Sine"] : ["恒定", "斜坡", "正弦"]; current-index <=> root.p-genmode; } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Step" : "步长"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-step; edited(v) => { root.p-step = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Period" : "周期ms"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-period; edited(v) => { root.p-period = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Press" : "按下值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-pressval; edited(v) => { root.p-pressval = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Release" : "释放值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-releaseval; edited(v) => { root.p-releaseval = v; } } }
+                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Align" : "对齐"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: I18n.en ? ["Left", "Center", "Right"] : ["左", "中", "右"]; current-index <=> root.p-align; } }
+                HorizontalLayout { spacing: 6px; Button { text: I18n.en ? "Apply" : "应用"; clicked => { root.prop-apply(); } } Button { text: I18n.en ? "Delete" : "删除控件"; clicked => { root.prop-remove(); } } }
+            }
+        }
+    }
+}

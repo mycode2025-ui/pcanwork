@@ -1,0 +1,47 @@
+// One-window Slint page split from the original monolithic file.
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+
+export component CacheConfigWindow inherits Window {
+    title: I18n.en ? "Cache Settings" : "缓存设置";
+    icon: @image-url("logo.svg");
+    preferred-width: 480px;
+    preferred-height: 280px;
+    background: Theme.bg;
+
+    in-out property <string> trace-cap: "100000";
+    in-out property <string> chart-cap: "10000";
+    callback apply-cache(string, string);
+    callback cancel();
+
+    VerticalLayout {
+        padding: 16px; spacing: 12px;
+        Text { text: I18n.en ? "Adjust cache limits — balance history depth vs memory/smoothness" : "调整缓存上限，平衡历史深度与内存/流畅度"; font-size: Theme.fs; font-weight: 700; color: Theme.text; }
+        GridLayout {
+            spacing: 10px;
+            Row {
+                Text { text: I18n.en ? "Raw frame cache (frames)" : "报文原始缓存(帧)"; font-size: 14px; vertical-alignment: center; }
+                LineEdit { text: root.trace-cap; width: 180px; edited(v) => { root.trace-cap = v; } }
+            }
+            Row {
+                Text { text: I18n.en ? "Chart points / signal" : "曲线点数 / 信号"; font-size: 14px; vertical-alignment: center; }
+                LineEdit { text: root.chart-cap; width: 180px; edited(v) => { root.chart-cap = v; } }
+            }
+        }
+        Rectangle { vertical-stretch: 1;
+            Text {
+                text: I18n.en ? "100k frames ≈ 15–25MB RAM. Smaller = less memory & smoother; larger = longer history. Chart keeps 10k points per signal by default." : "10 万帧约占 15–25MB 内存。调小更省内存、更流畅；调大可保留更长历史。曲线每信号默认 1 万点。";
+                x: 2px; y: 4px; width: parent.width - 4px; color: Theme.text-dim; font-size: 12px; wrap: word-wrap;
+            }
+        }
+        Rectangle {
+            height: 36px;
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+                Button { text: I18n.en ? "Apply" : "应用"; clicked => { root.apply-cache(root.trace-cap, root.chart-cap); } }
+                Button { text: I18n.en ? "Cancel" : "取消"; clicked => { root.cancel(); } }
+            }
+        }
+    }
+}
