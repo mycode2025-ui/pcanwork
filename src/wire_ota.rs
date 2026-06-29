@@ -987,11 +987,6 @@ pub(crate) fn uds_observe_frame(w: &UdsWindow, f: &CanFrame) {
         && !f.tx && f.id == id {
             let note = uds_response_note(&f.data);
             append_uds_log(w, &format!("RX UDS ID=0x{:X}  [{}]  {}", f.id, data_hex, note));
-            return;
-        }
-    if let Some(id) = uds_tx
-        && f.tx && f.id == id {
-            append_uds_log(w, &format!("TX UDS ID=0x{:X}  [{}]", f.id, data_hex));
         }
 }
 

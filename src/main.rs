@@ -1410,7 +1410,7 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
     sim_panel_window.set_sim_widgets(ModelRc::from(app.borrow().sim_model.clone()));
 
     // ---- callback wiring (grouped by window; see wire_*.rs) ----
-    wire_main(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window, &console_help_window);
+    wire_main(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &uds_window, &xcp_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window, &console_help_window, &script_runner_window);
     wire_dialogs(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_chart(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_tx(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
@@ -2696,10 +2696,6 @@ fn handle_ipc(a: &mut App, ureq: ipc::UiReq) {
                 let _ = a.cmd.send(Cmd::ConnectChannels(channels));
                 ok()
             }
-        }
-        IpcReq::ConnectVirtual => {
-            let _ = a.cmd.send(Cmd::ConnectVirtual);
-            ok()
         }
         IpcReq::ConnectConfigured => {
 

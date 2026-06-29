@@ -5,8 +5,7 @@ Run from PcanWork's Script Runner ("Python测试" → Run). Exit 0 = PASS (green
 
 This shows real multi-card operation: open several cards/channels at once and
 send DIFFERENT traffic on each, routed by the sw_channel you assign. Defaults to
-two built-in Virtual channels so it runs with no hardware; switch DEVICES to your
-real cards (PCAN / USBCANFD-* / GCAN ...) to drive a real multi-card bench.
+real CAN channels; replace with your hardware settings below.
 
 Two ways to open multiple cards:
   A) Script-defined  — pcan.connect_devices([dev(...), dev(...)])   (used below)
@@ -17,13 +16,13 @@ import sys
 import pcanwork
 
 # Each card gets a distinct sw_channel; that's the number you pass as send(ch=...).
-# Swap "Virtual" for your hardware, e.g.:
+# Replace with your hardware, e.g.:
 #   pcanwork.dev("PCAN",          sw_channel=1, channel_index=0, baud="500K")
 #   pcanwork.dev("USBCANFD-200U", sw_channel=2, channel_index=0, fd=True,
 #                baud="500K", data_baud="2M")
 DEVICES = [
-    pcanwork.dev("Virtual", sw_channel=1, channel_index=0, baud="500K"),
-    pcanwork.dev("Virtual", sw_channel=2, channel_index=1, baud="250K"),
+    pcanwork.dev("PCAN", sw_channel=1, channel_index=0, baud="500K"),
+    pcanwork.dev("PCAN", sw_channel=2, channel_index=1, baud="250K"),  # ← adjust for your hardware
 ]
 
 

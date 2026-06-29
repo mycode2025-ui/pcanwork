@@ -6,8 +6,7 @@ non-zero = FAIL (red). Plain Python — loops, ifs, asserts.
 
 THE SCRIPT DEFINES THE DEVICE AND DBC (the runner only picks the interpreter +
 script). Edit the two spots below for your bench:
-  • DEVICE — connect_virtual() for the built-in simulator (default, runs
-    anywhere), or open a real card:
+  • DEVICE — open a real CAN card (required, virtual bus removed):
         pcan.connect_device("PCAN", channel_index=0, baud="500K")
     For multiple cards see example_multi_card.py (connect_devices / connect_configured).
   • DBC — the app auto-loads a sample DBC; load your own with
@@ -29,8 +28,7 @@ def open_bus(pcan) -> None:
     """Open the device for this test. Edit here for real hardware."""
     if pcan.status()["connected"]:
         return
-    pcan.connect_virtual()                 # ← simulator; swap for a real card:
-    # pcan.connect_device("PCAN", channel_index=0, baud="500K")
+    pcan.connect_device("PCAN", channel_index=0, baud="500K")  # ← adjust for your hardware
     pcan.wait_connected(timeout=3.0)
     pcan.start()
 

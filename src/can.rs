@@ -71,142 +71,6 @@ pub trait CanAdapter: Send {
     fn name(&self) -> &str;
 }
 
-// ======================= 虚拟总线（无硬件演示用） =======================
-
-/// 生成与内置 sample.dbc 匹配的报文，使解码 / 曲线 / 高亮整条链路可演示。
-pub struct VirtualBus {
-    start: Instant,
-    last_100: f64,
-    last_180: f64,
-    last_fast: f64,
-    last_ext: f64,
-    fast_counter: u8,
-    last_console: f64, // printf-over-CAN 演示帧节流
-    console_n: u32,
-}
-
-impl VirtualBus {
-    pub fn new(start: Instant) -> Self {
-        Self {
-            start,
-            last_100: -1.0,
-            last_180: -1.0,
-            last_fast: -1.0,
-            last_ext: -1.0,
-            fast_counter: 0,
-            last_console: -1.0,
-            console_n: 0,
-        }
-    }
-}
-
-impl CanAdapter for VirtualBus {
-    fn poll(&mut self, out: &mut Vec<CanFrame>) {
-        let t = self.start.elapsed().as_secs_f64();
-
-        // 0x100 EngineData @100ms
-        if t - self.last_100 >= 0.1 {
-            self.last_100 = t;
-            let rpm = (2000.0 + 1500.0 * (t * 0.7).sin()) as u16;
-            let temp = (80.0 + 30.0 * (t * 0.2).sin() + 40.0) as u8; // offset -40 → 原始值+40
-            let thr = (50.0 + 50.0 * (t * 0.5).sin()) / 0.4;
-            let d = vec![
-                (rpm & 0xFF) as u8,
-                (rpm >> 8) as u8,
-                temp,
-                thr as u8,
-                0,
-                0,
-                0,
-                0,
-            ];
-            out.push(mk(t, 1, 0x100, false, d));
-        }
-
-        // 0x180 BMS_Status @100ms
-        if t - self.last_180 >= 0.1 {
-            self.last_180 = t;
-            let soc = ((55.0 + 35.0 * (t * 0.15).sin()) * 10.0) as u16;
-            let volt = ((720.0 + 40.0 * (t * 0.3).sin()) * 10.0) as u16;
-            let cur = ((120.0 * (t * 0.6).sin()) * 10.0) as i16;
-            let state = ((t / 3.0) as u32 % 4) as u8; // BMS_State 循环 Idle/Charging/Discharging/Fault
-            let d = vec![
-                (soc & 0xFF) as u8,
-                (soc >> 8) as u8,
-                (volt & 0xFF) as u8,
-                (volt >> 8) as u8,
-                (cur & 0xFF) as u8,
-                ((cur >> 8) & 0xFF) as u8,
-                state & 0x0F,
-                0,
-            ];
-            out.push(mk(t, 1, 0x180, false, d));
-        }
-
-        // 0x101 Debug @20ms，单字节递增，用于演示“变化字节高亮”与高帧率
-        if t - self.last_fast >= 0.02 {
-            self.last_fast = t;
-            self.fast_counter = self.fast_counter.wrapping_add(1);
-            let d = vec![self.fast_counter, 0xAA, 0x55, 0x00, 0, 0, 0, 0];
-            out.push(mk(t, 1, 0x101, false, d));
-        }
-
-        // 扩展帧 0x18FF50E5 @500ms
-        if t - self.last_ext >= 0.5 {
-            self.last_ext = t;
-            let mut f = mk(
-                t,
-                1,
-                0x18FF50E5,
-                false,
-                vec![0x10, 0x20, 0x30, 0x40, 0, 0, 0, 0],
-            );
-            f.ext = true;
-            out.push(f);
-        }
-
-        // printf-over-CAN 演示帧 @600ms: 经典(0x7E0)与 CAN FD(0x7E1)各发一行 ASCII 文本,
-        // 让"报文日志"功能连虚拟总线即可看到两种格式的文本被重组显示。
-        if t - self.last_console >= 0.6 {
-            self.last_console = t;
-            let n = self.console_n % 100;
-            self.console_n = self.console_n.wrapping_add(1);
-            // 经典 CAN: 一行恰好 8 字节 "cls #NN\n"
-            out.push(mk(t, 1, 0x7E0, false, format!("cls #{n:02}\n").into_bytes()));
-            // CAN FD: 一帧装下整行(> 8 字节), fd=true
-            let mut bytes = format!("FD log #{n:02} temp=25C volt=72.1 ok\n").into_bytes();
-            bytes.truncate(64);
-            let mut f = mk(t, 1, 0x7E1, false, bytes);
-            f.fd = true;
-            out.push(f);
-        }
-    }
-
-    fn send(&mut self, _f: &CanFrame) -> Result<(), String> {
-        // 虚拟总线：发送即视为成功（无真实回环硬件）。
-        Ok(())
-    }
-
-    fn name(&self) -> &str {
-        "VirtualBus (无硬件回退)"
-    }
-}
-
-fn mk(t: f64, ch: u8, id: u32, ext: bool, data: Vec<u8>) -> CanFrame {
-    CanFrame {
-        t,
-        ch,
-        tx: false,
-        id,
-        ext,
-        fd: false,
-        brs: false,
-        remote: false,
-        error: false,
-        data,
-    }
-}
-
 // ======================= PCAN (PEAK) 后端 =======================
 
 fn normalize_baud(baud: &str) -> String {
@@ -1291,7 +1155,6 @@ pub enum Cmd {
     ConnectConfig(DeviceConfig),
     /// 连接一组通道（多通道）。
     ConnectChannels(Vec<DeviceConfig>),
-    ConnectVirtual,
     Disconnect,
     Start,
     Stop,
@@ -1396,7 +1259,7 @@ pub fn spawn() -> (Sender<Cmd>, Receiver<Evt>) {
 fn open_adapter(start: Instant, cfg: &DeviceConfig) -> Result<Box<dyn CanAdapter>, String> {
     let device = cfg.device_type.trim().to_ascii_uppercase();
     if device == "VIRTUAL" || device == "SIM" {
-        Ok(Box::new(VirtualBus::new(start)))
+        Err("不支持的设备类型: 虚拟总线已移除".into())
     } else if device == "PCAN" {
         PcanBus::open_cfg(start, cfg)
             .map(|b| Box::new(b) as Box<dyn CanAdapter>)
@@ -1619,12 +1482,9 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                             let _ = evt_tx.send(Evt::Connected(true, n));
                         }
                         Err(e) => {
-                            let v = VirtualBus::new(start);
-                            let n = v.name().to_string();
-                            adapters = vec![(1, Box::new(v))];
                             let _ = evt_tx
-                                .send(Evt::Log(format!("未找到 PCAN 卡({e})，回退到虚拟总线")));
-                            let _ = evt_tx.send(Evt::Connected(true, n));
+                                .send(Evt::Log(format!("连接 PCAN 卡失败: {e}")));
+                            let _ = evt_tx.send(Evt::Connected(false, String::new()));
                         }
                     },
                     Cmd::ConnectConfig(cfg) => {
@@ -1632,16 +1492,6 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                     }
                     Cmd::ConnectChannels(cfgs) => {
                         connect_channels(&mut adapters, &mut running, &mut periodics, &evt_tx, start, cfgs);
-                    }
-                    Cmd::ConnectVirtual => {
-                        let v = VirtualBus::new(start);
-                        let n = v.name().to_string();
-                        adapters = vec![(1, Box::new(v))];
-                        running = false;
-                        periodics.clear();
-                        let _ = evt_tx.send(Evt::Running(false));
-                        let _ = evt_tx.send(Evt::Log(format!("已连接虚拟总线: {n}")));
-                        let _ = evt_tx.send(Evt::Connected(true, n));
                     }
                     Cmd::Disconnect => {
                         adapters.clear();

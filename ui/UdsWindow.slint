@@ -1,5 +1,5 @@
 import { LineEdit, TextEdit } from "std-widgets.slint";
-import { Theme, TBtn } from "common.slint";
+import { Theme, TBtn, I18n } from "common.slint";
 
 component FieldLabel inherits Text {
     color: Theme.text;
@@ -16,7 +16,7 @@ export component UdsWindow inherits Window {
     min-height: 620px;
     background: Theme.bg;
 
-    in property <string> ota-status: "Ready";
+    in property <string> ota-status: I18n.en ? "Ready" : "就绪";
     in-out property <string> diag-log: "";
 
     in-out property <string> uds-id: "61A";
@@ -71,87 +71,114 @@ export component UdsWindow inherits Window {
         HorizontalLayout {
             spacing: 8px;
             Rectangle {
-                width: 620px;
+                width: 660px;
                 background: Theme.panel;
                 border-width: 1px;
                 border-color: Theme.border;
                 VerticalLayout {
-                    padding: 12px;
-                    spacing: 8px;
-                    Text { text: "UDS services"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
+                    padding: 8px;
+                    spacing: 4px;
+                    Text { text: I18n.en ? "UDS Diagnostic Services" : "UDS 诊断服务"; color: Theme.text; font-weight: 700; font-size: Theme.fs; }
 
+                    // ====== CAN 诊断 ID（所有服务共用） ======
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "CAN Diagnostic ID" : "CAN 诊断 ID"; color: Theme.text-dim; font-size: Theme.fs-sm; font-weight: 600; }
                     HorizontalLayout {
                         height: Theme.ctrl-h;
                         spacing: 8px;
-                        FieldLabel { text: "TX ID"; width: 76px; }
-                        LineEdit { text: root.uds-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-id = v; } }
-                        FieldLabel { text: "RX ID"; width: 60px; }
-                        LineEdit { text: root.uds-rx-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-rx-id = v; } }
-                        TBtn { boxed: true; text: "3E"; clicked => { root.uds-tester-present(); } }
+                        FieldLabel { text: I18n.en ? "Req ID" : "请求 ID"; width: 56px; }
+                        LineEdit { text: root.uds-id; width: 80px; height: Theme.ctrl-h; edited(v) => { root.uds-id = v; } }
+                        FieldLabel { text: I18n.en ? "Res ID" : "应答 ID"; width: 56px; }
+                        LineEdit { text: root.uds-rx-id; width: 80px; height: Theme.ctrl-h; edited(v) => { root.uds-rx-id = v; } }
+                    }
+
+                    // ====== 会话与安全 ======
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Session & Security" : "会话与安全"; color: Theme.text-dim; font-size: Theme.fs-sm; font-weight: 600; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: I18n.en ? "10 Session" : "10 会话"; width: 80px; }
+                        LineEdit { text: root.uds-session; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-session = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Set" : "设置"; clicked => { root.uds-session-send(); } }
+                        Rectangle { width: 12px; }
+                        FieldLabel { text: I18n.en ? "11 Reset" : "11 复位"; width: 80px; }
+                        LineEdit { text: root.uds-reset-type; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-reset-type = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Reset" : "复位"; clicked => { root.uds-reset-send(); } }
                     }
                     HorizontalLayout {
                         height: Theme.ctrl-h;
                         spacing: 8px;
-                        FieldLabel { text: "10 Session"; width: 76px; }
-                        LineEdit { text: root.uds-session; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-session = v; } }
-                        TBtn { boxed: true; text: "Send"; clicked => { root.uds-session-send(); } }
-                        FieldLabel { text: "11 Reset"; width: 76px; }
-                        LineEdit { text: root.uds-reset-type; width: 70px; height: Theme.ctrl-h; edited(v) => { root.uds-reset-type = v; } }
-                        TBtn { boxed: true; text: "Send"; clicked => { root.uds-reset-send(); } }
-                    }
-                    HorizontalLayout {
-                        height: Theme.ctrl-h;
-                        spacing: 8px;
-                        FieldLabel { text: "14 Group"; width: 76px; }
-                        LineEdit { text: root.uds-dtc-group; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-group = v; } }
-                        TBtn { boxed: true; text: "Clear"; clicked => { root.uds-clear-dtc(); } }
-                        FieldLabel { text: "19 Sub"; width: 58px; }
-                        LineEdit { text: root.uds-dtc-subfn; width: 56px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-subfn = v; } }
-                        FieldLabel { text: "Mask"; width: 42px; }
-                        LineEdit { text: root.uds-dtc-status-mask; width: 56px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-status-mask = v; } }
-                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-dtc(); } }
-                    }
-                    HorizontalLayout {
-                        height: Theme.ctrl-h;
-                        spacing: 8px;
-                        FieldLabel { text: "22/2E DID"; width: 76px; }
-                        LineEdit { text: root.uds-did; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-did = v; } }
-                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-did(); } }
-                        LineEdit { text: root.uds-write-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-write-data = v; } }
-                        TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-did(); } }
-                    }
-                    HorizontalLayout {
-                        height: Theme.ctrl-h;
-                        spacing: 8px;
-                        FieldLabel { text: "23/3D Mem"; width: 76px; }
-                        LineEdit { text: root.uds-mem-addr; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-addr = v; } }
-                        LineEdit { text: root.uds-mem-len; width: 64px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-len = v; } }
-                        TBtn { boxed: true; text: "Read"; clicked => { root.uds-read-memory(); } }
-                        LineEdit { text: root.uds-mem-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-mem-data = v; } }
-                        TBtn { boxed: true; text: "Write"; clicked => { root.uds-write-memory(); } }
-                    }
-                    HorizontalLayout {
-                        height: Theme.ctrl-h;
-                        spacing: 8px;
-                        FieldLabel { text: "27 Level"; width: 76px; }
-                        LineEdit { text: root.uds-security-level; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-security-level = v; } }
-                        TBtn { boxed: true; text: "Seed"; clicked => { root.uds-security-seed(); } }
+                        FieldLabel { text: I18n.en ? "27 Security" : "27 安全访问"; width: 80px; }
+                        FieldLabel { text: I18n.en ? "Lvl" : "等级"; width: 28px; }
+                        LineEdit { text: root.uds-security-level; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-security-level = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Seed" : "种子"; clicked => { root.uds-security-seed(); } }
                         LineEdit { text: root.uds-security-key; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-security-key = v; } }
-                        TBtn { boxed: true; text: "Key"; clicked => { root.uds-security-key-send(); } }
+                        TBtn { boxed: true; text: I18n.en ? "Unlock" : "解锁"; clicked => { root.uds-security-key-send(); } }
+                    }
+
+                    // ====== 数据读写 ======
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Data Read/Write" : "数据读写"; color: Theme.text-dim; font-size: Theme.fs-sm; font-weight: 600; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: I18n.en ? "22/2E DID" : "22/2E DID"; width: 80px; }
+                        LineEdit { text: root.uds-did; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-did = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Read" : "读取"; clicked => { root.uds-read-did(); } }
+                        LineEdit { text: root.uds-write-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-write-data = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Write" : "写入"; clicked => { root.uds-write-did(); } }
                     }
                     HorizontalLayout {
                         height: Theme.ctrl-h;
                         spacing: 8px;
-                        FieldLabel { text: "31 Routine"; width: 76px; }
-                        LineEdit { text: root.uds-routine-id; width: 110px; height: Theme.ctrl-h; edited(v) => { root.uds-routine-id = v; } }
-                        TBtn { boxed: true; text: "Start"; clicked => { root.uds-routine-start(); } }
+                        FieldLabel { text: I18n.en ? "23/3D Memory" : "23/3D 内存"; width: 80px; }
+                        FieldLabel { text: I18n.en ? "Addr" : "地址"; width: 28px; }
+                        LineEdit { text: root.uds-mem-addr; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-addr = v; } }
+                        FieldLabel { text: I18n.en ? "Len" : "长度"; width: 28px; }
+                        LineEdit { text: root.uds-mem-len; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-len = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Read" : "读取"; clicked => { root.uds-read-memory(); } }
+                        LineEdit { text: root.uds-mem-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-mem-data = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Write" : "写入"; clicked => { root.uds-write-memory(); } }
+                    }
+
+                    // ====== 诊断操作 ======
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Diagnostic Operations" : "诊断操作"; color: Theme.text-dim; font-size: Theme.fs-sm; font-weight: 600; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: I18n.en ? "19 Read DTC" : "19 读故障码"; width: 80px; }
+                        FieldLabel { text: I18n.en ? "Sub" : "子"; width: 20px; }
+                        LineEdit { text: root.uds-dtc-subfn; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-subfn = v; } }
+                        FieldLabel { text: I18n.en ? "Mask" : "掩码"; width: 28px; }
+                        LineEdit { text: root.uds-dtc-status-mask; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-status-mask = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Read" : "读取"; clicked => { root.uds-read-dtc(); } }
+                        Rectangle { width: 10px; }
+                        FieldLabel { text: I18n.en ? "14 Clear" : "14 清除"; width: 72px; }
+                        LineEdit { text: root.uds-dtc-group; width: 80px; height: Theme.ctrl-h; edited(v) => { root.uds-dtc-group = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Clear" : "清除"; clicked => { root.uds-clear-dtc(); } }
                     }
                     HorizontalLayout {
                         height: Theme.ctrl-h;
                         spacing: 8px;
-                        FieldLabel { text: "Custom"; width: 76px; }
+                        FieldLabel { text: I18n.en ? "31 Routine" : "31 例程控制"; width: 80px; }
+                        LineEdit { text: root.uds-routine-id; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-routine-id = v; } }
+                        TBtn { boxed: true; text: I18n.en ? "Run" : "执行"; clicked => { root.uds-routine-start(); } }
+                    }
+
+                    // ====== 其他 ======
+                    Rectangle { height: 1px; background: Theme.border; }
+                    Text { text: I18n.en ? "Other" : "其他"; color: Theme.text-dim; font-size: Theme.fs-sm; font-weight: 600; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h;
+                        spacing: 8px;
+                        FieldLabel { text: I18n.en ? "3E Heartbeat" : "3E 心跳"; width: 56px; }
+                        TBtn { boxed: true; text: I18n.en ? "Send" : "发送"; clicked => { root.uds-tester-present(); } }
+                        Rectangle { width: 12px; }
+                        FieldLabel { text: I18n.en ? "Custom" : "自定义"; width: 44px; }
                         LineEdit { text: root.uds-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-custom = v; } }
-                        TBtn { primary: true; text: "Send"; clicked => { root.uds-custom-send(); } }
+                        TBtn { primary: true; text: I18n.en ? "Send" : "发送"; clicked => { root.uds-custom-send(); } }
                     }
                     Rectangle { vertical-stretch: 1; }
                 }
@@ -167,7 +194,7 @@ export component UdsWindow inherits Window {
                     spacing: 8px;
                     HorizontalLayout {
                         height: Theme.ctrl-h;
-                        Text { text: "UDS log"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
+                        Text { text: I18n.en ? "UDS Log" : "UDS 诊断日志"; color: Theme.text; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; }
                         Rectangle { horizontal-stretch: 1; }
                         TBtn { boxed: true; text: "Clear"; clicked => { root.diag-log-clear(); } }
                     }

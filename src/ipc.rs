@@ -39,7 +39,6 @@ pub enum IpcReq {
     SetPeriodic { client_handle: u64, ch: u8, id: u32, data: Vec<u8>, period_ms: u64, repeat: i64, ext: bool, fd: bool, brs: bool, remote: bool },
     StopPeriodic { client_handle: u64 },
     Connect { channels: Vec<DeviceConfig> },
-    ConnectVirtual,
     ConnectConfigured, // 连接主界面"设备"对话框里已配置的多通道列表（a.channels）
     // 脚本加载 DBC：在 handler 线程预解析(loaded)，UI tick 仅推入，避免大文件解析阻塞界面。
     LoadDbc { path: String, loaded: Result<DbcDb, String> },
@@ -512,7 +511,6 @@ fn parse_mutating(op: &str, args: &serde_json::Value) -> Option<IpcReq> {
             let channels: Vec<DeviceConfig> = args.get("channels").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
             Some(IpcReq::Connect { channels })
         }
-        "connect_virtual" => Some(IpcReq::ConnectVirtual),
         "connect_configured" => Some(IpcReq::ConnectConfigured),
         "load_dbc" => {
             let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();

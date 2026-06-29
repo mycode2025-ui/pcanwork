@@ -215,9 +215,6 @@ class Session:
                 self._replies.pop(sid, None)
 
     # ---- connection / run control ----
-    def connect_virtual(self):
-        self._call("connect_virtual")
-
     def connect_channels(self, channels: List[dict]):
         self._call("connect", {"channels": channels})
 
@@ -232,15 +229,13 @@ class Session:
         device_type is case-insensitive; recognized values include:
           "PCAN" (PEAK, classic CAN), "GCAN", "ZHCX",
           "USBCANFD-200U" / "USBCANFD-100U" / ... (ZLG, CAN FD),
-          "USBCAN-E-U", "CANFDNET-TCP", "VIRTUAL".
+          "USBCAN-E-U", "CANFDNET-TCP".
         baud / data_baud are bitrate strings like "500K", "250K", "1M", "2M"
         (data_baud only matters when fd=True). channel_index selects the channel
         within the device (PCAN: 0->USBBUS1 ... 3->USBBUS4).
 
-        All 11 channel fields are always sent. Returns True if the bus came up
-        (when wait=True). Unlike the virtual bus, opening real hardware does NOT
-        auto-fall-back: a missing card or driver DLL yields False here — check
-        the app's log pane for the exact reason."""
+        Returns True if the bus came up (when wait=True). A missing card or
+        driver DLL yields False — check the app's log pane for the exact reason."""
         cfg = {
             "sw_channel": sw_channel, "is_fd": fd, "device_type": device_type,
             "device_index": device_index, "channel_index": channel_index,
@@ -517,7 +512,7 @@ def connect(host: str = "127.0.0.1",
     return Session(host, int(port), token, timeout=timeout)
 
 
-def dev(device_type: str = "Virtual", *, sw_channel: int = 1, channel_index: int = 0,
+def dev(device_type: str = "PCAN", *, sw_channel: int = 1, channel_index: int = 0,
         device_index: int = 0, fd: bool = False, baud: str = "500K",
         data_baud: str = "2M", termination: bool = False, net_server: bool = False,
         ip: str = "", port: str = "") -> dict:

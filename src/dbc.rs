@@ -160,16 +160,10 @@ impl DbcDb {
         self.by_id.get(&id)
     }
 
-    /// 报文字节长度（取定义长度与信号跨度的较大者，至少 1）。
+    /// 报文字节长度（取定义长度，至少 1；不超出硬件 DLC 上限）。
     pub fn message_len(&self, id: u32) -> usize {
         let Some(m) = self.by_id.get(&id) else { return 0 };
-        let span = m
-            .signals
-            .iter()
-            .map(|s| (s.start_bit + s.size).div_ceil(8) as usize)
-            .max()
-            .unwrap_or(0);
-        (m.size as usize).max(span).max(1)
+        (m.size as usize).max(1).min(64)
     }
 
     /// 把信号物理值编码成报文字节。values 缺省的信号按 0 处理。

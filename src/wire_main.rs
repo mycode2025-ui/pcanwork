@@ -8,6 +8,8 @@ fn wire_main(
     chart_window: &ChartWindow,
     signal_window: &SignalSelectWindow,
     tx_window: &TxWindow,
+    uds_window: &UdsWindow,
+    xcp_window: &XcpWindow,
     channel_window: &ChannelConfigWindow,
     playback_window: &PlaybackWindow,
     convert_window: &ConvertWindow,
@@ -16,6 +18,7 @@ fn wire_main(
     sim_panel_window: &SimPanelWindow,
     sim_prop_window: &SimPropWindow,
     console_help_window: &ConsoleHelpWindow,
+    script_runner_window: &ScriptRunnerWindow,
 ) {
     // 关闭仿真面板窗口 = 停止仿真(否则信号发生器会在窗口隐藏后继续发帧)
     {
@@ -81,14 +84,6 @@ std::thread::sleep(std::time::Duration::from_millis(200));
         ui.on_connect(move || {
             let a = app.borrow();
             let _ = a.cmd.send(Cmd::ConnectChannels(a.channels.clone()));
-        });
-    }
-    {
-        let app = app.clone();
-        ui.on_start_demo(move || {
-            let a = app.borrow();
-            let _ = a.cmd.send(Cmd::ConnectVirtual);
-            let _ = a.cmd.send(Cmd::Start);
         });
     }
     {
@@ -1196,6 +1191,8 @@ refresh_sim(&app.borrow());
         let cw = chart_window.as_weak();
         let sw = signal_window.as_weak();
         let txw = tx_window.as_weak();
+        let udsw = uds_window.as_weak();
+        let xcpw = xcp_window.as_weak();
         let chw = channel_window.as_weak();
         let pw = playback_window.as_weak();
         let tgw = trigger_window.as_weak();
@@ -1203,6 +1200,7 @@ refresh_sim(&app.borrow());
         let ppw = sim_prop_window.as_weak();
         let ccw = cache_window.as_weak();
         let cvw = convert_window.as_weak();
+        let srw = script_runner_window.as_weak();
         let app = app.clone();
         ui.on_toggle_lang(move || {
             let en = !uiw.unwrap().global::<I18n>().get_en();
@@ -1223,6 +1221,9 @@ refresh_sim(&app.borrow());
             if let Some(w) = ppw.upgrade() { w.global::<I18n>().set_en(en); }
             if let Some(w) = ccw.upgrade() { w.global::<I18n>().set_en(en); }
             if let Some(w) = cvw.upgrade() { w.global::<I18n>().set_en(en); }
+            if let Some(w) = udsw.upgrade() { w.global::<I18n>().set_en(en); }
+            if let Some(w) = xcpw.upgrade() { w.global::<I18n>().set_en(en); }
+            if let Some(w) = srw.upgrade() { w.global::<I18n>().set_en(en); }
         });
     }
 }

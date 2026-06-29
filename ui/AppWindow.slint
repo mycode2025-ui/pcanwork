@@ -74,7 +74,6 @@ export component AppWindow inherits Window {
     in-out property <int> dir-filter: 0; // 0=全部 1=Rx 2=Tx
 
     callback connect();
-    callback start-demo();
     callback disconnect();
     callback start-rx();
     callback stop-rx();
@@ -209,7 +208,6 @@ export component AppWindow inherits Window {
                             RibbonBtn { icon: "start"; label: I18n.en ? "Start" : "启动"; icon-clr: Theme.ok; active: root.running; clicked => { root.start-rx(); } }
                             RibbonBtn { icon: "stop"; label: I18n.en ? "Stop" : "停止"; icon-clr: Theme.bad; clicked => { root.stop-rx(); } }
                             RibbonBtn { icon: "disconnect"; label: I18n.en ? "Disconnect" : "断开"; clicked => { root.disconnect(); } }
-                            RibbonBtn { icon: "demo"; label: I18n.en ? "Simulate" : "模拟"; clicked => { root.start-demo(); } }
                         }
                         RibbonGroup {
                             caption: I18n.en ? "Analysis" : "数据分析";
