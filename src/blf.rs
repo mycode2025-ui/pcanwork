@@ -298,7 +298,8 @@ pub fn write(path: &str, frames: &[CanFrame]) -> Result<(), String> {
     let f = std::fs::File::create(path).map_err(|e| format!("创建失败: {e}"))?;
     let mut w = std::io::BufWriter::new(f);
     w.write_all(&header).map_err(|e| format!("写入失败: {e}"))?;
-    w.write_all(&container).map_err(|e| format!("写入失败: {e}"))?;
+    w.write_all(&container)
+        .map_err(|e| format!("写入失败: {e}"))?;
     w.flush().map_err(|e| format!("写入失败: {e}"))?;
     Ok(())
 }

@@ -130,7 +130,8 @@ pub fn client_connector(cfg: &TlsClientCfg) -> anyhow::Result<TlsConnector> {
     let base = ClientConfig::builder_with_provider(provider(cfg.cipher))
         .with_protocol_versions(versions(cfg.version))?;
     let wants_client = if cfg.skip_verify {
-        base.dangerous().with_custom_certificate_verifier(Arc::new(NoVerify))
+        base.dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerify))
     } else {
         let mut roots = RootCertStore::empty();
         if !cfg.ca_file.trim().is_empty() {
@@ -171,9 +172,10 @@ pub fn server_acceptor(cfg: &TlsServerCfg) -> anyhow::Result<TlsAcceptor> {
         for c in load_certs(&cfg.client_ca)? {
             roots.add(c)?;
         }
-        let verifier = tokio_rustls::rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
-            .build()?;
-        base.with_client_cert_verifier(verifier).with_single_cert(certs, key)?
+        let verifier =
+            tokio_rustls::rustls::server::WebPkiClientVerifier::builder(Arc::new(roots)).build()?;
+        base.with_client_cert_verifier(verifier)
+            .with_single_cert(certs, key)?
     } else {
         base.with_no_client_auth().with_single_cert(certs, key)?
     };
@@ -182,7 +184,11 @@ pub fn server_acceptor(cfg: &TlsServerCfg) -> anyhow::Result<TlsAcceptor> {
 
 /// Resolve the SNI / server name to validate against.
 pub fn server_name(cfg: &TlsClientCfg, host: &str) -> anyhow::Result<ServerName<'static>> {
-    let d = if cfg.domain.trim().is_empty() { host } else { cfg.domain.trim() };
+    let d = if cfg.domain.trim().is_empty() {
+        host
+    } else {
+        cfg.domain.trim()
+    };
     ServerName::try_from(d.to_string()).map_err(|e| anyhow!("invalid server name '{d}': {e}"))
 }
 
@@ -198,7 +204,8 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for NoVerify {
         _server_name: &ServerName<'_>,
         _ocsp: &[u8],
         _now: UnixTime,
-    ) -> Result<tokio_rustls::rustls::client::danger::ServerCertVerified, tokio_rustls::rustls::Error> {
+    ) -> Result<tokio_rustls::rustls::client::danger::ServerCertVerified, tokio_rustls::rustls::Error>
+    {
         Ok(tokio_rustls::rustls::client::danger::ServerCertVerified::assertion())
     }
 
@@ -207,7 +214,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for NoVerify {
         _message: &[u8],
         _cert: &CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error> {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 
@@ -216,7 +226,10 @@ impl tokio_rustls::rustls::client::danger::ServerCertVerifier for NoVerify {
         _message: &[u8],
         _cert: &CertificateDer<'_>,
         _dss: &tokio_rustls::rustls::DigitallySignedStruct,
-    ) -> Result<tokio_rustls::rustls::client::danger::HandshakeSignatureValid, tokio_rustls::rustls::Error> {
+    ) -> Result<
+        tokio_rustls::rustls::client::danger::HandshakeSignatureValid,
+        tokio_rustls::rustls::Error,
+    > {
         Ok(tokio_rustls::rustls::client::danger::HandshakeSignatureValid::assertion())
     }
 

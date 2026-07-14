@@ -69,9 +69,9 @@ export component ScriptRunnerWindow inherits Window {
 
         // 输出（脚本 stdout/stderr）
         Rectangle { vertical-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 4px;
-            ScrollView {
-                Text { x: 8px; y: 8px; width: root.width - 44px; text: root.output; wrap: word-wrap;
-                    font-family: Theme.mono; font-size: Theme.fs-sm; color: Theme.text; }
+            VerticalLayout {
+                padding: 8px;
+                Text { text: root.output; font-family: Theme.mono; font-size: Theme.fs-sm; color: Theme.text; }
             }
         }
     }

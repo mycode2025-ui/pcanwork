@@ -108,9 +108,10 @@ impl Default for Settings {
 
 fn settings_path() -> PathBuf {
     if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent() {
-            return dir.join("pcanwork_settings.json");
-        }
+        && let Some(dir) = exe.parent()
+    {
+        return dir.join("pcanwork_settings.json");
+    }
     PathBuf::from("pcanwork_settings.json")
 }
 

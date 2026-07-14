@@ -3,7 +3,7 @@
 
 use crate::dbc::Decoded;
 use crate::{
-    fmt_wall, id_str, App, AppWindow, ByteCell, DisplayItem, FrameRec, MsgRow, DISPLAY_CAP,
+    App, AppWindow, ByteCell, DISPLAY_CAP, DisplayItem, FrameRec, MsgRow, fmt_wall, id_str,
 };
 use slint::{Model, ModelRc, VecModel};
 use std::collections::HashMap;
@@ -46,7 +46,13 @@ pub(crate) fn make_msgrow(
     let data_text: String = r
         .data
         .chunks(16)
-        .map(|chunk| chunk.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" "))
+        .map(|chunk| {
+            chunk
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     MsgRow {
@@ -179,7 +185,10 @@ pub(crate) fn msg_view_signature(a: &App) -> u64 {
     a.time_mode.hash(&mut h); // 时间显示模式(相对/绝对/系统)切换需重建
     // expanded set
     a.expanded_keys.len().hash(&mut h);
-    let exp_sum: u64 = a.expanded_keys.iter().fold(0u64, |acc, k| acc ^ k.wrapping_mul(0x9E3779B97F4A7C15));
+    let exp_sum: u64 = a
+        .expanded_keys
+        .iter()
+        .fold(0u64, |acc, k| acc ^ k.wrapping_mul(0x9E3779B97F4A7C15));
     exp_sum.hash(&mut h);
     // whether a DBC is loaded (affects the Name column and expandability)
     a.dbcs.len().hash(&mut h);
@@ -216,7 +225,8 @@ pub(crate) fn build_msg_table(a: &mut App, ui: &AppWindow) {
             let mut latest: HashMap<u64, &FrameRec> = HashMap::new();
             let mut order: Vec<u64> = Vec::new();
             for r in a.trace.iter() {
-                if a.filter.accept(r.id, &r.name, &r.data, r.tx) && latest.insert(r.key, r).is_none()
+                if a.filter.accept(r.id, &r.name, &r.data, r.tx)
+                    && latest.insert(r.key, r).is_none()
                 {
                     order.push(r.key);
                 }

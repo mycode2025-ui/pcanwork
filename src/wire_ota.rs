@@ -1,4 +1,4 @@
-#[allow(unused_variables)]
+﻿#[allow(unused_variables)]
 fn wire_ota_windows(
     app: Rc<std::cell::RefCell<App>>,
     ui: &AppWindow,
@@ -9,7 +9,7 @@ fn wire_ota_windows(
         let uw = uds_window.as_weak();
         ui.on_open_uds_window(move || {
             if let Some(w) = uw.upgrade() {
-                let _ = w.show();
+                show_child_window(&w);
             }
         });
     }
@@ -17,7 +17,7 @@ fn wire_ota_windows(
         let xw = xcp_window.as_weak();
         ui.on_open_xcp_window(move || {
             if let Some(w) = xw.upgrade() {
-                let _ = w.show();
+                show_child_window(&w);
             }
         });
     }

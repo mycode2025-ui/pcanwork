@@ -2,7 +2,7 @@
 //! Extracted from main.rs. Node labels switch language via `App::lang_en`
 //! (the Chinese string literals below are UI data, not comments).
 
-use crate::{id_str, App, AppWindow, TreeRow};
+use crate::{App, AppWindow, TreeRow, id_str};
 use slint::{ModelRc, VecModel};
 use std::rc::Rc;
 
@@ -15,6 +15,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
     let sig = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
+        a.project_name.hash(&mut h);
         a.connected.hash(&mut h);
         a.conn_name.hash(&mut h);
         a.running.hash(&mut h);
@@ -94,7 +95,11 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         &mut keys,
         &mut dbc_indices,
         0,
-        if en { "Project: CAN_Test_Project" } else { "工程: CAN_Test_Project" },
+        &format!(
+            "{}: {}",
+            "Project",
+            a.project_name
+        ),
         "project",
         false,
         "project",
@@ -106,7 +111,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
-        &mut dbc_indices,
+            &mut dbc_indices,
             1,
             if en { "Hardware" } else { "硬件设备" },
             "device",
@@ -116,35 +121,12 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
             hardware_open,
         );
         if hardware_open {
-            let dev_label = if a.connected {
-                if a.conn_name.is_empty() {
-                    if en { "Connected".to_string() } else { "已连接".to_string() }
-                } else {
-                    a.conn_name.clone()
-                }
-            } else if en {
-                "Disconnected".to_string()
-            } else {
-                "未连接".to_string()
-            };
-            push(
-                &mut t,
-                &mut keys,
-        &mut dbc_indices,
-                2,
-                &dev_label,
-                "device",
-                a.connected,
-                "",
-                false,
-                false,
-            );
             for c in &a.channels {
                 push(
                     &mut t,
                     &mut keys,
-        &mut dbc_indices,
-                    3,
+                    &mut dbc_indices,
+                    2,
                     &format!(
                         "CAN{} - {} - {} - {} - {}",
                         c.sw_channel,
@@ -176,7 +158,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
-        &mut dbc_indices,
+            &mut dbc_indices,
             1,
             if en { "Database" } else { "数据库" },
             "dbc",
@@ -190,7 +172,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                 push(
                     &mut t,
                     &mut keys,
-        &mut dbc_indices,
+                    &mut dbc_indices,
                     2,
                     if en { "(none loaded)" } else { "(未加载)" },
                     "dbc",
@@ -206,7 +188,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                     push(
                         &mut t,
                         &mut keys,
-        &mut dbc_indices,
+                        &mut dbc_indices,
                         2,
                         &d.file_name,
                         "dbc",
@@ -224,7 +206,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                             push(
                                 &mut t,
                                 &mut keys,
-        &mut dbc_indices,
+                                &mut dbc_indices,
                                 3,
                                 &format!("0x{id:X} {name}"),
                                 "msg",
@@ -243,7 +225,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
-        &mut dbc_indices,
+            &mut dbc_indices,
             1,
             if en { "Send List" } else { "发送列表" },
             "tx",
@@ -257,7 +239,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                 push(
                     &mut t,
                     &mut keys,
-        &mut dbc_indices,
+                    &mut dbc_indices,
                     2,
                     &format!("{} {}", tx.name, id_str(tx.id, tx.ext)),
                     "tx",
@@ -273,7 +255,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         push(
             &mut t,
             &mut keys,
-        &mut dbc_indices,
+            &mut dbc_indices,
             1,
             if en { "Chart" } else { "曲线" },
             "curve",
@@ -284,7 +266,18 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         );
         if curve_open {
             for s in &a.series {
-                push(&mut t, &mut keys, &mut dbc_indices, 2, &s.name, "curve", false, "", false, false);
+                push(
+                    &mut t,
+                    &mut keys,
+                    &mut dbc_indices,
+                    2,
+                    &s.name,
+                    "curve",
+                    false,
+                    "",
+                    false,
+                    false,
+                );
             }
         }
     }

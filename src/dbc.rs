@@ -162,7 +162,9 @@ impl DbcDb {
 
     /// 报文字节长度（取定义长度，至少 1；不超出硬件 DLC 上限）。
     pub fn message_len(&self, id: u32) -> usize {
-        let Some(m) = self.by_id.get(&id) else { return 0 };
+        let Some(m) = self.by_id.get(&id) else {
+            return 0;
+        };
         (m.size as usize).max(1).min(64)
     }
 
@@ -387,7 +389,11 @@ mod tests {
         let data = db.encode(513, &vals).unwrap();
         let dec = db.decode(513, &data);
         let d = dec.iter().find(|x| x.name == "D").unwrap();
-        assert!((d.physical - 2.718281828).abs() < 1e-9, "got {}", d.physical);
+        assert!(
+            (d.physical - 2.718281828).abs() < 1e-9,
+            "got {}",
+            d.physical
+        );
         let _ = std::fs::remove_file(&p);
     }
 
@@ -402,12 +408,18 @@ mod tests {
         // Mux=0 → 只出 Mux + A=42, 无 B
         let d0 = db.decode(768, &[0, 42, 0, 0, 0, 0, 0, 0]);
         assert!(d0.iter().any(|d| d.name == "Mux"));
-        assert!(d0.iter().any(|d| d.name == "A" && (d.physical - 42.0).abs() < 1e-9));
+        assert!(
+            d0.iter()
+                .any(|d| d.name == "A" && (d.physical - 42.0).abs() < 1e-9)
+        );
         assert!(!d0.iter().any(|d| d.name == "B"));
 
         // Mux=1 → 只出 Mux + B=99, 无 A
         let d1 = db.decode(768, &[1, 99, 0, 0, 0, 0, 0, 0]);
-        assert!(d1.iter().any(|d| d.name == "B" && (d.physical - 99.0).abs() < 1e-9));
+        assert!(
+            d1.iter()
+                .any(|d| d.name == "B" && (d.physical - 99.0).abs() < 1e-9)
+        );
         assert!(!d1.iter().any(|d| d.name == "A"));
         let _ = std::fs::remove_file(&p);
     }

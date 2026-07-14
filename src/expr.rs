@@ -45,7 +45,8 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, String> {
                 while i < b.len() && (b[i] as char).is_ascii_hexdigit() {
                     i += 1;
                 }
-                let v = i64::from_str_radix(&s[start..i], 16).map_err(|_| "十六进制数无效".to_string())?;
+                let v = i64::from_str_radix(&s[start..i], 16)
+                    .map_err(|_| "十六进制数无效".to_string())?;
                 out.push(Tok::Num(v as f64));
             } else {
                 let start = i;
@@ -147,8 +148,14 @@ impl Parser<'_> {
         let mut v = self.mul_expr()?;
         loop {
             match self.peek() {
-                Some(Tok::Op('+')) => { self.eat(); v += self.mul_expr()?; }
-                Some(Tok::Op('-')) => { self.eat(); v -= self.mul_expr()?; }
+                Some(Tok::Op('+')) => {
+                    self.eat();
+                    v += self.mul_expr()?;
+                }
+                Some(Tok::Op('-')) => {
+                    self.eat();
+                    v -= self.mul_expr()?;
+                }
                 _ => break,
             }
         }
@@ -158,9 +165,20 @@ impl Parser<'_> {
         let mut v = self.unary()?;
         loop {
             match self.peek() {
-                Some(Tok::Op('*')) => { self.eat(); v *= self.unary()?; }
-                Some(Tok::Op('/')) => { self.eat(); let r = self.unary()?; v /= r; }
-                Some(Tok::Op('%')) => { self.eat(); let r = self.unary()?; v %= r; }
+                Some(Tok::Op('*')) => {
+                    self.eat();
+                    v *= self.unary()?;
+                }
+                Some(Tok::Op('/')) => {
+                    self.eat();
+                    let r = self.unary()?;
+                    v /= r;
+                }
+                Some(Tok::Op('%')) => {
+                    self.eat();
+                    let r = self.unary()?;
+                    v %= r;
+                }
                 _ => break,
             }
         }
@@ -220,7 +238,12 @@ pub fn eval(formula: &str, vars: &HashMap<String, f64>) -> Result<f64, String> {
     if t.is_empty() {
         return Err("空表达式".into());
     }
-    let mut p = Parser { t, pos: 0, vars, depth: 0 };
+    let mut p = Parser {
+        t,
+        pos: 0,
+        vars,
+        depth: 0,
+    };
     let v = p.or_expr()?;
     if p.pos != p.t.len() {
         return Err("表达式末尾有多余内容".into());
@@ -237,7 +260,12 @@ pub fn refs(formula: &str) -> Result<Vec<String>, String> {
     }
     // 先做一次语法校验(空变量表 -> 全 0)
     let empty = HashMap::new();
-    let mut p = Parser { t: t.clone(), pos: 0, vars: &empty, depth: 0 };
+    let mut p = Parser {
+        t: t.clone(),
+        pos: 0,
+        vars: &empty,
+        depth: 0,
+    };
     let _ = p.or_expr()?;
     if p.pos != p.t.len() {
         return Err("表达式末尾有多余内容".into());
@@ -245,7 +273,8 @@ pub fn refs(formula: &str) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for tok in &t {
         if let Tok::Ident(n) = tok
-            && !names.contains(n) {
+            && !names.contains(n)
+        {
             names.push(n.clone());
         }
     }

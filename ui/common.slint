@@ -246,6 +246,7 @@ export component Cell inherits Rectangle {
     in property <bool> mono: false;
     in property <TextHorizontalAlignment> align: left;
     width: w;
+    visible: w > 0px;
     clip: true;
     HorizontalLayout {
         padding-left: 7px;
@@ -266,6 +267,7 @@ export component HCell inherits Rectangle {
     in property <string> text;
     in property <length> w;
     width: w;
+    visible: w > 0px;
     background: Theme.header;
     Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
     Text {
@@ -286,6 +288,7 @@ export component SortHeader inherits Rectangle {
     in property <bool> sort-desc: false;
     callback clicked(int);
     width: w;
+    visible: w > 0px;
     background: ta.has-hover ? Theme.accent-soft : Theme.header;
     Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
     ta := TouchArea { clicked => { root.clicked(cidx); } }
@@ -309,6 +312,7 @@ export component TBtn inherits Rectangle {
     in property <bool> primary: false; // filled accent (primary action button)
     in property <bool> btn-enabled: true;
     in property <length> h: Theme.ctrl-h;
+    in property <length> fs: Theme.fs;
     callback clicked;
     width: txt.preferred-width + 22px;
     height: h;
@@ -330,7 +334,7 @@ export component TBtn inherits Rectangle {
         color: !root.btn-enabled ? Theme.text-dim : ((root.primary || root.active) ? white : Theme.text);
         vertical-alignment: center;
         horizontal-alignment: center;
-        font-size: Theme.fs;
+        font-size: root.fs;
     }
     ta := TouchArea { enabled: root.btn-enabled; clicked => { root.clicked(); } }
 }

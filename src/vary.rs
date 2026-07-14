@@ -18,13 +18,37 @@ pub enum VaryMode {
     /// Cycle `lo, lo+|diff|, ... (<= hi)` then wrap back to `lo`.
     Arithmetic { diff: f64, lo: f64, hi: f64 },
     /// Cycle `init, init*ratio, ...` while inside `[lo, hi]`, then restart.
-    Geometric { init: f64, ratio: f64, lo: f64, hi: f64 },
+    Geometric {
+        init: f64,
+        ratio: f64,
+        lo: f64,
+        hi: f64,
+    },
     /// `offset + amp*sin(omega*n + phase)`, saturated to `[lo, hi]`.
-    Sine { amp: f64, omega: f64, phase: f64, offset: f64, lo: f64, hi: f64 },
+    Sine {
+        amp: f64,
+        omega: f64,
+        phase: f64,
+        offset: f64,
+        lo: f64,
+        hi: f64,
+    },
     /// Triangle wave of `period` samples, `v_off + amp*tri`, saturated to `[lo, hi]`.
-    Triangle { period: f64, amp: f64, h_off: f64, v_off: f64, lo: f64, hi: f64 },
+    Triangle {
+        period: f64,
+        amp: f64,
+        h_off: f64,
+        v_off: f64,
+        lo: f64,
+        hi: f64,
+    },
     /// Rectangle wave of `period` samples, `high` while within `duty`, else `low`.
-    Rect { period: f64, duty: f64, high: f64, low: f64 },
+    Rect {
+        period: f64,
+        duty: f64,
+        high: f64,
+        low: f64,
+    },
     /// Uniform random in `[lo, hi]` (the caller supplies the random fraction).
     Random { lo: f64, hi: f64 },
     /// Cycle through a user list of values.
@@ -56,7 +80,12 @@ pub fn eval(mode: &VaryMode, n: u64, base: f64, rand01: f64) -> f64 {
             lo + k * d
         }
 
-        VaryMode::Geometric { init, ratio, lo, hi } => {
+        VaryMode::Geometric {
+            init,
+            ratio,
+            lo,
+            hi,
+        } => {
             let (lo, hi) = (lo.min(*hi), lo.max(*hi));
             if *ratio <= 0.0 || *init == 0.0 {
                 return clampf(*init, lo, hi);
@@ -79,21 +108,42 @@ pub fn eval(mode: &VaryMode, n: u64, base: f64, rand01: f64) -> f64 {
             clampf(init * ratio.powi(k), lo, hi)
         }
 
-        VaryMode::Sine { amp, omega, phase, offset, lo, hi } => {
-            clampf(offset + amp * (omega * nf + phase).sin(), *lo, *hi)
-        }
+        VaryMode::Sine {
+            amp,
+            omega,
+            phase,
+            offset,
+            lo,
+            hi,
+        } => clampf(offset + amp * (omega * nf + phase).sin(), *lo, *hi),
 
-        VaryMode::Triangle { period, amp, h_off, v_off, lo, hi } => {
+        VaryMode::Triangle {
+            period,
+            amp,
+            h_off,
+            v_off,
+            lo,
+            hi,
+        } => {
             let p = if *period <= 0.0 { 1.0 } else { *period };
             let x = ((nf + h_off).rem_euclid(p)) / p; // [0,1)
             let tri = 1.0 - 4.0 * (x - 0.5).abs(); // -1 at x=0/1, +1 at x=0.5
             clampf(v_off + amp * tri, *lo, *hi)
         }
 
-        VaryMode::Rect { period, duty, high, low } => {
+        VaryMode::Rect {
+            period,
+            duty,
+            high,
+            low,
+        } => {
             let p = if *period <= 0.0 { 1.0 } else { *period };
             let x = (nf.rem_euclid(p)) / p; // [0,1)
-            if x < duty.clamp(0.0, 1.0) { *high } else { *low }
+            if x < duty.clamp(0.0, 1.0) {
+                *high
+            } else {
+                *low
+            }
         }
 
         VaryMode::Random { lo, hi } => {
@@ -151,14 +201,22 @@ mod tests {
 
     #[test]
     fn arithmetic_cycles() {
-        let m = VaryMode::Arithmetic { diff: 1.0, lo: 0.0, hi: 3.0 };
+        let m = VaryMode::Arithmetic {
+            diff: 1.0,
+            lo: 0.0,
+            hi: 3.0,
+        };
         let got: Vec<f64> = (0..6).map(|n| eval(&m, n, 0.0, 0.0)).collect();
         assert_eq!(got, vec![0.0, 1.0, 2.0, 3.0, 0.0, 1.0]);
     }
 
     #[test]
     fn arithmetic_step2() {
-        let m = VaryMode::Arithmetic { diff: 2.0, lo: 0.0, hi: 5.0 };
+        let m = VaryMode::Arithmetic {
+            diff: 2.0,
+            lo: 0.0,
+            hi: 5.0,
+        };
         // steps = floor(5/2)+1 = 3 -> 0,2,4, wrap
         let got: Vec<f64> = (0..4).map(|n| eval(&m, n, 0.0, 0.0)).collect();
         assert_eq!(got, vec![0.0, 2.0, 4.0, 0.0]);
@@ -166,7 +224,12 @@ mod tests {
 
     #[test]
     fn geometric_cycles() {
-        let m = VaryMode::Geometric { init: 1.0, ratio: 2.0, lo: 1.0, hi: 8.0 };
+        let m = VaryMode::Geometric {
+            init: 1.0,
+            ratio: 2.0,
+            lo: 1.0,
+            hi: 8.0,
+        };
         let got: Vec<f64> = (0..5).map(|n| eval(&m, n, 0.0, 0.0)).collect();
         assert_eq!(got, vec![1.0, 2.0, 4.0, 8.0, 1.0]);
     }
@@ -219,7 +282,12 @@ mod tests {
 
     #[test]
     fn rect_wave() {
-        let m = VaryMode::Rect { period: 4.0, duty: 0.5, high: 1.0, low: 0.0 };
+        let m = VaryMode::Rect {
+            period: 4.0,
+            duty: 0.5,
+            high: 1.0,
+            low: 0.0,
+        };
         let got: Vec<f64> = (0..5).map(|n| eval(&m, n, 0.0, 0.0)).collect();
         assert_eq!(got, vec![1.0, 1.0, 0.0, 0.0, 1.0]);
     }
@@ -235,7 +303,9 @@ mod tests {
 
     #[test]
     fn sequence_cycles() {
-        let m = VaryMode::Sequence { values: vec![1.0, 2.5, -3.0] };
+        let m = VaryMode::Sequence {
+            values: vec![1.0, 2.5, -3.0],
+        };
         let got: Vec<f64> = (0..4).map(|n| eval(&m, n, 0.0, 0.0)).collect();
         assert_eq!(got, vec![1.0, 2.5, -3.0, 1.0]);
     }

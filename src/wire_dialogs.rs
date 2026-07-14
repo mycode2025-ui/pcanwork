@@ -19,6 +19,82 @@ fn wire_dialogs(
     {
         let app = app.clone();
         let chw = channel_window.as_weak();
+        channel_window.on_pcan_rescan(move || {
+            let mut a = app.borrow_mut();
+            a.pcan_devices = can::pcan_attached_channels();
+            if let Some(chw) = chw.upgrade() {
+                refresh_channel_window_lists(&chw, &a);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let chw = channel_window.as_weak();
+        channel_window.on_pcan_select(move |i| {
+            let mut a = app.borrow_mut();
+            if a.pcan_devices.is_empty() {
+                a.pcan_devices = can::pcan_attached_channels();
+            }
+            let devices = a.pcan_devices.clone();
+            let idx = i as usize;
+            if let Some(hw) = devices.get(idx) {
+                if let Some(existing) = a.channels.iter().position(|c| {
+                    c.device_type.eq_ignore_ascii_case("PCAN") && c.channel_index == hw.channel_index
+                }) {
+                    a.channel_sel = existing as i32;
+                } else {
+                    let mut cfg = default_channel();
+                    cfg.device_type = "PCAN".to_string();
+                    cfg.hardware_label = hw.device_name.clone();
+                    cfg.device_index = 0;
+                    cfg.channel_index = hw.channel_index;
+                    cfg.is_fd = hw.fd_capable;
+                    if hw.fd_capable {
+                        cfg.data_baud = "500K".to_string();
+                    }
+                    a.channels.push(cfg);
+                    renumber_channels(&mut a);
+                    a.channel_sel = a.channels.len() as i32 - 1;
+                }
+                if let Some(chw) = chw.upgrade() {
+                    chw.set_chan_sel(a.channel_sel);
+                    refresh_channel_window_lists(&chw, &a);
+                    if let Some(c) = a.channels.get(a.channel_sel as usize) {
+                        set_chan_form(&chw, c);
+                    }
+                }
+            } else if idx == devices.len() {
+                if let Some(existing) = a.channels.iter().position(|c| {
+                    c.device_type.eq_ignore_ascii_case("USBCAN-E-U")
+                        && c.device_index == 0
+                        && c.channel_index == 0
+                }) {
+                    a.channel_sel = existing as i32;
+                } else {
+                    let mut cfg = default_channel();
+                    cfg.device_type = "USBCAN-E-U".to_string();
+                    cfg.hardware_label = "USBCAN-E-U".to_string();
+                    cfg.device_index = 0;
+                    cfg.channel_index = 0;
+                    cfg.is_fd = false;
+                    cfg.data_baud = "500K".to_string();
+                    a.channels.push(cfg);
+                    renumber_channels(&mut a);
+                    a.channel_sel = a.channels.len() as i32 - 1;
+                }
+                if let Some(chw) = chw.upgrade() {
+                    chw.set_chan_sel(a.channel_sel);
+                    refresh_channel_window_lists(&chw, &a);
+                    if let Some(c) = a.channels.get(a.channel_sel as usize) {
+                        set_chan_form(&chw, c);
+                    }
+                }
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let chw = channel_window.as_weak();
         channel_window.on_chan_add(move || {
             let mut a = app.borrow_mut();
             let mut cfg = a.channels.last().cloned().unwrap_or_else(default_channel);
@@ -28,7 +104,7 @@ fn wire_dialogs(
             a.channel_sel = a.channels.len() as i32 - 1;
             if let Some(chw) = chw.upgrade() {
                 chw.set_chan_sel(a.channel_sel);
-                chw.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(&a)))));
+                refresh_channel_window_lists(&chw, &a);
                 if let Some(c) = a.channels.get(a.channel_sel as usize) {
                     set_chan_form(&chw, c);
                 }
@@ -51,7 +127,7 @@ fn wire_dialogs(
                         set_chan_form(&chw, c);
                     }
                 }
-                a.log("已克隆通道（请修改硬件通道索引）");
+                a.log("Channel cloned; check the hardware channel index");
             }
         });
     }
@@ -61,15 +137,21 @@ fn wire_dialogs(
         channel_window.on_chan_remove(move |i| {
             let mut a = app.borrow_mut();
             let i = i as usize;
-            if i < a.channels.len() && a.channels.len() > 1 {
+            if i < a.channels.len() {
                 a.channels.remove(i);
                 renumber_channels(&mut a);
-                a.channel_sel = (a.channel_sel.min(a.channels.len() as i32 - 1)).max(0);
+                a.channel_sel = if a.channels.is_empty() {
+                    0
+                } else {
+                    (a.channel_sel.min(a.channels.len() as i32 - 1)).max(0)
+                };
                 if let Some(chw) = chw.upgrade() {
                     chw.set_chan_sel(a.channel_sel);
-                    chw.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(&a)))));
+                    refresh_channel_window_lists(&chw, &a);
                     if let Some(c) = a.channels.get(a.channel_sel as usize) {
                         set_chan_form(&chw, c);
+                    } else {
+                        set_chan_form(&chw, &default_channel());
                     }
                 }
             }
@@ -89,12 +171,14 @@ fn wire_dialogs(
     }
     {
         let app = app.clone();
+        let chw = channel_window.as_weak();
         channel_window.on_chan_edit(move |field, value| {
             let mut a = app.borrow_mut();
             let sel = a.channel_sel;
             if let Some(c) = a.channels.get_mut(sel as usize) {
                 match field.as_str() {
                     "device_type" => c.device_type = value.to_string(),
+                    "hardware_label" => c.hardware_label = value.to_string(),
                     "device_index" => c.device_index = value.trim().parse().unwrap_or(c.device_index),
                     "channel_index" => c.channel_index = value.trim().parse().unwrap_or(c.channel_index),
                     "baud" => c.baud = value.to_string(),
@@ -105,6 +189,14 @@ fn wire_dialogs(
                     "ip" => c.ip = value.to_string(),
                     "port" => c.port = value.to_string(),
                     _ => {}
+                }
+            }
+            if matches!(
+                field.as_str(),
+                "device_type" | "hardware_label" | "device_index" | "channel_index" | "baud" | "data_baud" | "is_fd" | "ip" | "port"
+            ) {
+                if let Some(chw) = chw.upgrade() {
+                    refresh_channel_window_lists(&chw, &a);
                 }
             }
         });
@@ -119,10 +211,9 @@ fn wire_dialogs(
                 a.device_cfg = c;
             }
             let n = a.channels.len();
-            a.log(format!("已保存 {n} 个通道配置"));
-            // 刷新左侧通道列表，使其反映本次编辑(设备类型/波特率等)，否则列表停留在旧值
+            a.log(format!("Saved {n} channel configuration(s)"));
             if let Some(chw) = chw.upgrade() {
-                chw.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(&a)))));
+                refresh_channel_window_lists(&chw, &a);
             }
         });
     }
@@ -291,7 +382,6 @@ fn wire_dialogs(
             let cc = chart_s.trim().parse::<usize>().unwrap_or(a.chart_cap).clamp(500, 1_000_000);
             a.trace_cap = tc;
             a.chart_cap = cc;
-            // 立即按新上限裁剪现有缓存
             while a.trace.len() > tc {
                 a.trace.pop_front();
             }
@@ -314,7 +404,6 @@ fn wire_dialogs(
             }
         });
     }
-    // 触发器窗口：打开
     {
         let app = app.clone();
         let tgw = trigger_window.as_weak();
@@ -325,7 +414,6 @@ fn wire_dialogs(
             }
         });
     }
-    // 仿真面板：打开
     {
         let app = app.clone();
         let spw = sim_panel_window.as_weak();
@@ -336,7 +424,6 @@ fn wire_dialogs(
             }
         });
     }
-    // 串口工具：作为独立 exe 启动(同目录的 serial-tool.exe / 旧名兼容)
     {
         let app = app.clone();
         ui.on_open_serial_tool(move || {
@@ -351,7 +438,6 @@ fn wire_dialogs(
                         use std::os::windows::process::CommandExt;
                         launched = std::process::Command::new(&p)
                             .current_dir(dir)
-                            // CREATE_NO_WINDOW：启动子进程时不弹出控制台命令行窗口
                             .creation_flags(0x0800_0000)
                             .spawn()
                             .is_ok();
@@ -366,7 +452,6 @@ fn wire_dialogs(
             });
         });
     }
-    // Modbus 工具：作为独立 exe 启动(同目录的 modbus-tools.exe)，与串口工具同一模式
     {
         let app = app.clone();
         ui.on_open_modbus_tool(move || {
@@ -380,7 +465,7 @@ fn wire_dialogs(
                     use std::os::windows::process::CommandExt;
                     launched = std::process::Command::new(&p)
                         .current_dir(dir)
-                        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW：不弹控制台窗口
+                        .creation_flags(0x0800_0000)
                         .spawn()
                         .is_ok();
                 }
@@ -392,7 +477,6 @@ fn wire_dialogs(
             });
         });
     }
-    // 触发器：布防/应用
     {
         let app = app.clone();
         let uiw = ui.as_weak();
@@ -423,7 +507,6 @@ fn wire_dialogs(
                 3 => TrigAction::SendFrame,
                 _ => TrigAction::Alarm,
             };
-            // 仅 SendFrame 用到的响应帧参数
             let send_id = u32::from_str_radix(
                 w.get_send_id().trim().trim_start_matches("0x").trim_start_matches("0X"),
                 16,
@@ -463,7 +546,6 @@ fn wire_dialogs(
             }
         });
     }
-    // 触发器：撤防
     {
         let app = app.clone();
         let uiw = ui.as_weak();

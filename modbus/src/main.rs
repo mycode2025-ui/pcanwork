@@ -15,10 +15,10 @@ use backend::{
     Cmd, DerivedCh, LogCfg, MasterCfg, ScanCfg, SimCfg, SimMode, SlaveCfg, SlaveScanCfg, UiCfg,
     WriteFunc, WriteItem, WriteReq,
 };
-use slint::VecModel;
 use format::{Order, RegFormat, Scaling};
-use protocol::{Area, ColorRules, CmpOp, Transport, ValueNames};
+use protocol::{Area, CmpOp, ColorRules, Transport, ValueNames};
 use slint::Model;
+use slint::VecModel;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -76,7 +76,11 @@ fn wl_items(rows: &slint::ModelRc<WriteRow>, start: i32) -> Vec<WriteItem> {
             if !(0..=65535).contains(&value) || !(0..=65535).contains(&address) {
                 return None;
             }
-            Some(WriteItem { address: address as u16, value: value as u16, inc: r.auto })
+            Some(WriteItem {
+                address: address as u16,
+                value: value as u16,
+                inc: r.auto,
+            })
         })
         .collect()
 }
@@ -152,8 +156,18 @@ fn master_chart_ident(a: &AppWindow) -> String {
     match a.get_m_transport() {
         1 => format!("RTU  {}  ·  Slave ID {id}", a.get_m_serial()),
         t => {
-            let kind = match t { 0 => "TCP", 2 => "UDP", 3 => "RTU/TCP", 4 => "RTU/UDP", _ => "TCP" };
-            format!("{kind}  {}:{}  ·  Slave ID {id}", a.get_m_host(), a.get_m_port())
+            let kind = match t {
+                0 => "TCP",
+                2 => "UDP",
+                3 => "RTU/TCP",
+                4 => "RTU/UDP",
+                _ => "TCP",
+            };
+            format!(
+                "{kind}  {}:{}  ·  Slave ID {id}",
+                a.get_m_host(),
+                a.get_m_port()
+            )
         }
     }
 }
@@ -164,7 +178,11 @@ fn slave_chart_ident(a: &AppWindow) -> String {
     if a.get_s_transport() == 1 {
         format!("RTU  {}  ·  Unit ID {id}", a.get_s_serial())
     } else {
-        format!("TCP  bind {}:{}  ·  Unit ID {id}", a.get_s_host(), a.get_s_port())
+        format!(
+            "TCP  bind {}:{}  ·  Unit ID {id}",
+            a.get_s_host(),
+            a.get_s_port()
+        )
     }
 }
 
@@ -189,10 +207,10 @@ fn slave_transport(a: &AppWindow) -> Transport {
 /// Map an index to its data area.
 fn func_area(i: i32) -> Area {
     match i {
-        0 | 4 | 6 => Area::Coils,            // FC01 read / FC05 write single / FC15 write multi
-        1 => Area::DiscreteInputs,           // FC02 read
-        3 => Area::InputRegisters,           // FC04 read
-        _ => Area::HoldingRegisters,         // FC03 read / FC06 / FC16
+        0 | 4 | 6 => Area::Coils, // FC01 read / FC05 write single / FC15 write multi
+        1 => Area::DiscreteInputs, // FC02 read
+        3 => Area::InputRegisters, // FC04 read
+        _ => Area::HoldingRegisters, // FC03 read / FC06 / FC16
     }
 }
 
@@ -219,7 +237,10 @@ fn fc_label(i: i32) -> &'static str {
 /// 纯十六进制(可带 0x)→ u16, 用于 FC22 的 AND/OR 掩码。
 fn parse_hex_u16(s: &str) -> Option<u16> {
     let t = s.trim();
-    let h = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")).unwrap_or(t);
+    let h = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .unwrap_or(t);
     u16::from_str_radix(h, 16).ok()
 }
 /// 0x.. 按十六进制, 否则按十进制 → u16, 用于 FC23 写入值。
@@ -233,10 +254,10 @@ fn parse_u16_field(s: &str) -> Option<u16> {
 
 fn func_write(i: i32) -> WriteFunc {
     match i {
-        4 => WriteFunc::SingleCoil,  // FC05
-        6 => WriteFunc::MultiCoils,  // FC15
-        7 => WriteFunc::MultiRegs,   // FC16
-        _ => WriteFunc::SingleReg,   // FC06
+        4 => WriteFunc::SingleCoil, // FC05
+        6 => WriteFunc::MultiCoils, // FC15
+        7 => WriteFunc::MultiRegs,  // FC16
+        _ => WriteFunc::SingleReg,  // FC06
     }
 }
 
@@ -333,7 +354,11 @@ fn sim_cfg(a: &AppWindow) -> SimCfg {
         min: a.get_sim_min() as i64,
         max: a.get_sim_max() as i64,
         interval_ms: a.get_sim_interval().max(50) as u64,
-        target: if a.get_sim_one() { a.get_sim_target() } else { -1 },
+        target: if a.get_sim_one() {
+            a.get_sim_target()
+        } else {
+            -1
+        },
     }
 }
 
@@ -434,7 +459,10 @@ fn parse_csv_line(line: &str) -> Vec<String> {
 }
 
 fn is_yes(s: &str) -> bool {
-    matches!(s.trim().to_ascii_lowercase().as_str(), "yes" | "y" | "true" | "1" | "on")
+    matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "yes" | "y" | "true" | "1" | "on"
+    )
 }
 
 fn serialize_workspace(a: &AppWindow) -> String {
@@ -583,42 +611,58 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- Master ----
-    on_cmd!(on_master_connect, |a: &AppWindow| Cmd::MasterConnect(master_cfg(a)));
+    on_cmd!(on_master_connect, |a: &AppWindow| Cmd::MasterConnect(
+        master_cfg(a)
+    ));
     {
         let tx = tx.clone();
         app.on_master_disconnect(move || {
             let _ = tx.send(Cmd::MasterDisconnect);
         });
     }
-    on_cmd!(on_master_write, |a: &AppWindow| Cmd::MasterWrite(WriteReq {
-        func: WriteFunc::from_index(a.get_wd_func()),
-        address: a.get_wd_address() as u16,
-        text: a.get_wd_text().to_string(),
-        encode: write_encode_fmt(a.get_wd_type(), a.get_wd_order()),
-    }));
+    on_cmd!(on_master_write, |a: &AppWindow| Cmd::MasterWrite(
+        WriteReq {
+            func: WriteFunc::from_index(a.get_wd_func()),
+            address: a.get_wd_address() as u16,
+            text: a.get_wd_text().to_string(),
+            encode: write_encode_fmt(a.get_wd_type(), a.get_wd_order()),
+        }
+    ));
     on_cmd!(on_master_format_changed, |a: &AppWindow| Cmd::MasterFormat(
         RegFormat::from_index(a.get_m_format())
     ));
-    on_cmd!(on_master_scaling, |a: &AppWindow| Cmd::MasterScaling(scaling_cfg(a)));
-    on_cmd!(on_master_colors, |a: &AppWindow| Cmd::MasterColors(colors_cfg(a)));
-    on_cmd!(on_master_cell_format, |a: &AppWindow| Cmd::MasterCellFormat {
-        address: a.get_cf_addr() as u16,
-        format: Some(RegFormat::from_index(a.get_cf_fmt())),
+    on_cmd!(on_master_scaling, |a: &AppWindow| Cmd::MasterScaling(
+        scaling_cfg(a)
+    ));
+    on_cmd!(on_master_colors, |a: &AppWindow| Cmd::MasterColors(
+        colors_cfg(a)
+    ));
+    on_cmd!(on_master_cell_format, |a: &AppWindow| {
+        Cmd::MasterCellFormat {
+            address: a.get_cf_addr() as u16,
+            format: Some(RegFormat::from_index(a.get_cf_fmt())),
+        }
     });
-    on_cmd!(on_master_cell_format_clear, |a: &AppWindow| Cmd::MasterCellFormat {
-        address: a.get_cf_addr() as u16,
-        format: None,
+    on_cmd!(on_master_cell_format_clear, |a: &AppWindow| {
+        Cmd::MasterCellFormat {
+            address: a.get_cf_addr() as u16,
+            format: None,
+        }
     });
     // 从站 per-cell 格式(与主站对等; 对话框据 active-mode 路由到这里)
     on_cmd!(on_slave_cell_format, |a: &AppWindow| Cmd::SlaveCellFormat {
         address: a.get_cf_addr() as u16,
         format: Some(RegFormat::from_index(a.get_cf_fmt())),
     });
-    on_cmd!(on_slave_cell_format_clear, |a: &AppWindow| Cmd::SlaveCellFormat {
-        address: a.get_cf_addr() as u16,
-        format: None,
+    on_cmd!(on_slave_cell_format_clear, |a: &AppWindow| {
+        Cmd::SlaveCellFormat {
+            address: a.get_cf_addr() as u16,
+            format: None,
+        }
     });
-    on_cmd!(on_master_derived, |a: &AppWindow| Cmd::MasterDerived(parse_derived(&a.get_dv_text())));
+    on_cmd!(on_master_derived, |a: &AppWindow| Cmd::MasterDerived(
+        parse_derived(&a.get_dv_text())
+    ));
     on_cmd!(on_master_write_once, |a: &AppWindow| Cmd::MasterWriteOnce {
         func: func_write(a.get_m_function()),
         items: wl_items(&a.get_wl_rows(), a.get_m_address()),
@@ -646,16 +690,25 @@ fn main() -> Result<(), slint::PlatformError> {
             a.set_wl_active(true);
         });
     }
-    on_cmd!(on_master_auto_write_stop, |_a: &AppWindow| Cmd::MasterAutoWriteStop);
+    on_cmd!(on_master_auto_write_stop, |_a: &AppWindow| {
+        Cmd::MasterAutoWriteStop
+    });
     // ---- FC22 Mask Write / FC23 Read-Write Multiple ----
     {
         let weak = app.as_weak();
         let tx = tx.clone();
         app.on_master_mask_write(move || {
             let Some(a) = weak.upgrade() else { return };
-            match (parse_hex_u16(a.get_mw_and().as_str()), parse_hex_u16(a.get_mw_or().as_str())) {
+            match (
+                parse_hex_u16(a.get_mw_and().as_str()),
+                parse_hex_u16(a.get_mw_or().as_str()),
+            ) {
                 (Some(and_mask), Some(or_mask)) => {
-                    let _ = tx.send(Cmd::MasterMaskWrite { address: a.get_mw_addr() as u16, and_mask, or_mask });
+                    let _ = tx.send(Cmd::MasterMaskWrite {
+                        address: a.get_mw_addr() as u16,
+                        and_mask,
+                        or_mask,
+                    });
                 }
                 _ => a.set_m_status("FC22: AND/OR 掩码需为十六进制(0..FFFF)".into()),
             }
@@ -686,10 +739,22 @@ fn main() -> Result<(), slint::PlatformError> {
     // ---- Write List grid model (UI-owned; rows derived from Start + Quantity) ----
     {
         let wl_model: Rc<VecModel<WriteRow>> = Rc::new(VecModel::from(vec![
-            WriteRow { value: "0".into(), auto: false },
-            WriteRow { value: "0".into(), auto: false },
-            WriteRow { value: "0".into(), auto: false },
-            WriteRow { value: "0".into(), auto: false },
+            WriteRow {
+                value: "0".into(),
+                auto: false,
+            },
+            WriteRow {
+                value: "0".into(),
+                auto: false,
+            },
+            WriteRow {
+                value: "0".into(),
+                auto: false,
+            },
+            WriteRow {
+                value: "0".into(),
+                auto: false,
+            },
         ]));
         app.set_wl_rows(wl_model.clone().into());
         {
@@ -701,7 +766,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     m.remove(m.row_count() - 1);
                 }
                 while m.row_count() < n {
-                    m.push(WriteRow { value: "0".into(), auto: false });
+                    m.push(WriteRow {
+                        value: "0".into(),
+                        auto: false,
+                    });
                 }
             });
         }
@@ -729,7 +797,10 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let tx = tx.clone();
         app.on_master_chart_axis(move |addr, axis| {
-            let _ = tx.send(Cmd::MasterChartAxis { addr: addr as u16, right: axis == 1 });
+            let _ = tx.send(Cmd::MasterChartAxis {
+                addr: addr as u16,
+                right: axis == 1,
+            });
         });
     }
     {
@@ -743,7 +814,9 @@ fn main() -> Result<(), slint::PlatformError> {
                     .save_file()
                     .await
                 {
-                    let _ = tx.send(Cmd::MasterChartExport(file.path().to_string_lossy().to_string()));
+                    let _ = tx.send(Cmd::MasterChartExport(
+                        file.path().to_string_lossy().to_string(),
+                    ));
                 }
             });
         });
@@ -769,20 +842,24 @@ fn main() -> Result<(), slint::PlatformError> {
             });
         });
     }
-    on_cmd!(on_master_scan_address, |a: &AppWindow| Cmd::ScanAddress(ScanCfg {
-        transport: master_transport(a),
-        slave_id: a.get_m_slave_id() as u8,
-        area: Area::from_index(a.get_sc_func()),
-        start: a.get_sc_start() as u16,
-        count: a.get_sc_count() as u16,
-    }));
-    on_cmd!(on_master_scan_slave, |a: &AppWindow| Cmd::ScanSlave(SlaveScanCfg {
-        transport: master_transport(a),
-        area: Area::from_index(a.get_sc_func()),
-        address: a.get_sc_addr() as u16,
-        from_id: a.get_sc_fromid() as u8,
-        to_id: a.get_sc_toid() as u8,
-    }));
+    on_cmd!(on_master_scan_address, |a: &AppWindow| Cmd::ScanAddress(
+        ScanCfg {
+            transport: master_transport(a),
+            slave_id: a.get_m_slave_id() as u8,
+            area: Area::from_index(a.get_sc_func()),
+            start: a.get_sc_start() as u16,
+            count: a.get_sc_count() as u16,
+        }
+    ));
+    on_cmd!(on_master_scan_slave, |a: &AppWindow| Cmd::ScanSlave(
+        SlaveScanCfg {
+            transport: master_transport(a),
+            area: Area::from_index(a.get_sc_func()),
+            address: a.get_sc_addr() as u16,
+            from_id: a.get_sc_fromid() as u8,
+            to_id: a.get_sc_toid() as u8,
+        }
+    ));
     {
         let tx = tx.clone();
         app.on_master_scan_stop(move || {
@@ -806,7 +883,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 pf.set_fc_text(fc_label(func).into());
                 pf.set_is_write(func_is_write(func));
                 let _ = pf.show();
-                let _ = tx.send(Cmd::SetFloat { id, float: Some(pf.as_weak()) });
+                let _ = tx.send(Cmd::SetFloat {
+                    id,
+                    float: Some(pf.as_weak()),
+                });
                 return;
             }
             let Ok(pf) = PollFloat::new() else { return };
@@ -816,7 +896,10 @@ fn main() -> Result<(), slint::PlatformError> {
             {
                 let tx2 = tx.clone();
                 pf.on_chart_axis(move |addr, axis| {
-                    let _ = tx2.send(Cmd::MasterChartAxis { addr: addr as u16, right: axis == 1 });
+                    let _ = tx2.send(Cmd::MasterChartAxis {
+                        addr: addr as u16,
+                        right: axis == 1,
+                    });
                 });
             }
             {
@@ -856,9 +939,14 @@ fn main() -> Result<(), slint::PlatformError> {
     }
     // ---- Slave view-window tabs (MDI, mirroring the client) + floating views ----
     {
-        let s_windows: Rc<VecModel<SlaveWinTab>> = Rc::new(VecModel::from(vec![
-            SlaveWinTab { id: 1, title: "View 1".into(), area: 2, address: 0, quantity: 10, format: 1 },
-        ]));
+        let s_windows: Rc<VecModel<SlaveWinTab>> = Rc::new(VecModel::from(vec![SlaveWinTab {
+            id: 1,
+            title: "View 1".into(),
+            area: 2,
+            address: 0,
+            quantity: 10,
+            format: 1,
+        }]));
         app.set_s_windows(s_windows.clone().into());
         let s_next = Rc::new(std::cell::Cell::new(2i32));
 
@@ -927,7 +1015,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 if m.row_count() <= 1 {
                     return;
                 }
-                if let Some(idx) = (0..m.row_count()).find(|&i| m.row_data(i).map_or(false, |t| t.id == id)) {
+                if let Some(idx) =
+                    (0..m.row_count()).find(|&i| m.row_data(i).map_or(false, |t| t.id == id))
+                {
                     m.remove(idx);
                 }
                 if a.get_s_active() == id {
@@ -982,7 +1072,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 {
                     let tx = tx.clone();
                     mon.on_edit(move |addr, txt: slint::SharedString| {
-                        let _ = tx.send(Cmd::SlaveEdit { address: addr as u16, text: txt.to_string() });
+                        let _ = tx.send(Cmd::SlaveEdit {
+                            address: addr as u16,
+                            text: txt.to_string(),
+                        });
                     });
                 }
                 {
@@ -1131,14 +1224,25 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- Value names ----
-    on_cmd!(on_master_value_names, |a: &AppWindow| Cmd::MasterValueNames(value_names_cfg(a)));
+    on_cmd!(
+        on_master_value_names,
+        |a: &AppWindow| Cmd::MasterValueNames(value_names_cfg(a))
+    );
     {
         let weak = app.as_weak();
         app.on_vn_import(move || {
             let weak = weak.clone();
             let _ = slint::spawn_local(async move {
-                let Some(file) = rfd::AsyncFileDialog::new().add_filter("Text", &["txt"]).pick_file().await else { return };
-                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("Text", &["txt"])
+                    .pick_file()
+                    .await
+                else {
+                    return;
+                };
+                let Ok(content) = std::fs::read_to_string(file.path()) else {
+                    return;
+                };
                 if let Some(a) = weak.upgrade() {
                     a.set_vn_text(content.into());
                 }
@@ -1199,7 +1303,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 else {
                     return;
                 };
-                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                let Ok(content) = std::fs::read_to_string(file.path()) else {
+                    return;
+                };
                 let Some(a) = weak.upgrade() else { return };
                 apply_workspace(&a, &content);
                 // Push display settings to a live master, if any.
@@ -1292,47 +1398,75 @@ fn main() -> Result<(), slint::PlatformError> {
             let weak = weak.clone();
             let tx = tx.clone();
             let _ = slint::spawn_local(async move {
-                let Some(file) = rfd::AsyncFileDialog::new().add_filter("CSV", &["csv"]).pick_file().await else { return };
-                let Ok(content) = std::fs::read_to_string(file.path()) else { return };
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .pick_file()
+                    .await
+                else {
+                    return;
+                };
+                let Ok(content) = std::fs::read_to_string(file.path()) else {
+                    return;
+                };
                 let Some(a) = weak.upgrade() else { return };
                 let slave = a.get_active_mode() == 1;
-                        let mut count = 0;
-                        for line in content.lines() {
-                            if line.trim().is_empty() {
-                                continue;
-                            }
-                            let f = parse_csv_line(line);
-                            if f.len() < 3 || !is_yes(&f[0]) {
-                                continue; // header / not-selected rows
-                            }
-                            // 兼容两种格式: 新 `Import,Function,Address,Name,Value`(f[1]=表名)
-                            // 与旧 `Import,Address,Name,Value`(f[1]=地址)。
-                            let (area_opt, addr_field, name_idx, val_idx) =
-                                match Area::from_csv_name(&f[1]) {
-                                    Some(area) => (Some(area), f[1 + 1].as_str(), 3usize, 4usize),
-                                    None => (None, f[1].as_str(), 2usize, 3usize),
-                                };
-                            let Some(addr) = parse_csv_address(addr_field) else {
-                                continue; // 地址无法解析 → 跳过
-                            };
-                            let name = f.get(name_idx).map(|s| s.trim().to_string()).unwrap_or_default();
-                            if slave {
-                                let _ = tx.send(Cmd::SlaveName { address: addr, name });
-                                if let Some(val) = f.get(val_idx) {
-                                    let v = val.trim();
-                                    if !v.is_empty() {
-                                        // 有 Function 列 → 写到指定表; 否则写当前视图表
-                                        match area_opt {
-                                            Some(area) => { let _ = tx.send(Cmd::SlaveEditAt { area, address: addr, text: v.to_string() }); }
-                                            None => { let _ = tx.send(Cmd::SlaveEdit { address: addr, text: v.to_string() }); }
-                                        }
+                let mut count = 0;
+                for line in content.lines() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let f = parse_csv_line(line);
+                    if f.len() < 3 || !is_yes(&f[0]) {
+                        continue; // header / not-selected rows
+                    }
+                    // 兼容两种格式: 新 `Import,Function,Address,Name,Value`(f[1]=表名)
+                    // 与旧 `Import,Address,Name,Value`(f[1]=地址)。
+                    let (area_opt, addr_field, name_idx, val_idx) = match Area::from_csv_name(&f[1])
+                    {
+                        Some(area) => (Some(area), f[1 + 1].as_str(), 3usize, 4usize),
+                        None => (None, f[1].as_str(), 2usize, 3usize),
+                    };
+                    let Some(addr) = parse_csv_address(addr_field) else {
+                        continue; // 地址无法解析 → 跳过
+                    };
+                    let name = f
+                        .get(name_idx)
+                        .map(|s| s.trim().to_string())
+                        .unwrap_or_default();
+                    if slave {
+                        let _ = tx.send(Cmd::SlaveName {
+                            address: addr,
+                            name,
+                        });
+                        if let Some(val) = f.get(val_idx) {
+                            let v = val.trim();
+                            if !v.is_empty() {
+                                // 有 Function 列 → 写到指定表; 否则写当前视图表
+                                match area_opt {
+                                    Some(area) => {
+                                        let _ = tx.send(Cmd::SlaveEditAt {
+                                            area,
+                                            address: addr,
+                                            text: v.to_string(),
+                                        });
+                                    }
+                                    None => {
+                                        let _ = tx.send(Cmd::SlaveEdit {
+                                            address: addr,
+                                            text: v.to_string(),
+                                        });
                                     }
                                 }
-                            } else {
-                                let _ = tx.send(Cmd::MasterName { address: addr, name });
                             }
-                            count += 1;
                         }
+                    } else {
+                        let _ = tx.send(Cmd::MasterName {
+                            address: addr,
+                            name,
+                        });
+                    }
+                    count += 1;
+                }
                 if slave {
                     a.set_s_status(format!("Imported {count} register(s)").into());
                 } else {
@@ -1343,7 +1477,9 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- Slave ----
-    on_cmd!(on_slave_start, |a: &AppWindow| Cmd::SlaveStart(slave_cfg(a)));
+    on_cmd!(on_slave_start, |a: &AppWindow| Cmd::SlaveStart(slave_cfg(
+        a
+    )));
     {
         let tx = tx.clone();
         app.on_slave_stop(move || {
@@ -1379,9 +1515,15 @@ fn main() -> Result<(), slint::PlatformError> {
             });
         });
     }
-    on_cmd!(on_slave_scaling, |a: &AppWindow| Cmd::SlaveScaling(scaling_cfg(a)));
-    on_cmd!(on_slave_colors, |a: &AppWindow| Cmd::SlaveColors(colors_cfg(a)));
-    on_cmd!(on_slave_value_names, |a: &AppWindow| Cmd::SlaveValueNames(value_names_cfg(a)));
+    on_cmd!(on_slave_scaling, |a: &AppWindow| Cmd::SlaveScaling(
+        scaling_cfg(a)
+    ));
+    on_cmd!(on_slave_colors, |a: &AppWindow| Cmd::SlaveColors(
+        colors_cfg(a)
+    ));
+    on_cmd!(on_slave_value_names, |a: &AppWindow| Cmd::SlaveValueNames(
+        value_names_cfg(a)
+    ));
     {
         let weak = app.as_weak();
         let tx = tx.clone();
@@ -1427,7 +1569,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let tx = tx.clone();
         app.on_master_delete(move |addr| {
             if let Some(a) = weak.upgrade() {
-                let _ = tx.send(Cmd::MasterName { address: addr as u16, name: String::new() });
+                let _ = tx.send(Cmd::MasterName {
+                    address: addr as u16,
+                    name: String::new(),
+                });
                 a.set_m_selected_row(-1);
             }
         });
@@ -1451,7 +1596,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let tx = tx.clone();
         app.on_slave_delete(move |addr| {
             if let Some(a) = weak.upgrade() {
-                let _ = tx.send(Cmd::SlaveName { address: addr as u16, name: String::new() });
+                let _ = tx.send(Cmd::SlaveName {
+                    address: addr as u16,
+                    name: String::new(),
+                });
                 a.set_s_selected_row(-1);
             }
         });
@@ -1460,7 +1608,9 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let tx = tx.clone();
         app.on_slave_autoinc(move |addr| {
-            let _ = tx.send(Cmd::SlaveAutoInc { address: addr as u16 });
+            let _ = tx.send(Cmd::SlaveAutoInc {
+                address: addr as u16,
+            });
         });
     }
 
@@ -1515,7 +1665,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     let sel = a.get_m_selected_row();
                     if sel >= 0 {
                         if let Some(r) = a.get_m_rows().row_data(sel as usize) {
-                            let _ = tx.send(Cmd::MasterName { address: r.address as u16, name: String::new() });
+                            let _ = tx.send(Cmd::MasterName {
+                                address: r.address as u16,
+                                name: String::new(),
+                            });
                         }
                         a.set_m_selected_row(-1);
                     }
@@ -1523,7 +1676,10 @@ fn main() -> Result<(), slint::PlatformError> {
                     let sel = a.get_s_selected_row();
                     if sel >= 0 {
                         if let Some(r) = a.get_s_rows().row_data(sel as usize) {
-                            let _ = tx.send(Cmd::SlaveName { address: r.address as u16, name: String::new() });
+                            let _ = tx.send(Cmd::SlaveName {
+                                address: r.address as u16,
+                                name: String::new(),
+                            });
                         }
                         a.set_s_selected_row(-1);
                     }
@@ -1543,8 +1699,11 @@ fn main() -> Result<(), slint::PlatformError> {
                         2 => format!("Modbus UDP  {}:{}", a.get_m_host(), a.get_m_port()),
                         3 => format!("Modbus RTU over TCP  {}:{}", a.get_m_host(), a.get_m_port()),
                         4 => format!("Modbus RTU over UDP  {}:{}", a.get_m_host(), a.get_m_port()),
-                        _ => format!("Modbus RTU  {}  baud={}", a.get_m_serial(),
-                            baud_from_index(a.get_m_baud_index())),
+                        _ => format!(
+                            "Modbus RTU  {}  baud={}",
+                            a.get_m_serial(),
+                            baud_from_index(a.get_m_baud_index())
+                        ),
                     };
                     format!(
                         "Mode:        {}\n\
@@ -1558,21 +1717,28 @@ fn main() -> Result<(), slint::PlatformError> {
                         transport,
                         a.get_m_slave_id(),
                         match a.get_m_function() {
-                            0 => "0x Coils", 1 => "1x Discrete Inputs",
-                            2 => "4x Holding Registers", _ => "3x Input Registers",
+                            0 => "0x Coils",
+                            1 => "1x Discrete Inputs",
+                            2 => "4x Holding Registers",
+                            _ => "3x Input Registers",
                         },
                         a.get_m_address(),
                         a.get_m_quantity(),
                         a.get_m_scanrate(),
                         if a.get_m_connected() { "Yes" } else { "No" },
-                        a.get_m_tx(), a.get_m_rx(), a.get_m_err()
+                        a.get_m_tx(),
+                        a.get_m_rx(),
+                        a.get_m_err()
                     )
                 } else {
                     let transport = if a.get_s_transport() == 0 {
                         format!("Modbus TCP  {}:{}", a.get_s_host(), a.get_s_port())
                     } else {
-                        format!("Modbus RTU  {}  baud={}", a.get_s_serial(),
-                            baud_from_index(a.get_s_baud_index()))
+                        format!(
+                            "Modbus RTU  {}  baud={}",
+                            a.get_s_serial(),
+                            baud_from_index(a.get_s_baud_index())
+                        )
                     };
                     format!(
                         "Mode:        {}\n\
@@ -1584,10 +1750,16 @@ fn main() -> Result<(), slint::PlatformError> {
                          Requests:    {}",
                         transport,
                         a.get_s_unit_id(),
-                        if a.get_s_ignore_unit_id() { "  (ignore)" } else { "" },
+                        if a.get_s_ignore_unit_id() {
+                            "  (ignore)"
+                        } else {
+                            ""
+                        },
                         match a.get_s_area() {
-                            0 => "0x Coils", 1 => "1x Discrete Inputs",
-                            2 => "4x Holding Registers", _ => "3x Input Registers",
+                            0 => "0x Coils",
+                            1 => "1x Discrete Inputs",
+                            2 => "4x Holding Registers",
+                            _ => "3x Input Registers",
                         },
                         a.get_s_address(),
                         a.get_s_quantity(),
@@ -1613,7 +1785,10 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let tx = tx.clone();
         chart_win.on_axis_toggle(move |addr, axis| {
-            let _ = tx.send(Cmd::MasterChartAxis { addr: addr as u16, right: axis == 1 });
+            let _ = tx.send(Cmd::MasterChartAxis {
+                addr: addr as u16,
+                right: axis == 1,
+            });
         });
     }
     {
@@ -1627,7 +1802,9 @@ fn main() -> Result<(), slint::PlatformError> {
                     .save_file()
                     .await
                 {
-                    let _ = tx.send(Cmd::MasterChartExport(file.path().to_string_lossy().to_string()));
+                    let _ = tx.send(Cmd::MasterChartExport(
+                        file.path().to_string_lossy().to_string(),
+                    ));
                 }
             });
         });
@@ -1789,7 +1966,12 @@ fn apply_brand_titlebar() {
             let mut pid = 0u32;
             GetWindowThreadProcessId(h, &mut pid);
             if pid == GetCurrentProcessId() && IsWindowVisible(h) != 0 {
-                DwmSetWindowAttribute(h, DWMWA_CAPTION_COLOR, &caption as *const _ as *const c_void, 4);
+                DwmSetWindowAttribute(
+                    h,
+                    DWMWA_CAPTION_COLOR,
+                    &caption as *const _ as *const c_void,
+                    4,
+                );
                 DwmSetWindowAttribute(h, DWMWA_TEXT_COLOR, &text as *const _ as *const c_void, 4);
             }
         }

@@ -211,7 +211,10 @@ pub struct ValueNames {
 
 impl ValueNames {
     pub fn off() -> Self {
-        ValueNames { enabled: false, map: std::collections::HashMap::new() }
+        ValueNames {
+            enabled: false,
+            map: std::collections::HashMap::new(),
+        }
     }
 
     /// Returns the label for an (integer-valued) number, if mapped and enabled.
@@ -273,7 +276,10 @@ mod value_names_tests {
         assert_eq!(vn.lookup(3.0), None); // unmapped
         assert_eq!(vn.lookup(1.5), None); // non-integer
 
-        let disabled = ValueNames { enabled: false, ..vn.clone() };
+        let disabled = ValueNames {
+            enabled: false,
+            ..vn.clone()
+        };
         assert_eq!(disabled.lookup(0.0), None);
 
         // sorted serialisation

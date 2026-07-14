@@ -64,6 +64,11 @@ pub(crate) fn key_of(ch: u8, tx: bool, id: u32) -> u64 {
     ((ch as u64) << 40) | ((tx as u64) << 39) | (id as u64)
 }
 
+pub(crate) fn show_child_window<C: slint::ComponentHandle + 'static>(component: &C) {
+    let _ = component.show();
+    component.window().request_redraw();
+}
+
 pub(crate) struct FrameRec {
     pub(crate) no: u64,
     pub(crate) key: u64,
@@ -554,6 +559,8 @@ period_ms: self.period_ms.max(1),
 #[derive(Serialize, Deserialize)]
 struct Project {
     #[serde(default)]
+    name: String,
+    #[serde(default)]
     settings: settings::Settings,
     #[serde(default)]
     txs: Vec<TxTaskDto>,
@@ -607,6 +614,7 @@ impl Filter {
 
 pub(crate) struct App {
     pub(crate) cmd: Sender<Cmd>,
+    pub(crate) project_name: String,
     pub(crate) dbcs: Vec<DbcDb>,
     pub(crate) mode_trace: bool,
     pub(crate) time_mode: i32,
@@ -626,6 +634,7 @@ pub(crate) struct App {
     pub(crate) baud: String,
     device_cfg: DeviceConfig,
     pub(crate) channels: Vec<DeviceConfig>,
+    pub(crate) pcan_devices: Vec<can::PcanChannelInfo>,
     channel_sel: i32,
     rec_file: Option<std::io::BufWriter<std::fs::File>>,
     rec_fmt: RecFmt,
@@ -1223,8 +1232,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(windows)]
     windows_dpi::force_system_dpi_awareness();
 
-    // 渲染器选择(必须在创建任何窗口之前): GPU(femtovg) 在远程桌面/虚拟显示器下会回退到
-    // 软件 OpenGL(WARP), 内存暴涨数百 MB; 此时改用 Slint 原生 software 渲染器(几十 MB)。
     select_renderer();
 
     let ui = AppWindow::new()?;
@@ -1256,6 +1263,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let app = Rc::new(std::cell::RefCell::new(App {
         cmd: cmd_tx.clone(),
+        project_name: "CAN_Test_Project".into(),
         dbcs: Vec::new(),
         mode_trace: true,
         time_mode: 0,
@@ -1277,6 +1285,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sw_channel: 1,
             is_fd: false,
             device_type: "Virtual".into(),
+            hardware_label: String::new(),
             device_index: 0,
             channel_index: 0,
             baud: "500K".into(),
@@ -1290,6 +1299,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sw_channel: 1,
             is_fd: false,
             device_type: "Virtual".into(),
+            hardware_label: String::new(),
             device_index: 0,
             channel_index: 0,
             baud: "500K".into(),
@@ -1299,6 +1309,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ip: String::new(),
             port: String::new(),
         }],
+        pcan_devices: Vec::new(),
         channel_sel: 0,
         rec_file: None,
         rec_fmt: RecFmt::Csv,
@@ -1399,10 +1410,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         pb_total: 0,
         pb_playing: false,
     }));
-    app.borrow_mut()
-        .log("PcanWork 启动。点击“连接设备”自动尝试 PCAN，无卡则回退虚拟总线。");
 
-ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
+    ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
 
     ui.set_series(ModelRc::from(app.borrow().chart_model.clone()));
     chart_window.set_series(ModelRc::from(app.borrow().chart_model.clone()));
@@ -1413,7 +1422,7 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
     wire_main(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &uds_window, &xcp_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window, &console_help_window, &script_runner_window);
     wire_dialogs(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_chart(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
-    wire_tx(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
+    wire_tx(app.clone(), &ui, &tx_window);
     wire_ota_windows(app.clone(), &ui, &uds_window, &xcp_window);
     wire_playback(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
     wire_sim(app.clone(), &ui, &chart_window, &signal_window, &tx_window, &channel_window, &playback_window, &convert_window, &cache_window, &trigger_window, &sim_panel_window, &sim_prop_window);
@@ -1453,7 +1462,6 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
             let p = dbc_path.to_string_lossy().to_string();
             match DbcDb::load(&p) {
                 Ok(db) => {
-                    a.log(format!("自动加载示例 DBC: {}", db.file_name));
                     a.dbcs.push(db);
                     a.dbc_paths.push(p);
                 }
@@ -1461,9 +1469,6 @@ ui.set_msgs(ModelRc::from(app.borrow().msg_model.clone()));
             }
         }
         rebuild_dbc_snap(&mut a);
-
-a.log("就绪。点击「连接」选择设备，再点「启动」开始接收。".to_string());
-
 
         if let Some(s) = settings::load() {
             apply_settings(&mut a, &ui, &s);
@@ -1511,6 +1516,43 @@ for t in [
             a.lang_en = s.lang_en;
             a.log("已恢复上次配置".to_string());
         }
+
+        if let Some(path) = std::env::args_os().skip(1).find_map(|arg| {
+            let p = std::path::PathBuf::from(arg);
+            let is_project = p.extension()
+                .and_then(|x| x.to_str())
+                .map(|x| x.eq_ignore_ascii_case("pcprj") || x.eq_ignore_ascii_case("zcp") || x.eq_ignore_ascii_case("json"))
+                .unwrap_or(false);
+            if is_project { Some(p) } else { None }
+        }) {
+            match std::fs::read_to_string(&path)
+                .map_err(|e| format!("Read project failed: {e}"))
+                .and_then(|txt| serde_json::from_str::<Project>(&txt).map_err(|e| format!("Parse project failed: {e}")))
+            {
+                Ok(proj) => {
+                    a.project_name = if proj.name.trim().is_empty() {
+                        path.file_stem()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("CAN_Test_Project")
+                            .to_string()
+                    } else {
+                        proj.name.clone()
+                    };
+                    apply_settings(&mut a, &ui, &proj.settings);
+                    a.txs.clear();
+                    a.change_next.clear();
+                    for dto in proj.txs {
+                        let h = a.next_handle;
+                        a.next_handle += 1;
+                        a.txs.push(dto.into_task(h));
+                    }
+                    a.last_tree_sig = u64::MAX;
+                    a.log(format!("Opened project: {}", path.display()));
+                }
+                Err(e) => a.log(e),
+            }
+        }
+
     }
 
 
@@ -1800,11 +1842,7 @@ pub(crate) fn set_window_topmost(window: &slint::Window, on: bool) {
 #[cfg(not(windows))]
 pub(crate) fn set_window_topmost(_window: &slint::Window, _on: bool) {}
 
-/// 决定用哪个 Slint 渲染器, 在创建任何窗口前设置 SLINT_BACKEND 环境变量。
-/// 优先级: 环境变量 PCANWORK_RENDERER > 配置文件 settings.renderer > "auto"。
-/// auto = 远程桌面/虚拟显示器下用 software(CPU), 否则用 femtovg(GPU)。
 fn select_renderer() {
-    // 已被外部显式指定后端就不覆盖(尊重用户/调试)
     if std::env::var_os("SLINT_BACKEND").is_some() {
         return;
     }
@@ -1819,16 +1857,22 @@ fn select_renderer() {
         _ => detect_virtual_display(), // "auto"
     };
     let backend = if use_software { "winit-software" } else { "winit-femtovg" };
-    // 编辑 2024: set_var 为 unsafe
     unsafe {
         std::env::set_var("SLINT_BACKEND", backend);
     }
 }
 
-/// 检测是否处于远程/虚拟显示环境(RDP 会话, 或 ToDesk/向日葵/RustDesk/AnyDesk/TeamViewer 等
-/// 远程控制软件在运行)。这类环境下 GPU OpenGL 会回退到软件实现(WARP), 极吃内存,
-/// 应改用 Slint 原生 software 渲染。
-/// 注: ToDesk/向日葵是"控制台会话"(非 RDP), 故 SM_REMOTESESSION 抓不到, 改用进程名判断。
+pub(crate) fn restart_current_process() -> std::io::Result<()> {
+    let exe = std::env::current_exe()?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(std::env::args_os().skip(1));
+    if let Ok(dir) = std::env::current_dir() {
+        cmd.current_dir(dir);
+    }
+    cmd.spawn()?;
+    std::process::exit(0);
+}
+
 #[cfg(windows)]
 fn detect_virtual_display() -> bool {
     #[link(name = "user32")]
@@ -1860,14 +1904,12 @@ fn detect_virtual_display() -> bool {
         sz_exe_file: [u16; 260],
     }
 
-    // 1) RDP 会话直接判软件
     if unsafe { GetSystemMetrics(SM_REMOTESESSION) } != 0 {
         return true;
     }
 
-    // 2) 远程控制软件进程在跑 → 多半在远程使用, 用软件渲染更稳更省
     const REMOTE_EXE: [&str; 10] = [
-        "todesk", "sunlogin", "oray", "aweray", "awesun", // 向日葵: SunloginClient / AweSun / AweRay
+        "todesk", "sunlogin", "oray", "aweray", "awesun",
         "rustdesk", "anydesk", "teamviewer", "splashtop", "vncserver",
     ];
     let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
@@ -2391,6 +2433,7 @@ fn default_channel() -> DeviceConfig {
         sw_channel: 1,
         is_fd: false,
         device_type: "Virtual".into(),
+        hardware_label: String::new(),
         device_index: 0,
         channel_index: 0,
         baud: "500K".into(),
@@ -2413,6 +2456,7 @@ fn renumber_channels(a: &mut App) {
 fn set_chan_form(w: &ChannelConfigWindow, c: &DeviceConfig) {
     w.set_is_fd(c.is_fd);
     w.set_device_type(c.device_type.clone().into());
+    w.set_hardware_label(c.hardware_label.clone().into());
     w.set_device_index(c.device_index.to_string().into());
     w.set_channel_index(c.channel_index.to_string().into());
     w.set_baud(c.baud.clone().into());
@@ -2424,22 +2468,129 @@ fn set_chan_form(w: &ChannelConfigWindow, c: &DeviceConfig) {
 }
 
 
+
 fn chan_list_strings(a: &App) -> Vec<SharedString> {
     a.channels
         .iter()
         .map(|c| {
-            format!(
-                "CAN{}  {}  {}  {}",
-                c.sw_channel,
-                c.device_type,
-                if c.is_fd { "CANFD" } else { "CAN" },
-                c.baud
-            )
-            .into()
+            let label = c.hardware_label.trim();
+            let label = if label.is_empty() { "Unnamed" } else { label };
+            let proto = if c.is_fd { "CAN FD" } else { "CAN" };
+            format!("CAN{}  {}  {}", c.sw_channel, label, proto).into()
         })
         .collect()
 }
 
+fn chan_detail_strings(a: &App) -> Vec<SharedString> {
+    a.channels
+        .iter()
+        .map(|c| {
+            let dev = c.device_type.trim();
+            let bus = if dev.eq_ignore_ascii_case("PCAN") {
+                if let Some(hw) = a.pcan_devices
+                    .iter()
+                    .find(|hw| hw.channel_index == c.channel_index)
+                {
+                    format!(
+                        "{} {}: Device ID {:X}h",
+                        hw.channel_name, hw.device_name, hw.device_id
+                    )
+                } else {
+                    format!("PCAN_USBBUS{} not detected", c.channel_index + 1)
+                }
+            } else if dev.to_ascii_uppercase().contains("NET")
+                || dev.to_ascii_uppercase().contains("WIFI")
+            {
+                format!("{}:{}", c.ip, c.port)
+            } else {
+                format!("dev{} ch{}", c.device_index, c.channel_index)
+            };
+            let pcan_cap = if dev.eq_ignore_ascii_case("PCAN") {
+                a.pcan_devices
+                    .iter()
+                    .find(|hw| hw.channel_index == c.channel_index)
+                    .map(|hw| hw.fd_capable)
+            } else {
+                None
+            };
+            let proto = if c.is_fd {
+                let mut s = format!("CANFD {}/{}", c.baud, c.data_baud);
+                if matches!(pcan_cap, Some(false)) {
+                    s.push_str(" !");
+                }
+                s
+            } else {
+                format!("CAN {}", c.baud)
+            };
+            format!("{}  {}  {}", dev, bus, proto).into()
+        })
+        .collect()
+}
+
+fn pcan_hardware_strings(devices: &[can::PcanChannelInfo]) -> Vec<SharedString> {
+    let mut rows: Vec<SharedString> = devices
+        .iter()
+        .map(|hw| format!("{}  {}", hw.channel_name, hw.device_name).into())
+        .collect();
+    rows.push("USBCAN-E-U  ZLG".into());
+    if rows.is_empty() {
+        rows.push("No PCAN hardware detected".into());
+    }
+    rows
+}
+
+fn pcan_hardware_detail_strings(devices: &[can::PcanChannelInfo]) -> Vec<SharedString> {
+    let mut rows: Vec<SharedString> = devices
+        .iter()
+        .map(|hw| {
+            let fd = if hw.fd_capable { "CAN FD capable" } else { "Classic CAN" };
+            let condition = if hw.channel_condition == 0 {
+                "available"
+            } else {
+                "in use"
+            };
+            format!("Device ID {:X}h  {}  {}", hw.device_id, fd, condition).into()
+        })
+        .collect();
+    rows.push("ZLG driver device  dev0 ch0  CAN".into());
+    if rows.is_empty() {
+        rows.push("Install PEAK driver and connect a PCAN adapter".into());
+    }
+    rows
+}
+
+fn pcan_hardware_added(devices: &[can::PcanChannelInfo], channels: &[DeviceConfig]) -> Vec<bool> {
+    let mut rows: Vec<bool> = devices
+        .iter()
+        .map(|hw| {
+            channels.iter().any(|c| {
+                c.device_type.eq_ignore_ascii_case("PCAN") && c.channel_index == hw.channel_index
+            })
+        })
+        .collect();
+    rows.push(channels.iter().any(|c| {
+        c.device_type.eq_ignore_ascii_case("USBCAN-E-U")
+            && c.device_index == 0
+            && c.channel_index == 0
+    }));
+    rows
+}
+
+fn refresh_channel_window_lists(w: &ChannelConfigWindow, a: &App) {
+    w.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(a)))));
+    w.set_channel_details(ModelRc::from(Rc::new(VecModel::from(
+        chan_detail_strings(a),
+    ))));
+    w.set_pcan_hardware(ModelRc::from(Rc::new(VecModel::from(
+        pcan_hardware_strings(&a.pcan_devices),
+    ))));
+    w.set_pcan_hardware_details(ModelRc::from(Rc::new(VecModel::from(
+        pcan_hardware_detail_strings(&a.pcan_devices),
+    ))));
+    w.set_pcan_hardware_added(ModelRc::from(Rc::new(VecModel::from(
+        pcan_hardware_added(&a.pcan_devices, &a.channels),
+    ))));
+}
 
 fn refresh_ui(
     a: &mut App,
@@ -3081,6 +3232,7 @@ mod tests {
 #[test]
     fn project_roundtrip() {
         let proj = Project {
+            name: "UnitTest".into(),
             settings: settings::Settings {
                 mode_trace: true,
                 dark: true,
@@ -3111,6 +3263,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&proj).expect("serialize");
         let back: Project = serde_json::from_str(&json).expect("deserialize");
 
+        assert_eq!(back.name, "UnitTest");
         assert_eq!(back.settings.trace_cap, 200_000);
         assert!(back.settings.dark);
         assert!(!back.settings.big);

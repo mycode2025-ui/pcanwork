@@ -21,7 +21,10 @@ fn main() {
     // 把自签名测试证书拷到 exe 同目录的 certs/，使从 PcanWork 拉起(cwd=exe 目录)时
     // TLS 功能仍能按 "certs/xxx" 相对路径找到。OUT_DIR 上溯三级即 target/<profile>。
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        let exe_dir = std::path::Path::new(&out_dir).join("..").join("..").join("..");
+        let exe_dir = std::path::Path::new(&out_dir)
+            .join("..")
+            .join("..")
+            .join("..");
         let dst = exe_dir.join("certs");
         let _ = std::fs::create_dir_all(&dst);
         if let Ok(entries) = std::fs::read_dir("certs") {

@@ -109,7 +109,7 @@ fn wire_sim(
                 let (_, rows) = sim_signal_choices(&a);
                 win.set_dbc_signals(ModelRc::from(Rc::new(VecModel::from(rows))));
                 sim_fill_props(&win, &a.sim_widgets[idx]);
-                let _ = win.show();
+                show_child_window(&win);
             }
         });
     }

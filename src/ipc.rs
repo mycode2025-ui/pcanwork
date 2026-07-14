@@ -35,20 +35,56 @@ struct ReqEnvelope {
 
 // ---------------- 状态变更操作（投递到 UI tick 处理）----------------
 pub enum IpcReq {
-    SendOnce { ch: u8, id: u32, data: Vec<u8>, ext: bool, fd: bool, brs: bool, remote: bool },
-    SetPeriodic { client_handle: u64, ch: u8, id: u32, data: Vec<u8>, period_ms: u64, repeat: i64, ext: bool, fd: bool, brs: bool, remote: bool },
-    StopPeriodic { client_handle: u64 },
-    Connect { channels: Vec<DeviceConfig> },
+    SendOnce {
+        ch: u8,
+        id: u32,
+        data: Vec<u8>,
+        ext: bool,
+        fd: bool,
+        brs: bool,
+        remote: bool,
+    },
+    SetPeriodic {
+        client_handle: u64,
+        ch: u8,
+        id: u32,
+        data: Vec<u8>,
+        period_ms: u64,
+        repeat: i64,
+        ext: bool,
+        fd: bool,
+        brs: bool,
+        remote: bool,
+    },
+    StopPeriodic {
+        client_handle: u64,
+    },
+    Connect {
+        channels: Vec<DeviceConfig>,
+    },
     ConnectConfigured, // 连接主界面"设备"对话框里已配置的多通道列表（a.channels）
     // 脚本加载 DBC：在 handler 线程预解析(loaded)，UI tick 仅推入，避免大文件解析阻塞界面。
-    LoadDbc { path: String, loaded: Result<DbcDb, String> },
+    LoadDbc {
+        path: String,
+        loaded: Result<DbcDb, String>,
+    },
     Disconnect,
     Start,
     Stop,
-    Log { msg: String },
-    RunResult { passed: bool, summary: String },
+    Log {
+        msg: String,
+    },
+    RunResult {
+        passed: bool,
+        summary: String,
+    },
     // CAN 报文日志(printf-over-CAN)配置: 字段为 None 表示该项不改
-    ConsoleSet { enabled: Option<bool>, id: Option<i64>, ch: Option<u8>, clear: bool },
+    ConsoleSet {
+        enabled: Option<bool>,
+        id: Option<i64>,
+        ch: Option<u8>,
+        clear: bool,
+    },
     ClientGone,
 }
 
@@ -67,7 +103,7 @@ pub struct UiReq {
 // ---------------- 客户端订阅注册表 ----------------
 pub struct ClientSub {
     pub client_id: u64,
-    pub ids: HashSet<u32>, // 空集 = 订阅全部帧
+    pub ids: HashSet<u32>,       // 空集 = 订阅全部帧
     pub out: SyncSender<String>, // 串行化输出队列（事件经此写给该客户端）
     pub dropped: Arc<AtomicU64>,
 }
@@ -127,7 +163,21 @@ pub struct Snapshot {
 
 impl Snapshot {
     pub fn new(dbc: Arc<DbcSnapshot>) -> Self {
-        Self { connected: false, running: false, rx: 0, tx: 0, err: 0, no_counter: 0, bus_load: 0.0, fps: 0.0, channels: Vec::new(), console_text: String::new(), console_enabled: false, last: HashMap::new(), dbc }
+        Self {
+            connected: false,
+            running: false,
+            rx: 0,
+            tx: 0,
+            err: 0,
+            no_counter: 0,
+            bus_load: 0.0,
+            fps: 0.0,
+            channels: Vec::new(),
+            console_text: String::new(),
+            console_enabled: false,
+            last: HashMap::new(),
+            dbc,
+        }
     }
 }
 
@@ -141,7 +191,9 @@ impl DbcSnapshot {
         Self { dbcs: Vec::new() }
     }
     pub fn from_dbcs(dbcs: &[DbcDb]) -> Self {
-        Self { dbcs: dbcs.to_vec() }
+        Self {
+            dbcs: dbcs.to_vec(),
+        }
     }
     /// 合并全部 DBC（先加载者优先）：返回首个非空解码。
     pub fn decode(&self, id: u32, data: &[u8]) -> Vec<Decoded> {
@@ -233,7 +285,9 @@ pub fn frame_event_json(f: &CanFrame) -> String {
 // ---------------- 服务端启动 ----------------
 /// 绑定 127.0.0.1:0，返回 (端口, token, UiReq 接收端, 订阅注册表)。
 /// accept 循环线程 + 每客户端一个 handler 线程 + 一个 writer 线程。
-pub fn spawn_ipc_server(snapshot: Arc<Mutex<Snapshot>>) -> (u16, String, Receiver<UiReq>, Arc<SubRegistry>) {
+pub fn spawn_ipc_server(
+    snapshot: Arc<Mutex<Snapshot>>,
+) -> (u16, String, Receiver<UiReq>, Arc<SubRegistry>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("绑定 127.0.0.1:0 失败");
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let token = gen_token();
@@ -256,7 +310,9 @@ pub fn spawn_ipc_server(snapshot: Arc<Mutex<Snapshot>>) -> (u16, String, Receive
                 let registry = registry.clone();
                 let snapshot = snapshot.clone();
                 let ui_tx = ui_tx.clone();
-                std::thread::spawn(move || handle_client(stream, client_id, &token, ui_tx, snapshot, registry));
+                std::thread::spawn(move || {
+                    handle_client(stream, client_id, &token, ui_tx, snapshot, registry)
+                });
             }
         });
     }
@@ -267,12 +323,22 @@ fn read_line_capped(reader: &mut impl BufRead, line: &mut String) -> std::io::Re
     line.clear();
     let n = reader.read_line(line)?;
     if line.len() > MAX_LINE {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "行超长"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "行超长",
+        ));
     }
     Ok(n)
 }
 
-fn handle_client(stream: TcpStream, client_id: u64, token: &str, ui_tx: Sender<UiReq>, snapshot: Arc<Mutex<Snapshot>>, registry: Arc<SubRegistry>) {
+fn handle_client(
+    stream: TcpStream,
+    client_id: u64,
+    token: &str,
+    ui_tx: Sender<UiReq>,
+    snapshot: Arc<Mutex<Snapshot>>,
+    registry: Arc<SubRegistry>,
+) {
     let _ = stream.set_nodelay(true);
     let write_stream = match stream.try_clone() {
         Ok(s) => s,
@@ -309,7 +375,11 @@ fn handle_client(stream: TcpStream, client_id: u64, token: &str, ui_tx: Sender<U
         let _ = out_tx.send(resp_err(hid, "BAD_TOKEN", "无效 token"));
         return;
     }
-    if registry.active_client.compare_exchange(0, client_id, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+    if registry
+        .active_client
+        .compare_exchange(0, client_id, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         let _ = out_tx.send(resp_err(hid, "BAD_TOKEN", "已有脚本在运行"));
         return;
     }
@@ -351,9 +421,19 @@ fn handle_client(stream: TcpStream, client_id: u64, token: &str, ui_tx: Sender<U
                 .args
                 .get("ids")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_u64().map(|n| n as u32)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_u64().map(|n| n as u32))
+                        .collect()
+                })
                 .unwrap_or_default();
-            if let Some(s) = registry.subs.lock().unwrap().iter_mut().find(|s| s.client_id == client_id) {
+            if let Some(s) = registry
+                .subs
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|s| s.client_id == client_id)
+            {
                 s.ids = ids;
             }
             let _ = out_tx.send(resp_ok(id, serde_json::json!({})));
@@ -363,7 +443,14 @@ fn handle_client(stream: TcpStream, client_id: u64, token: &str, ui_tx: Sender<U
         match parse_mutating(&req.op, &req.args) {
             Some(ipc_req) => {
                 let (reply_tx, reply_rx) = std::sync::mpsc::channel::<IpcResp>();
-                if ui_tx.send(UiReq { client_id, req: ipc_req, reply: reply_tx }).is_err() {
+                if ui_tx
+                    .send(UiReq {
+                        client_id,
+                        req: ipc_req,
+                        reply: reply_tx,
+                    })
+                    .is_err()
+                {
                     let _ = out_tx.send(resp_err(id, "TIMEOUT", "应用已退出"));
                     continue;
                 }
@@ -384,12 +471,23 @@ fn handle_client(stream: TcpStream, client_id: u64, token: &str, ui_tx: Sender<U
 
     // 断开清理：通知 tick 停掉该客户端的周期任务；移除订阅；释放单运行闸门。
     let (cg_tx, cg_rx) = std::sync::mpsc::channel::<IpcResp>();
-    let _ = ui_tx.send(UiReq { client_id, req: IpcReq::ClientGone, reply: cg_tx });
-    registry.subs.lock().unwrap().retain(|s| s.client_id != client_id);
+    let _ = ui_tx.send(UiReq {
+        client_id,
+        req: IpcReq::ClientGone,
+        reply: cg_tx,
+    });
+    registry
+        .subs
+        .lock()
+        .unwrap()
+        .retain(|s| s.client_id != client_id);
     // 先等 tick 确认已停掉本客户端的周期任务，再释放闸门，避免重连的下个客户端
     // 在旧周期帧仍被驱动到总线的窗口里抢到闸门并开始(最多等 8s 兜底)。
     let _ = cg_rx.recv_timeout(Duration::from_secs(8));
-    let _ = registry.active_client.compare_exchange(client_id, 0, Ordering::SeqCst, Ordering::SeqCst);
+    let _ =
+        registry
+            .active_client
+            .compare_exchange(client_id, 0, Ordering::SeqCst, Ordering::SeqCst);
 }
 
 fn arg_u64(args: &serde_json::Value, k: &str, dflt: u64) -> u64 {
@@ -401,11 +499,19 @@ fn arg_bool(args: &serde_json::Value, k: &str) -> bool {
 fn arg_bytes(args: &serde_json::Value) -> Vec<u8> {
     args.get("data")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_u64().map(|n| n as u8)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_u64().map(|n| n as u8))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn serve_readonly(op: &str, args: &serde_json::Value, snapshot: &Arc<Mutex<Snapshot>>) -> Option<IpcResp> {
+fn serve_readonly(
+    op: &str,
+    args: &serde_json::Value,
+    snapshot: &Arc<Mutex<Snapshot>>,
+) -> Option<IpcResp> {
     match op {
         "status" => {
             let s = snapshot.lock().unwrap();
@@ -433,7 +539,9 @@ fn serve_readonly(op: &str, args: &serde_json::Value, snapshot: &Arc<Mutex<Snaps
             let key = crate::key_of(ch, dir == "tx", id);
             let s = snapshot.lock().unwrap();
             Some(match s.last.get(&key) {
-                Some(l) => IpcResp::Ok(serde_json::json!({"present": true, "t": l.t, "count": l.count, "data": l.data, "ext": l.ext, "dir": dir})),
+                Some(l) => IpcResp::Ok(
+                    serde_json::json!({"present": true, "t": l.t, "count": l.count, "data": l.data, "ext": l.ext, "dir": dir}),
+                ),
                 None => IpcResp::Ok(serde_json::json!({"present": false, "dir": dir})),
             })
         }
@@ -444,11 +552,16 @@ fn serve_readonly(op: &str, args: &serde_json::Value, snapshot: &Arc<Mutex<Snaps
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let key = crate::key_of(ch, dir == "tx", id);
             let s = snapshot.lock().unwrap();
-            let phys = s
-                .last
-                .get(&key)
-                .and_then(|l| s.dbc.decode(id, &l.data).into_iter().find(|d| d.name == name).map(|d| d.physical));
-            Some(IpcResp::Ok(serde_json::json!({"present": phys.is_some(), "physical": phys, "dir": dir})))
+            let phys = s.last.get(&key).and_then(|l| {
+                s.dbc
+                    .decode(id, &l.data)
+                    .into_iter()
+                    .find(|d| d.name == name)
+                    .map(|d| d.physical)
+            });
+            Some(IpcResp::Ok(
+                serde_json::json!({"present": phys.is_some(), "physical": phys, "dir": dir}),
+            ))
         }
         "decode" => {
             let id = arg_u64(args, "id", 0) as u32;
@@ -467,7 +580,11 @@ fn serve_readonly(op: &str, args: &serde_json::Value, snapshot: &Arc<Mutex<Snaps
             let signals: HashMap<String, f64> = args
                 .get("signals")
                 .and_then(|v| v.as_object())
-                .map(|o| o.iter().filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f))).collect())
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f)))
+                        .collect()
+                })
                 .unwrap_or_default();
             let s = snapshot.lock().unwrap();
             Some(match s.dbc.encode(id, &signals) {
@@ -506,14 +623,23 @@ fn parse_mutating(op: &str, args: &serde_json::Value) -> Option<IpcReq> {
             brs: arg_bool(args, "brs"),
             remote: arg_bool(args, "remote"),
         }),
-        "stop_periodic" => Some(IpcReq::StopPeriodic { client_handle: arg_u64(args, "handle", 0) }),
+        "stop_periodic" => Some(IpcReq::StopPeriodic {
+            client_handle: arg_u64(args, "handle", 0),
+        }),
         "connect" => {
-            let channels: Vec<DeviceConfig> = args.get("channels").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+            let channels: Vec<DeviceConfig> = args
+                .get("channels")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
             Some(IpcReq::Connect { channels })
         }
         "connect_configured" => Some(IpcReq::ConnectConfigured),
         "load_dbc" => {
-            let path = args.get("path").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let path = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             // 在 handler 线程解析(读文件+解析)，不占用 UI tick；UI 侧只做推入+重建快照。
             let loaded = if path.trim().is_empty() {
                 Err("空路径".to_string())
@@ -525,10 +651,20 @@ fn parse_mutating(op: &str, args: &serde_json::Value) -> Option<IpcReq> {
         "disconnect" => Some(IpcReq::Disconnect),
         "start" => Some(IpcReq::Start),
         "stop" => Some(IpcReq::Stop),
-        "log" => Some(IpcReq::Log { msg: args.get("msg").and_then(|v| v.as_str()).unwrap_or("").to_string() }),
+        "log" => Some(IpcReq::Log {
+            msg: args
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+        }),
         "run_result" => Some(IpcReq::RunResult {
             passed: arg_bool(args, "passed"),
-            summary: args.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            summary: args
+                .get("summary")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
         }),
         "console_set" => Some(IpcReq::ConsoleSet {
             enabled: args.get("enabled").and_then(|v| v.as_bool()),
@@ -544,7 +680,8 @@ fn resp_ok(id: u64, result: serde_json::Value) -> String {
     serde_json::json!({"v": 1, "id": id, "ok": true, "result": result}).to_string()
 }
 fn resp_err(id: u64, code: &str, msg: &str) -> String {
-    serde_json::json!({"v": 1, "id": id, "ok": false, "err": {"code": code, "msg": msg}}).to_string()
+    serde_json::json!({"v": 1, "id": id, "ok": false, "err": {"code": code, "msg": msg}})
+        .to_string()
 }
 fn resp_from(id: u64, r: IpcResp) -> String {
     match r {

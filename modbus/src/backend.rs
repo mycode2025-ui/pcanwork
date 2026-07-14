@@ -221,27 +221,66 @@ pub struct LogCfg {
 
 pub enum Cmd {
     NewWindow(UiCfg),
-    SelectWindow { id: u32, current: UiCfg },
-    CloseWindow { id: u32 },
-    SetFloat { id: u32, float: Option<slint::Weak<crate::PollFloat>> },
+    SelectWindow {
+        id: u32,
+        current: UiCfg,
+    },
+    CloseWindow {
+        id: u32,
+    },
+    SetFloat {
+        id: u32,
+        float: Option<slint::Weak<crate::PollFloat>>,
+    },
     MasterConnect(MasterCfg),
     MasterDisconnect,
     MasterWrite(WriteReq),
-    MasterWriteOnce { func: WriteFunc, items: Vec<WriteItem> },
-    MasterAutoWrite { func: WriteFunc, items: Vec<WriteItem>, interval_ms: u64 },
+    MasterWriteOnce {
+        func: WriteFunc,
+        items: Vec<WriteItem>,
+    },
+    MasterAutoWrite {
+        func: WriteFunc,
+        items: Vec<WriteItem>,
+        interval_ms: u64,
+    },
     MasterAutoWriteStop,
-    MasterMaskWrite { address: u16, and_mask: u16, or_mask: u16 },
-    MasterReadWrite { read_addr: u16, read_qty: u16, write_addr: u16, write_values: Vec<u16> },
+    MasterMaskWrite {
+        address: u16,
+        and_mask: u16,
+        or_mask: u16,
+    },
+    MasterReadWrite {
+        read_addr: u16,
+        read_qty: u16,
+        write_addr: u16,
+        write_values: Vec<u16>,
+    },
     MasterFormat(RegFormat),
-    MasterName { address: u16, name: String },
+    MasterName {
+        address: u16,
+        name: String,
+    },
     MasterScaling(Scaling),
     MasterColors(ColorRules),
     MasterValueNames(ValueNames),
-    MasterCellFormat { address: u16, format: Option<RegFormat> },
+    MasterCellFormat {
+        address: u16,
+        format: Option<RegFormat>,
+    },
     MasterDerived(Vec<DerivedCh>),
     MasterChartExport(String),
-    MasterChartAxis { addr: u16, right: bool },
-    MasterReadDef { area: Area, address: u16, quantity: u16, scan_ms: u64, poll: bool },
+    MasterChartAxis {
+        addr: u16,
+        right: bool,
+    },
+    MasterReadDef {
+        area: Area,
+        address: u16,
+        quantity: u16,
+        scan_ms: u64,
+        poll: bool,
+    },
     MasterStartLog(LogCfg),
     MasterStopLog,
     ScanAddress(ScanCfg),
@@ -249,25 +288,69 @@ pub enum Cmd {
     ScanStop,
     SlaveStart(SlaveCfg),
     SlaveStop,
-    SlaveEdit { address: u16, text: String },
-    SlaveEditAt { area: Area, address: u16, text: String },
-    SlaveName { address: u16, name: String },
-    SlaveCellFormat { address: u16, format: Option<RegFormat> },
+    SlaveEdit {
+        address: u16,
+        text: String,
+    },
+    SlaveEditAt {
+        area: Area,
+        address: u16,
+        text: String,
+    },
+    SlaveName {
+        address: u16,
+        name: String,
+    },
+    SlaveCellFormat {
+        address: u16,
+        format: Option<RegFormat>,
+    },
     /// 导出全部数据到 CSV。server=true: 服务端扫 4 表。
     /// client: active_csv = UI 端活动窗口的当前行(保证名字/功能码正确, 因为未连接窗口
     /// 的预览数据只在 UI), 其余窗口从后端 cache 取(已连接/已轮询的)。
-    ExportCsv { path: String, server: bool, active_id: u32, active_csv: String },
-    SlaveView { area: Area, address: u16, quantity: u16, format: RegFormat },
+    ExportCsv {
+        path: String,
+        server: bool,
+        active_id: u32,
+        active_csv: String,
+    },
+    SlaveView {
+        area: Area,
+        address: u16,
+        quantity: u16,
+        format: RegFormat,
+    },
     SlaveScaling(Scaling),
     SlaveColors(ColorRules),
     SlaveValueNames(ValueNames),
     SlaveSimStart(SimCfg),
     SlaveSimStop,
-    SlaveAutoInc { address: u16 },
-    SlaveAddMonitor { id: u32, weak: slint::Weak<crate::SlaveMonitor>, area: Area, address: u16, quantity: u16, format: RegFormat },
-    SlaveMonitorView { id: u32, area: Area, address: u16, quantity: u16, format: RegFormat },
-    SlaveRemoveMonitor { id: u32 },
-    SlaveMonitorEdit { id: u32, address: u16, text: String },
+    SlaveAutoInc {
+        address: u16,
+    },
+    SlaveAddMonitor {
+        id: u32,
+        weak: slint::Weak<crate::SlaveMonitor>,
+        area: Area,
+        address: u16,
+        quantity: u16,
+        format: RegFormat,
+    },
+    SlaveMonitorView {
+        id: u32,
+        area: Area,
+        address: u16,
+        quantity: u16,
+        format: RegFormat,
+    },
+    SlaveRemoveMonitor {
+        id: u32,
+    },
+    SlaveMonitorEdit {
+        id: u32,
+        address: u16,
+        text: String,
+    },
 }
 
 pub fn start_backend(weak: slint::Weak<crate::AppWindow>) -> mpsc::UnboundedSender<Cmd> {
@@ -387,7 +470,11 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
         }
         match cmd {
             Cmd::NewWindow(current) => {
-                save_cfg(&mut windows, active.load(Ordering::Relaxed), current.clone());
+                save_cfg(
+                    &mut windows,
+                    active.load(Ordering::Relaxed),
+                    current.clone(),
+                );
                 let id = next_id;
                 next_id += 1;
                 windows.push(Win {
@@ -439,7 +526,8 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     if let Some(e) = w.engine.take() {
                         e.send(MasterMsg::Stop);
                     }
-                    let sink = ui.window_sink(aid, active.clone(), w.cache.clone(), w.float.clone());
+                    let sink =
+                        ui.window_sink(aid, active.clone(), w.cache.clone(), w.float.clone());
                     w.engine = Some(spawn_master(cfg, sink));
                     w.connected = true;
                 }
@@ -462,22 +550,66 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                 push_windows(&windows, &ui);
             }
             Cmd::MasterWrite(req) => to_active!(MasterMsg::Write(req)),
-            Cmd::MasterWriteOnce { func, items } => to_active!(MasterMsg::WriteOnce { func, items }),
-            Cmd::MasterAutoWrite { func, items, interval_ms } => to_active!(MasterMsg::AutoWrite { func, items, interval_ms }),
+            Cmd::MasterWriteOnce { func, items } => {
+                to_active!(MasterMsg::WriteOnce { func, items })
+            }
+            Cmd::MasterAutoWrite {
+                func,
+                items,
+                interval_ms,
+            } => to_active!(MasterMsg::AutoWrite {
+                func,
+                items,
+                interval_ms
+            }),
             Cmd::MasterAutoWriteStop => to_active!(MasterMsg::AutoWriteStop),
-            Cmd::MasterMaskWrite { address, and_mask, or_mask } => to_active!(MasterMsg::MaskWrite { address, and_mask, or_mask }),
-            Cmd::MasterReadWrite { read_addr, read_qty, write_addr, write_values } => to_active!(MasterMsg::ReadWrite { read_addr, read_qty, write_addr, write_values }),
+            Cmd::MasterMaskWrite {
+                address,
+                and_mask,
+                or_mask,
+            } => to_active!(MasterMsg::MaskWrite {
+                address,
+                and_mask,
+                or_mask
+            }),
+            Cmd::MasterReadWrite {
+                read_addr,
+                read_qty,
+                write_addr,
+                write_values,
+            } => to_active!(MasterMsg::ReadWrite {
+                read_addr,
+                read_qty,
+                write_addr,
+                write_values
+            }),
             Cmd::MasterFormat(f) => to_active!(MasterMsg::SetFormat(f)),
             Cmd::MasterName { address, name } => to_active!(MasterMsg::SetName { address, name }),
             Cmd::MasterScaling(s) => to_active!(MasterMsg::SetScaling(s)),
             Cmd::MasterColors(c) => to_active!(MasterMsg::SetColors(c)),
             Cmd::MasterValueNames(v) => to_active!(MasterMsg::SetValueNames(v)),
-            Cmd::MasterCellFormat { address, format } => to_active!(MasterMsg::SetCellFormat { address, format }),
+            Cmd::MasterCellFormat { address, format } => {
+                to_active!(MasterMsg::SetCellFormat { address, format })
+            }
             Cmd::MasterDerived(d) => to_active!(MasterMsg::SetDerived(d)),
             Cmd::MasterChartExport(p) => to_active!(MasterMsg::ExportChart(p)),
-            Cmd::MasterChartAxis { addr, right } => to_active!(MasterMsg::SetChartAxis { addr, right }),
-            Cmd::MasterReadDef { area, address, quantity, scan_ms, poll } => {
-                to_active!(MasterMsg::SetReadDef { area, address, quantity, scan_ms, poll })
+            Cmd::MasterChartAxis { addr, right } => {
+                to_active!(MasterMsg::SetChartAxis { addr, right })
+            }
+            Cmd::MasterReadDef {
+                area,
+                address,
+                quantity,
+                scan_ms,
+                poll,
+            } => {
+                to_active!(MasterMsg::SetReadDef {
+                    area,
+                    address,
+                    quantity,
+                    scan_ms,
+                    poll
+                })
             }
             Cmd::MasterStartLog(c) => to_active!(MasterMsg::StartLog(c)),
             Cmd::MasterStopLog => to_active!(MasterMsg::StopLog),
@@ -517,9 +649,17 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     s.send(SlaveMsg::Edit { address, text });
                 }
             }
-            Cmd::SlaveEditAt { area, address, text } => {
+            Cmd::SlaveEditAt {
+                area,
+                address,
+                text,
+            } => {
                 if let Some(s) = &slave {
-                    s.send(SlaveMsg::EditAt { area, address, text });
+                    s.send(SlaveMsg::EditAt {
+                        area,
+                        address,
+                        text,
+                    });
                 }
             }
             Cmd::SlaveName { address, name } => {
@@ -532,7 +672,12 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     s.send(SlaveMsg::SetCellFormat { address, format });
                 }
             }
-            Cmd::ExportCsv { path, server, active_id, active_csv } => {
+            Cmd::ExportCsv {
+                path,
+                server,
+                active_id,
+                active_csv,
+            } => {
                 if server {
                     // 服务端: 交给 updater(它有 names + store 访问)扫 4 表导出
                     if let Some(s) = &slave {
@@ -563,9 +708,19 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     let _ = std::fs::write(&path, out);
                 }
             }
-            Cmd::SlaveView { area, address, quantity, format } => {
+            Cmd::SlaveView {
+                area,
+                address,
+                quantity,
+                format,
+            } => {
                 if let Some(s) = &slave {
-                    s.send(SlaveMsg::SetView { area, address, quantity, format });
+                    s.send(SlaveMsg::SetView {
+                        area,
+                        address,
+                        quantity,
+                        format,
+                    });
                 }
             }
             Cmd::SlaveScaling(v) => {
@@ -598,14 +753,44 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     s.send(SlaveMsg::ToggleAutoInc { address });
                 }
             }
-            Cmd::SlaveAddMonitor { id, weak, area, address, quantity, format } => {
+            Cmd::SlaveAddMonitor {
+                id,
+                weak,
+                area,
+                address,
+                quantity,
+                format,
+            } => {
                 if let Some(s) = &slave {
-                    s.send(SlaveMsg::AddMonitor { id, weak, view: SlaveView { area, address, quantity, format } });
+                    s.send(SlaveMsg::AddMonitor {
+                        id,
+                        weak,
+                        view: SlaveView {
+                            area,
+                            address,
+                            quantity,
+                            format,
+                        },
+                    });
                 }
             }
-            Cmd::SlaveMonitorView { id, area, address, quantity, format } => {
+            Cmd::SlaveMonitorView {
+                id,
+                area,
+                address,
+                quantity,
+                format,
+            } => {
                 if let Some(s) = &slave {
-                    s.send(SlaveMsg::SetMonitorView { id, view: SlaveView { area, address, quantity, format } });
+                    s.send(SlaveMsg::SetMonitorView {
+                        id,
+                        view: SlaveView {
+                            area,
+                            address,
+                            quantity,
+                            format,
+                        },
+                    });
                 }
             }
             Cmd::SlaveRemoveMonitor { id } => {
@@ -738,29 +923,73 @@ async fn connect_tapped(
                     let name = crate::tls::server_name(tcfg, host)?;
                     let tls_stream = connector.connect(name, stream).await?;
                     tls_desc = Some(crate::tls::describe(tls_stream.get_ref().1));
-                    tcp::attach_slave(Tap { inner: tls_stream, tx: tap_tx }, Slave(slave_id))
+                    tcp::attach_slave(
+                        Tap {
+                            inner: tls_stream,
+                            tx: tap_tx,
+                        },
+                        Slave(slave_id),
+                    )
                 }
-                None => tcp::attach_slave(Tap { inner: stream, tx: tap_tx }, Slave(slave_id)),
+                None => tcp::attach_slave(
+                    Tap {
+                        inner: stream,
+                        tx: tap_tx,
+                    },
+                    Slave(slave_id),
+                ),
             }
         }
         Transport::Udp { host, port } => {
             // Modbus/UDP 用 MBAP 帧(同 TCP)，故仍走 tcp::attach_slave，只是底层是 UDP 流。
             let udp = udp_connect(host, *port).await?;
-            tcp::attach_slave(Tap { inner: udp, tx: tap_tx }, Slave(slave_id))
+            tcp::attach_slave(
+                Tap {
+                    inner: udp,
+                    tx: tap_tx,
+                },
+                Slave(slave_id),
+            )
         }
         Transport::RtuOverTcp { host, port } => {
             // RTU 帧(CRC)走 TCP：用 rtu::attach_slave 做 RTU 编解码，底层是 TCP 流。
             let addr = resolve(host, *port)?;
             let stream = tokio::net::TcpStream::connect(addr).await?;
-            rtu::attach_slave(Tap { inner: stream, tx: tap_tx }, Slave(slave_id))
+            rtu::attach_slave(
+                Tap {
+                    inner: stream,
+                    tx: tap_tx,
+                },
+                Slave(slave_id),
+            )
         }
         Transport::RtuOverUdp { host, port } => {
             let udp = udp_connect(host, *port).await?;
-            rtu::attach_slave(Tap { inner: udp, tx: tap_tx }, Slave(slave_id))
+            rtu::attach_slave(
+                Tap {
+                    inner: udp,
+                    tx: tap_tx,
+                },
+                Slave(slave_id),
+            )
         }
-        Transport::Rtu { path, baud, data_bits, parity, stop_bits } => {
-            let serial = SerialStream::open(&serial_builder(path, *baud, *data_bits, *parity, *stop_bits))?;
-            rtu::attach_slave(Tap { inner: serial, tx: tap_tx }, Slave(slave_id))
+        Transport::Rtu {
+            path,
+            baud,
+            data_bits,
+            parity,
+            stop_bits,
+        } => {
+            let serial = SerialStream::open(&serial_builder(
+                path, *baud, *data_bits, *parity, *stop_bits,
+            ))?;
+            rtu::attach_slave(
+                Tap {
+                    inner: serial,
+                    tx: tap_tx,
+                },
+                Slave(slave_id),
+            )
         }
     };
     Ok((ctx, tap_rx, tls_desc))
@@ -785,8 +1014,16 @@ async fn connect_plain(t: &Transport, slave_id: u8) -> anyhow::Result<Context> {
             let udp = udp_connect(host, *port).await?;
             Ok(rtu::attach_slave(udp, Slave(slave_id)))
         }
-        Transport::Rtu { path, baud, data_bits, parity, stop_bits } => {
-            let serial = SerialStream::open(&serial_builder(path, *baud, *data_bits, *parity, *stop_bits))?;
+        Transport::Rtu {
+            path,
+            baud,
+            data_bits,
+            parity,
+            stop_bits,
+        } => {
+            let serial = SerialStream::open(&serial_builder(
+                path, *baud, *data_bits, *parity, *stop_bits,
+            ))?;
             Ok(rtu::attach_slave(serial, Slave(slave_id)))
         }
     }
@@ -801,59 +1038,114 @@ fn resolve(host: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
 
 fn fc_name(fc: u8) -> &'static str {
     match fc {
-        1 => "Read Coils", 2 => "Read Discrete Inputs", 3 => "Read Holding Regs",
-        4 => "Read Input Regs", 5 => "Write Single Coil", 6 => "Write Single Reg",
-        7 => "Read Exception Status", 8 => "Diagnostics", 11 => "Get Comm Event Counter",
-        15 => "Write Multiple Coils", 16 => "Write Multiple Regs", 17 => "Report Server ID",
-        22 => "Mask Write Reg", 23 => "Read/Write Multiple Regs", 43 => "Encapsulated (MEI)",
+        1 => "Read Coils",
+        2 => "Read Discrete Inputs",
+        3 => "Read Holding Regs",
+        4 => "Read Input Regs",
+        5 => "Write Single Coil",
+        6 => "Write Single Reg",
+        7 => "Read Exception Status",
+        8 => "Diagnostics",
+        11 => "Get Comm Event Counter",
+        15 => "Write Multiple Coils",
+        16 => "Write Multiple Regs",
+        17 => "Report Server ID",
+        22 => "Mask Write Reg",
+        23 => "Read/Write Multiple Regs",
+        43 => "Encapsulated (MEI)",
         _ => "?",
     }
 }
 fn modbus_exc_name(e: u8) -> &'static str {
     match e {
-        1 => "Illegal Function", 2 => "Illegal Data Address", 3 => "Illegal Data Value",
-        4 => "Server Device Failure", 5 => "Acknowledge", 6 => "Server Busy",
-        8 => "Memory Parity Error", 10 => "Gateway Path Unavailable",
-        11 => "Gateway Target Failed to Respond", _ => "?",
+        1 => "Illegal Function",
+        2 => "Illegal Data Address",
+        3 => "Illegal Data Value",
+        4 => "Server Device Failure",
+        5 => "Acknowledge",
+        6 => "Server Busy",
+        8 => "Memory Parity Error",
+        10 => "Gateway Path Unavailable",
+        11 => "Gateway Target Failed to Respond",
+        _ => "?",
     }
 }
 fn u16be(b: &[u8], i: usize) -> u16 {
-    u16::from_be_bytes([b.get(i).copied().unwrap_or(0), b.get(i + 1).copied().unwrap_or(0)])
+    u16::from_be_bytes([
+        b.get(i).copied().unwrap_or(0),
+        b.get(i + 1).copied().unwrap_or(0),
+    ])
 }
 
 /// 解析 Modbus ADU → 一行人类可读摘要(TID/Unit/Function/地址/数量/字节数/异常码)。
 /// bytes = 完整 ADU(TCP 含 MBAP 头, RTU 含 unit+CRC)。无法解析返回 None。
 fn parse_modbus_adu(is_tx: bool, bytes: &[u8], is_tcp: bool) -> Option<String> {
     let (tid, unit, pdu): (Option<u16>, u8, &[u8]) = if is_tcp {
-        if bytes.len() < 8 { return None; }
+        if bytes.len() < 8 {
+            return None;
+        }
         (Some(u16be(bytes, 0)), bytes[6], &bytes[7..])
     } else {
-        if bytes.len() < 4 { return None; } // unit + fc + ... + CRC(2)
+        if bytes.len() < 4 {
+            return None;
+        } // unit + fc + ... + CRC(2)
         (None, bytes[0], &bytes[1..bytes.len() - 2])
     };
-    if pdu.is_empty() { return None; }
+    if pdu.is_empty() {
+        return None;
+    }
     let fc = pdu[0];
     let mut s = String::new();
-    if let Some(t) = tid { s += &format!("TID={t} "); }
+    if let Some(t) = tid {
+        s += &format!("TID={t} ");
+    }
     s += &format!("U={unit} ");
     if fc & 0x80 != 0 {
         let e = pdu.get(1).copied().unwrap_or(0);
-        s += &format!("FC{:02} ⚠ Exception {:02X} ({})", fc & 0x7F, e, modbus_exc_name(e));
+        s += &format!(
+            "FC{:02} ⚠ Exception {:02X} ({})",
+            fc & 0x7F,
+            e,
+            modbus_exc_name(e)
+        );
         return Some(s);
     }
     s += &format!("FC{fc:02} {}", fc_name(fc));
     let p = &pdu[1..]; // fc 之后的参数
     match fc {
         1 | 2 | 3 | 4 => {
-            if is_tx { s += &format!(" addr={} qty={}", u16be(p, 0), u16be(p, 2)); }
-            else { s += &format!(" bytes={}", p.first().copied().unwrap_or(0)); }
+            if is_tx {
+                s += &format!(" addr={} qty={}", u16be(p, 0), u16be(p, 2));
+            } else {
+                s += &format!(" bytes={}", p.first().copied().unwrap_or(0));
+            }
         }
-        5 | 6 => { s += &format!(" addr={} val=0x{:04X}", u16be(p, 0), u16be(p, 2)); }
-        15 | 16 => { s += &format!(" addr={} qty={}", u16be(p, 0), u16be(p, 2)); }
-        22 => { s += &format!(" addr={} and=0x{:04X} or=0x{:04X}", u16be(p, 0), u16be(p, 2), u16be(p, 4)); }
+        5 | 6 => {
+            s += &format!(" addr={} val=0x{:04X}", u16be(p, 0), u16be(p, 2));
+        }
+        15 | 16 => {
+            s += &format!(" addr={} qty={}", u16be(p, 0), u16be(p, 2));
+        }
+        22 => {
+            s += &format!(
+                " addr={} and=0x{:04X} or=0x{:04X}",
+                u16be(p, 0),
+                u16be(p, 2),
+                u16be(p, 4)
+            );
+        }
         23 => {
-            if is_tx { s += &format!(" rd_addr={} rd_qty={} wr_addr={} wr_qty={}", u16be(p, 0), u16be(p, 2), u16be(p, 4), u16be(p, 6)); }
-            else { s += &format!(" bytes={}", p.first().copied().unwrap_or(0)); }
+            if is_tx {
+                s += &format!(
+                    " rd_addr={} rd_qty={} wr_addr={} wr_qty={}",
+                    u16be(p, 0),
+                    u16be(p, 2),
+                    u16be(p, 4),
+                    u16be(p, 6)
+                );
+            } else {
+                s += &format!(" bytes={}", p.first().copied().unwrap_or(0));
+            }
         }
         _ => {}
     }
@@ -864,7 +1156,11 @@ fn spawn_traffic_forwarder(mut rx: TrafficRx, sink: WindowSink, is_tcp: bool) ->
     tokio::spawn(async move {
         let mut buf: Vec<crate::LogLine> = Vec::new();
         while let Some((is_tx, bytes)) = rx.recv().await {
-            let hex = bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+            let hex = bytes
+                .iter()
+                .map(|b| format!("{b:02X}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             // 解析摘要在前(便于直接读懂), 原始 hex 在后(保留)
             let text = match parse_modbus_adu(is_tx, &bytes, is_tcp) {
                 Some(p) => format!("{p}   │   {hex}"),
@@ -890,21 +1186,52 @@ fn spawn_traffic_forwarder(mut rx: TrafficRx, sink: WindowSink, is_tcp: bool) ->
 
 enum MasterMsg {
     Write(WriteReq),
-    WriteOnce { func: WriteFunc, items: Vec<WriteItem> },
-    AutoWrite { func: WriteFunc, items: Vec<WriteItem>, interval_ms: u64 },
+    WriteOnce {
+        func: WriteFunc,
+        items: Vec<WriteItem>,
+    },
+    AutoWrite {
+        func: WriteFunc,
+        items: Vec<WriteItem>,
+        interval_ms: u64,
+    },
     AutoWriteStop,
-    MaskWrite { address: u16, and_mask: u16, or_mask: u16 },
-    ReadWrite { read_addr: u16, read_qty: u16, write_addr: u16, write_values: Vec<u16> },
+    MaskWrite {
+        address: u16,
+        and_mask: u16,
+        or_mask: u16,
+    },
+    ReadWrite {
+        read_addr: u16,
+        read_qty: u16,
+        write_addr: u16,
+        write_values: Vec<u16>,
+    },
     SetFormat(RegFormat),
-    SetName { address: u16, name: String },
+    SetName {
+        address: u16,
+        name: String,
+    },
     SetScaling(Scaling),
     SetColors(ColorRules),
     SetValueNames(ValueNames),
-    SetCellFormat { address: u16, format: Option<RegFormat> },
+    SetCellFormat {
+        address: u16,
+        format: Option<RegFormat>,
+    },
     SetDerived(Vec<DerivedCh>),
     ExportChart(String),
-    SetChartAxis { addr: u16, right: bool },
-    SetReadDef { area: Area, address: u16, quantity: u16, scan_ms: u64, poll: bool },
+    SetChartAxis {
+        addr: u16,
+        right: bool,
+    },
+    SetReadDef {
+        area: Area,
+        address: u16,
+        quantity: u16,
+        scan_ms: u64,
+        poll: bool,
+    },
     StartLog(LogCfg),
     StopLog,
     Stop,
@@ -938,7 +1265,11 @@ struct ChartState {
 
 impl ChartState {
     fn new() -> Self {
-        ChartState { addrs: Vec::new(), data: Vec::new(), right: std::collections::HashSet::new() }
+        ChartState {
+            addrs: Vec::new(),
+            data: Vec::new(),
+            right: std::collections::HashSet::new(),
+        }
     }
     fn reset(&mut self) {
         self.addrs.clear();
@@ -966,11 +1297,19 @@ fn axis_range(ch: &ChartState, right: bool) -> Option<(f64, f64)> {
             continue;
         }
         for &v in d {
-            if v < lo { lo = v; }
-            if v > hi { hi = v; }
+            if v < lo {
+                lo = v;
+            }
+            if v > hi {
+                hi = v;
+            }
         }
     }
-    if lo.is_finite() { Some((lo, hi)) } else { None }
+    if lo.is_finite() {
+        Some((lo, hi))
+    } else {
+        None
+    }
 }
 
 /// Build the overlay series, normalising each to its axis range.
@@ -1038,9 +1377,9 @@ impl Logger {
     fn maybe_log(&mut self, rows: &[DisplayRow]) {
         let now = Instant::now();
         let due = self.cfg.each_read
-            || self
-                .last_write
-                .map_or(true, |t| now.duration_since(t).as_secs() >= self.cfg.period_s.max(1) as u64);
+            || self.last_write.map_or(true, |t| {
+                now.duration_since(t).as_secs() >= self.cfg.period_s.max(1) as u64
+            });
         if !due {
             return;
         }
@@ -1073,7 +1412,10 @@ impl Logger {
         line.push_str(&vals.join(&d));
         let _ = writeln!(self.file, "{line}");
         // 限频 flush(~1s)：避免每轮阻塞 syscall；崩溃最多丢最近 ~1s 行，停止/Drop 时也会 flush。
-        if self.last_flush.is_none_or(|t| now.duration_since(t) >= Duration::from_secs(1)) {
+        if self
+            .last_flush
+            .is_none_or(|t| now.duration_since(t) >= Duration::from_secs(1))
+        {
             let _ = self.file.flush();
             self.last_flush = Some(now);
         }
@@ -1088,16 +1430,21 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
         let desc = cfg.transport.describe();
         sink.status(format!("Connecting — {desc} …"), false);
 
-        let (mut ctx, traffic_rx, tls_desc) = match connect_tapped(&cfg.transport, cfg.slave_id, cfg.tls.as_ref()).await {
-            Ok(c) => c,
-            Err(e) => {
-                sink.status(format!("Connect failed: {e}"), false);
-                let mut lb = Vec::new();
-                sink.log(push_log(&mut lb, "ERR", e.to_string()));
-                return;
-            }
+        let (mut ctx, traffic_rx, tls_desc) =
+            match connect_tapped(&cfg.transport, cfg.slave_id, cfg.tls.as_ref()).await {
+                Ok(c) => c,
+                Err(e) => {
+                    sink.status(format!("Connect failed: {e}"), false);
+                    let mut lb = Vec::new();
+                    sink.log(push_log(&mut lb, "ERR", e.to_string()));
+                    return;
+                }
+            };
+        let timeout_ms = if cfg.timeout_ms == 0 {
+            RESPONSE_TIMEOUT_MS
+        } else {
+            cfg.timeout_ms
         };
-        let timeout_ms = if cfg.timeout_ms == 0 { RESPONSE_TIMEOUT_MS } else { cfg.timeout_ms };
         let reconnect = cfg.reconnect;
         let reconnect_ms = cfg.reconnect_ms.max(200);
         // MBAP 帧(TCP/UDP 同) vs RTU CRC: UDP 也是 MBAP，按 TCP 口径解析
@@ -1396,7 +1743,15 @@ fn rerender(
 ) {
     if let Some(d) = last {
         let drows = render_master_rows(d, start, fmt, overrides, scaling);
-        let (rr, nn) = master_grid(drows.clone(), &poll_values(d), names, colors, value_names, derived, area);
+        let (rr, nn) = master_grid(
+            drows.clone(),
+            &poll_values(d),
+            names,
+            colors,
+            value_names,
+            derived,
+            area,
+        );
         sink.rows(rr, nn);
         update_chart(chart, &drows);
         sink.chart(chart);
@@ -1416,25 +1771,37 @@ fn render_master_rows(
     }
 }
 
-async fn poll_once(ctx: &mut Context, area: Area, addr: u16, qty: u16, timeout_ms: u64) -> Result<PollData, PollErr> {
+async fn poll_once(
+    ctx: &mut Context,
+    area: Area,
+    addr: u16,
+    qty: u16,
+    timeout_ms: u64,
+) -> Result<PollData, PollErr> {
     let dur = Duration::from_millis(timeout_ms.max(20));
     match area {
         Area::Coils => match tokio::time::timeout(dur, ctx.read_coils(addr, qty)).await {
             Ok(r) => flat_bits(r),
             Err(_) => Err(PollErr::Io("Timeout".into())),
         },
-        Area::DiscreteInputs => match tokio::time::timeout(dur, ctx.read_discrete_inputs(addr, qty)).await {
-            Ok(r) => flat_bits(r),
-            Err(_) => Err(PollErr::Io("Timeout".into())),
-        },
-        Area::HoldingRegisters => match tokio::time::timeout(dur, ctx.read_holding_registers(addr, qty)).await {
-            Ok(r) => flat_regs(r),
-            Err(_) => Err(PollErr::Io("Timeout".into())),
-        },
-        Area::InputRegisters => match tokio::time::timeout(dur, ctx.read_input_registers(addr, qty)).await {
-            Ok(r) => flat_regs(r),
-            Err(_) => Err(PollErr::Io("Timeout".into())),
-        },
+        Area::DiscreteInputs => {
+            match tokio::time::timeout(dur, ctx.read_discrete_inputs(addr, qty)).await {
+                Ok(r) => flat_bits(r),
+                Err(_) => Err(PollErr::Io("Timeout".into())),
+            }
+        }
+        Area::HoldingRegisters => {
+            match tokio::time::timeout(dur, ctx.read_holding_registers(addr, qty)).await {
+                Ok(r) => flat_regs(r),
+                Err(_) => Err(PollErr::Io("Timeout".into())),
+            }
+        }
+        Area::InputRegisters => {
+            match tokio::time::timeout(dur, ctx.read_input_registers(addr, qty)).await {
+                Ok(r) => flat_regs(r),
+                Err(_) => Err(PollErr::Io("Timeout".into())),
+            }
+        }
     }
 }
 
@@ -1460,28 +1827,44 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
     if let Some(fmt) = req.encode {
         // 精确整数解析 + 范围校验(不经 f64)：避免 u64 高半区被拒、>2^53 精度丢失、超范围静默饱和写错值。
         let words = encode_typed(&req.text, fmt)?;
-        flatten_unit(tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &words)).await)?;
-        return Ok(format!("Write {} regs @{} = {}", words.len(), req.address, req.text.trim()));
+        flatten_unit(
+            tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &words)).await,
+        )?;
+        return Ok(format!(
+            "Write {} regs @{} = {}",
+            words.len(),
+            req.address,
+            req.text.trim()
+        ));
     }
     match req.func {
         WriteFunc::SingleCoil => {
-            let v = parse_bit(&req.text).ok_or_else(|| "invalid coil value (use 0/1/on/off)".to_string())?;
+            let v = parse_bit(&req.text)
+                .ok_or_else(|| "invalid coil value (use 0/1/on/off)".to_string())?;
             flatten_unit(tokio::time::timeout(dur, ctx.write_single_coil(req.address, v)).await)?;
             Ok(format!("Write Single Coil @{} = {}", req.address, v as u8))
         }
         WriteFunc::SingleReg => {
             let v = parse_word(&req.text).ok_or_else(|| "invalid register value".to_string())?;
-            flatten_unit(tokio::time::timeout(dur, ctx.write_single_register(req.address, v)).await)?;
+            flatten_unit(
+                tokio::time::timeout(dur, ctx.write_single_register(req.address, v)).await,
+            )?;
             Ok(format!("Write Single Register @{} = {}", req.address, v))
         }
         WriteFunc::MultiCoils => {
-            let vs = parse_bit_list(&req.text).ok_or_else(|| "invalid coil list (e.g. 1,0,1)".to_string())?;
-            flatten_unit(tokio::time::timeout(dur, ctx.write_multiple_coils(req.address, &vs)).await)?;
+            let vs = parse_bit_list(&req.text)
+                .ok_or_else(|| "invalid coil list (e.g. 1,0,1)".to_string())?;
+            flatten_unit(
+                tokio::time::timeout(dur, ctx.write_multiple_coils(req.address, &vs)).await,
+            )?;
             Ok(format!("Write {} Coils @{}", vs.len(), req.address))
         }
         WriteFunc::MultiRegs => {
-            let vs = parse_word_list(&req.text).ok_or_else(|| "invalid register list (e.g. 10,20,30)".to_string())?;
-            flatten_unit(tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &vs)).await)?;
+            let vs = parse_word_list(&req.text)
+                .ok_or_else(|| "invalid register list (e.g. 10,20,30)".to_string())?;
+            flatten_unit(
+                tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &vs)).await,
+            )?;
             Ok(format!("Write {} Registers @{}", vs.len(), req.address))
         }
     }
@@ -1489,7 +1872,12 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
 
 /// Write the list using the chosen function code. Single-* write each item in its
 /// own request; Multi-* write the contiguous block in one request (base = first addr).
-async fn write_items(ctx: &mut Context, func: WriteFunc, items: &[WriteItem], timeout_ms: u64) -> Result<usize, String> {
+async fn write_items(
+    ctx: &mut Context,
+    func: WriteFunc,
+    items: &[WriteItem],
+    timeout_ms: u64,
+) -> Result<usize, String> {
     let dur = Duration::from_millis(timeout_ms.max(20));
     if items.is_empty() {
         return Ok(0);
@@ -1498,16 +1886,24 @@ async fn write_items(ctx: &mut Context, func: WriteFunc, items: &[WriteItem], ti
     match func {
         WriteFunc::SingleReg => {
             for it in items {
-                flatten_unit(tokio::time::timeout(dur, ctx.write_single_register(it.address, it.value)).await)?;
+                flatten_unit(
+                    tokio::time::timeout(dur, ctx.write_single_register(it.address, it.value))
+                        .await,
+                )?;
             }
         }
         WriteFunc::MultiRegs => {
             let words: Vec<u16> = items.iter().map(|i| i.value).collect();
-            flatten_unit(tokio::time::timeout(dur, ctx.write_multiple_registers(base, &words)).await)?;
+            flatten_unit(
+                tokio::time::timeout(dur, ctx.write_multiple_registers(base, &words)).await,
+            )?;
         }
         WriteFunc::SingleCoil => {
             for it in items {
-                flatten_unit(tokio::time::timeout(dur, ctx.write_single_coil(it.address, it.value != 0)).await)?;
+                flatten_unit(
+                    tokio::time::timeout(dur, ctx.write_single_coil(it.address, it.value != 0))
+                        .await,
+                )?;
             }
         }
         WriteFunc::MultiCoils => {
@@ -1548,7 +1944,11 @@ fn update_chart(ch: &mut ChartState, rows: &[DisplayRow]) {
     let addrs: Vec<u16> = pts.iter().map(|p| p.0).collect();
     if ch.addrs != addrs {
         ch.addrs = addrs;
-        ch.data = ch.addrs.iter().map(|_| VecDeque::with_capacity(CHART_LEN)).collect();
+        ch.data = ch
+            .addrs
+            .iter()
+            .map(|_| VecDeque::with_capacity(CHART_LEN))
+            .collect();
     }
     for (i, (_, n)) in pts.iter().enumerate() {
         let d = &mut ch.data[i];
@@ -1622,29 +2022,41 @@ async fn probe(ctx: &mut Context, area: Area, addr: u16) -> Result<String, ScanE
     let dur = Duration::from_millis(SCAN_TIMEOUT_MS);
     match area {
         Area::Coils => match tokio::time::timeout(dur, ctx.read_coils(addr, 1)).await {
-            Ok(Ok(Ok(v))) => Ok(format!("coil = {}", v.first().map(|b| *b as u8).unwrap_or(0))),
+            Ok(Ok(Ok(v))) => Ok(format!(
+                "coil = {}",
+                v.first().map(|b| *b as u8).unwrap_or(0)
+            )),
             Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
             Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
             Err(_) => Err(ScanErr::Timeout),
         },
-        Area::DiscreteInputs => match tokio::time::timeout(dur, ctx.read_discrete_inputs(addr, 1)).await {
-            Ok(Ok(Ok(v))) => Ok(format!("input = {}", v.first().map(|b| *b as u8).unwrap_or(0))),
-            Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
-            Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
-            Err(_) => Err(ScanErr::Timeout),
-        },
-        Area::HoldingRegisters => match tokio::time::timeout(dur, ctx.read_holding_registers(addr, 1)).await {
-            Ok(Ok(Ok(v))) => Ok(format!("0x{0:04X} ({0})", v.first().copied().unwrap_or(0))),
-            Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
-            Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
-            Err(_) => Err(ScanErr::Timeout),
-        },
-        Area::InputRegisters => match tokio::time::timeout(dur, ctx.read_input_registers(addr, 1)).await {
-            Ok(Ok(Ok(v))) => Ok(format!("0x{0:04X} ({0})", v.first().copied().unwrap_or(0))),
-            Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
-            Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
-            Err(_) => Err(ScanErr::Timeout),
-        },
+        Area::DiscreteInputs => {
+            match tokio::time::timeout(dur, ctx.read_discrete_inputs(addr, 1)).await {
+                Ok(Ok(Ok(v))) => Ok(format!(
+                    "input = {}",
+                    v.first().map(|b| *b as u8).unwrap_or(0)
+                )),
+                Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
+                Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
+                Err(_) => Err(ScanErr::Timeout),
+            }
+        }
+        Area::HoldingRegisters => {
+            match tokio::time::timeout(dur, ctx.read_holding_registers(addr, 1)).await {
+                Ok(Ok(Ok(v))) => Ok(format!("0x{0:04X} ({0})", v.first().copied().unwrap_or(0))),
+                Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
+                Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
+                Err(_) => Err(ScanErr::Timeout),
+            }
+        }
+        Area::InputRegisters => {
+            match tokio::time::timeout(dur, ctx.read_input_registers(addr, 1)).await {
+                Ok(Ok(Ok(v))) => Ok(format!("0x{0:04X} ({0})", v.first().copied().unwrap_or(0))),
+                Ok(Ok(Err(e))) => Err(ScanErr::Exception(format!("{e:?}"))),
+                Ok(Err(e)) => Err(ScanErr::Io(e.to_string())),
+                Err(_) => Err(ScanErr::Timeout),
+            }
+        }
     }
 }
 
@@ -1655,7 +2067,11 @@ fn scan_row(addr_or_id: String, res: &Result<String, ScanErr>) -> crate::LogLine
         Err(ScanErr::Timeout) => ("…", format!("{addr_or_id}: no response")),
         Err(ScanErr::Io(e)) => ("ERR", format!("{addr_or_id}: {e}")),
     };
-    crate::LogLine { time: now_hms().into(), dir: dir.into(), text: text.into() }
+    crate::LogLine {
+        time: now_hms().into(),
+        dir: dir.into(),
+        text: text.into(),
+    }
 }
 
 fn spawn_scan_address(cfg: ScanCfg, ui: UiSink) -> JoinHandle<()> {
@@ -1684,10 +2100,21 @@ fn spawn_scan_address(cfg: ScanCfg, ui: UiSink) -> JoinHandle<()> {
             }
             rows.push(scan_row(format!("@{addr}"), &res));
             ui.scan_rows(rows.clone());
-            ui.scan_status(format!("Address scan {}/{} — {} responded", off + 1, cfg.count, found), true);
+            ui.scan_status(
+                format!(
+                    "Address scan {}/{} — {} responded",
+                    off + 1,
+                    cfg.count,
+                    found
+                ),
+                true,
+            );
         }
         let _ = ctx.disconnect().await;
-        ui.scan_status(format!("Address scan done — {} of {} responded", found, cfg.count), false);
+        ui.scan_status(
+            format!("Address scan done — {} of {} responded", found, cfg.count),
+            false,
+        );
     })
 }
 
@@ -1716,7 +2143,10 @@ fn spawn_scan_slave(cfg: SlaveScanCfg, ui: UiSink) -> JoinHandle<()> {
             ui.scan_status(format!("Slave scan {lo}…{hi} — {found} responded"), true);
         }
         let _ = ctx.disconnect().await;
-        ui.scan_status(format!("Slave scan done — {found} slave(s) responded"), false);
+        ui.scan_status(
+            format!("Slave scan done — {found} slave(s) responded"),
+            false,
+        );
     })
 }
 
@@ -1730,22 +2160,55 @@ enum SlaveEvent {
 }
 
 enum SlaveMsg {
-    Edit { address: u16, text: String },
-    EditAt { area: Area, address: u16, text: String },
-    SetName { address: u16, name: String },
-    SetCellFormat { address: u16, format: Option<RegFormat> },
+    Edit {
+        address: u16,
+        text: String,
+    },
+    EditAt {
+        area: Area,
+        address: u16,
+        text: String,
+    },
+    SetName {
+        address: u16,
+        name: String,
+    },
+    SetCellFormat {
+        address: u16,
+        format: Option<RegFormat>,
+    },
     ExportCsv(String),
-    SetView { area: Area, address: u16, quantity: u16, format: RegFormat },
+    SetView {
+        area: Area,
+        address: u16,
+        quantity: u16,
+        format: RegFormat,
+    },
     SetScaling(Scaling),
     SetColors(ColorRules),
     SetValueNames(ValueNames),
     SimStart(SimCfg),
     SimStop,
-    ToggleAutoInc { address: u16 },
-    AddMonitor { id: u32, weak: slint::Weak<crate::SlaveMonitor>, view: SlaveView },
-    SetMonitorView { id: u32, view: SlaveView },
-    RemoveMonitor { id: u32 },
-    MonitorEdit { id: u32, address: u16, text: String },
+    ToggleAutoInc {
+        address: u16,
+    },
+    AddMonitor {
+        id: u32,
+        weak: slint::Weak<crate::SlaveMonitor>,
+        view: SlaveView,
+    },
+    SetMonitorView {
+        id: u32,
+        view: SlaveView,
+    },
+    RemoveMonitor {
+        id: u32,
+    },
+    MonitorEdit {
+        id: u32,
+        address: u16,
+        text: String,
+    },
     Stop,
 }
 
@@ -1868,7 +2331,12 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                     .local_addr()
                     .map(|a| a.to_string())
                     .unwrap_or_else(|_| format!("{host}:{port}"));
-                let svc = SlaveService { shared: server_shared.clone(), unit_id, tcp: true, ignore_unit_id };
+                let svc = SlaveService {
+                    shared: server_shared.clone(),
+                    unit_id,
+                    tcp: true,
+                    ignore_unit_id,
+                };
                 let on_error = |e: std::io::Error| eprintln!("modbus tcp server error: {e}");
                 // Each accepted stream is wrapped in a Tap so the DECRYPTED raw ADU
                 // bytes reach the Communication Traffic monitor (TLS handled below it).
@@ -1881,42 +2349,59 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         }
                     };
                     ui_srv.slave_status(format!("Listening on {local} (TLS)"), true);
-                    let on_connected = move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
-                        let svc = svc.clone();
-                        let ttx = traffic_tx.clone();
-                        let acceptor = acceptor.clone();
-                        async move {
-                            let tls_stream = acceptor.accept(stream).await?;
-                            Ok::<_, std::io::Error>(Some((svc.clone(), Tap { inner: tls_stream, tx: ttx })))
-                        }
-                    };
+                    let on_connected =
+                        move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
+                            let svc = svc.clone();
+                            let ttx = traffic_tx.clone();
+                            let acceptor = acceptor.clone();
+                            async move {
+                                let tls_stream = acceptor.accept(stream).await?;
+                                Ok::<_, std::io::Error>(Some((
+                                    svc.clone(),
+                                    Tap {
+                                        inner: tls_stream,
+                                        tx: ttx,
+                                    },
+                                )))
+                            }
+                        };
                     let srv = tokio_modbus::server::tcp::Server::new(listener);
                     if let Err(e) = srv.serve(&on_connected, on_error).await {
                         ui_srv.slave_status(format!("Server stopped: {e}"), false);
                     }
                 } else {
                     ui_srv.slave_status(format!("Listening on {local}"), true);
-                    let on_connected = move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
-                        let svc = svc.clone();
-                        let ttx = traffic_tx.clone();
-                        async move {
-                            let accepted = tokio_modbus::server::tcp::accept_tcp_connection(
-                                stream,
-                                peer,
-                                move |_addr| Ok(Some(svc.clone())),
-                            )?;
-                            Ok(accepted.map(|(service, s)| (service, Tap { inner: s, tx: ttx })))
-                        }
-                    };
+                    let on_connected =
+                        move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
+                            let svc = svc.clone();
+                            let ttx = traffic_tx.clone();
+                            async move {
+                                let accepted = tokio_modbus::server::tcp::accept_tcp_connection(
+                                    stream,
+                                    peer,
+                                    move |_addr| Ok(Some(svc.clone())),
+                                )?;
+                                Ok(accepted
+                                    .map(|(service, s)| (service, Tap { inner: s, tx: ttx })))
+                            }
+                        };
                     let srv = tokio_modbus::server::tcp::Server::new(listener);
                     if let Err(e) = srv.serve(&on_connected, on_error).await {
                         ui_srv.slave_status(format!("Server stopped: {e}"), false);
                     }
                 }
             }
-            Transport::Rtu { path, baud, data_bits, parity, stop_bits } => {
+            Transport::Rtu {
+                path,
+                baud,
+                data_bits,
+                parity,
+                stop_bits,
+            } => {
                 drop(traffic_tx); // the RTU server owns a concrete SerialStream — cannot be tapped
-                let serial = match SerialStream::open(&serial_builder(&path, baud, data_bits, parity, stop_bits)) {
+                let serial = match SerialStream::open(&serial_builder(
+                    &path, baud, data_bits, parity, stop_bits,
+                )) {
                     Ok(s) => s,
                     Err(e) => {
                         ui_srv.slave_status(format!("Open failed: {e}"), false);
@@ -1924,7 +2409,12 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                     }
                 };
                 ui_srv.slave_status(format!("Serving on {path}"), true);
-                let svc = SlaveService { shared: server_shared.clone(), unit_id, tcp: false, ignore_unit_id };
+                let svc = SlaveService {
+                    shared: server_shared.clone(),
+                    unit_id,
+                    tcp: false,
+                    ignore_unit_id,
+                };
                 let srv = tokio_modbus::server::rtu::Server::new(serial);
                 if let Err(e) = srv.serve_forever(svc).await {
                     ui_srv.slave_status(format!("Server stopped: {e}"), false);
@@ -1935,7 +2425,12 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
 
     // --- updater task (render, log, traffic, simulation, display settings) ---
     let upd_shared = shared.clone();
-    let view0 = SlaveView { area: cfg.area, address: cfg.address, quantity: cfg.quantity, format: cfg.format };
+    let view0 = SlaveView {
+        area: cfg.area,
+        address: cfg.address,
+        quantity: cfg.quantity,
+        format: cfg.format,
+    };
     let updater = tokio::spawn(async move {
         let mut view = view0;
         let mut names: HashMap<u16, String> = HashMap::new();
@@ -1957,7 +2452,19 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         // Floating server monitors: independent views into the same store.
         let mut monitors: Vec<(u32, slint::Weak<crate::SlaveMonitor>, SlaveView)> = Vec::new();
 
-        render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
+        render_slave(
+            &upd_shared,
+            &view,
+            &names,
+            &scaling,
+            &colors,
+            &value_names,
+            &mut chart,
+            &mut last_names,
+            &auto_inc,
+            &cell_formats,
+            &ui,
+        );
         loop {
             tokio::select! {
                 Some(ev) = events_rx.recv() => {
@@ -2092,7 +2599,11 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         }
     });
 
-    SlaveHandle { ctrl: ctrl_tx, server, updater }
+    SlaveHandle {
+        ctrl: ctrl_tx,
+        server,
+        updater,
+    }
 }
 
 // ----- simulation -----
@@ -2131,15 +2642,27 @@ fn step_value(cur: u16, mode: SimMode, step: u16, min: i64, max: i64, rng: &mut 
     let next = match mode {
         SimMode::Increment => {
             let n = cur + step as i64;
-            if n > max { min } else { n }
+            if n > max {
+                min
+            } else {
+                n
+            }
         }
         SimMode::Decrement => {
             let n = cur - step as i64;
-            if n < min { max } else { n }
+            if n < min {
+                max
+            } else {
+                n
+            }
         }
         SimMode::Random => min + (rng.next() % span) as i64,
         SimMode::Toggle => {
-            if cur != min { min } else { max }
+            if cur != min {
+                min
+            } else {
+                max
+            }
         }
         SimMode::Off => cur,
     };
@@ -2151,10 +2674,26 @@ fn step_value(cur: u16, mode: SimMode, step: u16, min: i64, max: i64, rng: &mut 
 fn bump_one(store: &mut DataStore, area: Area, addr: u16) {
     let i = addr as usize;
     match area {
-        Area::Coils => { if let Some(b) = store.coils.get_mut(i) { *b = !*b; } }
-        Area::DiscreteInputs => { if let Some(b) = store.discrete_inputs.get_mut(i) { *b = !*b; } }
-        Area::HoldingRegisters => { if let Some(v) = store.holding.get_mut(i) { *v = v.wrapping_add(1); } }
-        Area::InputRegisters => { if let Some(v) = store.input.get_mut(i) { *v = v.wrapping_add(1); } }
+        Area::Coils => {
+            if let Some(b) = store.coils.get_mut(i) {
+                *b = !*b;
+            }
+        }
+        Area::DiscreteInputs => {
+            if let Some(b) = store.discrete_inputs.get_mut(i) {
+                *b = !*b;
+            }
+        }
+        Area::HoldingRegisters => {
+            if let Some(v) = store.holding.get_mut(i) {
+                *v = v.wrapping_add(1);
+            }
+        }
+        Area::InputRegisters => {
+            if let Some(v) = store.input.get_mut(i) {
+                *v = v.wrapping_add(1);
+            }
+        }
     }
 }
 
@@ -2332,22 +2871,46 @@ fn build_server_csv(store: &DataStore, names: &HashMap<u16, String>) -> String {
     let nm = |i: usize| names.get(&(i as u16)).map(|s| s.as_str()).unwrap_or("");
     for (i, &b) in store.coils.iter().enumerate() {
         if b || names.contains_key(&(i as u16)) {
-            out.push_str(&format!("yes,{},{},{},{}\n", Area::Coils.csv_name(), i, csv_field(nm(i)), if b { 1 } else { 0 }));
+            out.push_str(&format!(
+                "yes,{},{},{},{}\n",
+                Area::Coils.csv_name(),
+                i,
+                csv_field(nm(i)),
+                if b { 1 } else { 0 }
+            ));
         }
     }
     for (i, &b) in store.discrete_inputs.iter().enumerate() {
         if b || names.contains_key(&(i as u16)) {
-            out.push_str(&format!("yes,{},{},{},{}\n", Area::DiscreteInputs.csv_name(), i, csv_field(nm(i)), if b { 1 } else { 0 }));
+            out.push_str(&format!(
+                "yes,{},{},{},{}\n",
+                Area::DiscreteInputs.csv_name(),
+                i,
+                csv_field(nm(i)),
+                if b { 1 } else { 0 }
+            ));
         }
     }
     for (i, &v) in store.holding.iter().enumerate() {
         if v != 0 || names.contains_key(&(i as u16)) {
-            out.push_str(&format!("yes,{},{},{},{}\n", Area::HoldingRegisters.csv_name(), i, csv_field(nm(i)), v));
+            out.push_str(&format!(
+                "yes,{},{},{},{}\n",
+                Area::HoldingRegisters.csv_name(),
+                i,
+                csv_field(nm(i)),
+                v
+            ));
         }
     }
     for (i, &v) in store.input.iter().enumerate() {
         if v != 0 || names.contains_key(&(i as u16)) {
-            out.push_str(&format!("yes,{},{},{},{}\n", Area::InputRegisters.csv_name(), i, csv_field(nm(i)), v));
+            out.push_str(&format!(
+                "yes,{},{},{},{}\n",
+                Area::InputRegisters.csv_name(),
+                i,
+                csv_field(nm(i)),
+                v
+            ));
         }
     }
     out
@@ -2407,9 +2970,24 @@ fn render_slave(
     let qty = view.quantity as usize;
     let rows = match view.area {
         Area::Coils => render_bits(view.address, window_bool(&store.coils, start, qty)),
-        Area::DiscreteInputs => render_bits(view.address, window_bool(&store.discrete_inputs, start, qty)),
-        Area::HoldingRegisters => render_registers(view.address, window_u16(&store.holding, start, qty), view.format, cell_formats, scaling),
-        Area::InputRegisters => render_registers(view.address, window_u16(&store.input, start, qty), view.format, cell_formats, scaling),
+        Area::DiscreteInputs => render_bits(
+            view.address,
+            window_bool(&store.discrete_inputs, start, qty),
+        ),
+        Area::HoldingRegisters => render_registers(
+            view.address,
+            window_u16(&store.holding, start, qty),
+            view.format,
+            cell_formats,
+            scaling,
+        ),
+        Area::InputRegisters => render_registers(
+            view.address,
+            window_u16(&store.input, start, qty),
+            view.format,
+            cell_formats,
+            scaling,
+        ),
     };
     drop(store);
     update_chart(chart, &rows);
@@ -2436,13 +3014,35 @@ fn render_monitor(shared: &SlaveShared, view: &SlaveView, weak: &slint::Weak<cra
     let no_overrides: HashMap<u16, RegFormat> = HashMap::new();
     let rows = match view.area {
         Area::Coils => render_bits(view.address, window_bool(&store.coils, start, qty)),
-        Area::DiscreteInputs => render_bits(view.address, window_bool(&store.discrete_inputs, start, qty)),
-        Area::HoldingRegisters => render_registers(view.address, window_u16(&store.holding, start, qty), view.format, &no_overrides, &Scaling::off()),
-        Area::InputRegisters => render_registers(view.address, window_u16(&store.input, start, qty), view.format, &no_overrides, &Scaling::off()),
+        Area::DiscreteInputs => render_bits(
+            view.address,
+            window_bool(&store.discrete_inputs, start, qty),
+        ),
+        Area::HoldingRegisters => render_registers(
+            view.address,
+            window_u16(&store.holding, start, qty),
+            view.format,
+            &no_overrides,
+            &Scaling::off(),
+        ),
+        Area::InputRegisters => render_registers(
+            view.address,
+            window_u16(&store.input, start, qty),
+            view.format,
+            &no_overrides,
+            &Scaling::off(),
+        ),
     };
     drop(store);
     let names: HashMap<u16, String> = HashMap::new();
-    let (rr, nn) = build_grid(rows, &names, &ColorRules::off(), &ValueNames::off(), true, view.area);
+    let (rr, nn) = build_grid(
+        rows,
+        &names,
+        &ColorRules::off(),
+        &ValueNames::off(),
+        true,
+        view.area,
+    );
     let _ = weak.upgrade_in_event_loop(move |m| {
         m.set_rows(slint::ModelRc::new(slint::VecModel::from(rr)));
         m.set_names(slint::ModelRc::new(slint::VecModel::from(nn)));
@@ -2626,8 +3226,13 @@ impl WindowSink {
         }
         let c2 = charts.clone();
         let s1 = sb.series.clone();
-        let (lmin, lmax, rmin, rmax, hr) =
-            (sb.left_min.clone(), sb.left_max.clone(), sb.right_min.clone(), sb.right_max.clone(), sb.has_right);
+        let (lmin, lmax, rmin, rmax, hr) = (
+            sb.left_min.clone(),
+            sb.left_max.clone(),
+            sb.right_min.clone(),
+            sb.right_max.clone(),
+            sb.has_right,
+        );
         self.push(move |a| {
             a.set_m_charts(slint::ModelRc::new(slint::VecModel::from(charts)));
             a.set_m_chart_has(has);
@@ -2692,7 +3297,13 @@ impl UiSink {
         cache: Arc<Mutex<WinCache>>,
         float: Arc<Mutex<Option<slint::Weak<crate::PollFloat>>>>,
     ) -> WindowSink {
-        WindowSink { id, active, weak: self.weak.clone(), cache, float }
+        WindowSink {
+            id,
+            active,
+            weak: self.weak.clone(),
+            cache,
+            float,
+        }
     }
 
     fn set_windows(&self, tabs: Vec<crate::WinTab>) {
@@ -2997,14 +3608,22 @@ mod tests {
             let mut buf = [0u8; 260];
             let (_n, peer) = server.recv_from(&mut buf).await.unwrap();
             let (tid_hi, tid_lo, unit) = (buf[0], buf[1], buf[6]); // 回显 TID/unit
-            // MBAP: tid, proto=0, len=5 | PDU: func=01, bytecount=2, data=0x05,0x02
-            let resp = [tid_hi, tid_lo, 0x00, 0x00, 0x00, 0x05, unit, 0x01, 0x02, 0x05, 0x02];
+                                                                   // MBAP: tid, proto=0, len=5 | PDU: func=01, bytecount=2, data=0x05,0x02
+            let resp = [
+                tid_hi, tid_lo, 0x00, 0x00, 0x00, 0x05, unit, 0x01, 0x02, 0x05, 0x02,
+            ];
             server.send_to(&resp, peer).await.unwrap();
         });
         // 用新增的 Modbus/UDP 传输连过去读 10 个线圈
-        let mut ctx = connect_plain(&Transport::Udp { host: "127.0.0.1".into(), port }, 1)
-            .await
-            .expect("UDP connect");
+        let mut ctx = connect_plain(
+            &Transport::Udp {
+                host: "127.0.0.1".into(),
+                port,
+            },
+            1,
+        )
+        .await
+        .expect("UDP connect");
         let coils = ctx.read_coils(0, 10).await.unwrap().unwrap();
         assert_eq!(coils.len(), 10);
         assert_eq!(
@@ -3022,7 +3641,11 @@ mod tests {
             for &b in data {
                 crc ^= b as u16;
                 for _ in 0..8 {
-                    if crc & 1 != 0 { crc = (crc >> 1) ^ 0xA001 } else { crc >>= 1 }
+                    if crc & 1 != 0 {
+                        crc = (crc >> 1) ^ 0xA001
+                    } else {
+                        crc >>= 1
+                    }
                 }
             }
             crc
@@ -3040,10 +3663,15 @@ mod tests {
             resp.push((c >> 8) as u8);
             stream.write_all(&resp).await.unwrap();
         });
-        let mut ctx =
-            connect_plain(&Transport::RtuOverTcp { host: "127.0.0.1".into(), port: addr.port() }, 1)
-                .await
-                .unwrap();
+        let mut ctx = connect_plain(
+            &Transport::RtuOverTcp {
+                host: "127.0.0.1".into(),
+                port: addr.port(),
+            },
+            1,
+        )
+        .await
+        .unwrap();
         let h = ctx.read_holding_registers(0, 1).await.unwrap().unwrap();
         assert_eq!(h, vec![0x1092]);
     }
@@ -3057,18 +3685,31 @@ mod tests {
         let mut names: HashMap<u16, String> = HashMap::new();
         names.insert(0, "Temp".into());
         let csv = build_server_csv(&store, &names);
-        assert_eq!(csv.lines().next().unwrap(), "Import,Function,Address,Name,Value");
-        assert!(csv.contains("yes,Coils,2,,1"), "{csv}");                  // 线圈 2 = ON
-        assert!(csv.contains("yes,HoldingRegisters,0,Temp,28"), "{csv}");  // 命名 + 值
-        assert!(csv.contains("yes,HoldingRegisters,5,,1000"), "{csv}");    // 仅非零值
-        // 命名地址 0 全局 → 各表都出一行(含值为 0 的); 但绝不导出 26 万空寄存器
-        assert!(csv.lines().count() < 50, "filtered empties, got {}", csv.lines().count());
-        assert!(!csv.contains("yes,HoldingRegisters,6,"), "空寄存器不应导出\n{csv}");
+        assert_eq!(
+            csv.lines().next().unwrap(),
+            "Import,Function,Address,Name,Value"
+        );
+        assert!(csv.contains("yes,Coils,2,,1"), "{csv}"); // 线圈 2 = ON
+        assert!(csv.contains("yes,HoldingRegisters,0,Temp,28"), "{csv}"); // 命名 + 值
+        assert!(csv.contains("yes,HoldingRegisters,5,,1000"), "{csv}"); // 仅非零值
+                                                                        // 命名地址 0 全局 → 各表都出一行(含值为 0 的); 但绝不导出 26 万空寄存器
+        assert!(
+            csv.lines().count() < 50,
+            "filtered empties, got {}",
+            csv.lines().count()
+        );
+        assert!(
+            !csv.contains("yes,HoldingRegisters,6,"),
+            "空寄存器不应导出\n{csv}"
+        );
     }
 
     #[test]
     fn csv_address_lenient() {
-        assert_eq!(Area::from_csv_name("HoldingRegisters"), Some(Area::HoldingRegisters));
+        assert_eq!(
+            Area::from_csv_name("HoldingRegisters"),
+            Some(Area::HoldingRegisters)
+        );
         assert_eq!(Area::from_csv_name("coils"), Some(Area::Coils));
         assert_eq!(Area::from_csv_name("4x"), Some(Area::HoldingRegisters));
         assert_eq!(Area::from_csv_name("9"), None);
@@ -3077,22 +3718,32 @@ mod tests {
     #[test]
     fn modbus_adu_parsing() {
         // TCP 读保持寄存器请求: MBAP(TID=1,proto=0,len=6,unit=1) + PDU(03, addr=0, qty=10)
-        let req = [0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0A];
+        let req = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x0A,
+        ];
         let s = parse_modbus_adu(true, &req, true).unwrap();
         assert!(s.contains("TID=1") && s.contains("U=1") && s.contains("FC03"));
         assert!(s.contains("addr=0") && s.contains("qty=10"), "{s}");
         // TCP 响应: 字节数=4 + 2 个寄存器
-        let resp = [0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x01, 0x03, 0x04, 0x12, 0x34, 0x56, 0x78];
+        let resp = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x07, 0x01, 0x03, 0x04, 0x12, 0x34, 0x56, 0x78,
+        ];
         let s = parse_modbus_adu(false, &resp, true).unwrap();
         assert!(s.contains("FC03") && s.contains("bytes=4"), "{s}");
         // 异常响应: FC=0x83, exception=0x02 (Illegal Data Address)
         let exc = [0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0x01, 0x83, 0x02];
         let s = parse_modbus_adu(false, &exc, true).unwrap();
-        assert!(s.contains("Exception 02") && s.contains("Illegal Data Address"), "{s}");
+        assert!(
+            s.contains("Exception 02") && s.contains("Illegal Data Address"),
+            "{s}"
+        );
         // RTU 请求: unit=1 + PDU(03,addr=0,qty=10) + CRC(2)
         let rtu = [0x01, 0x03, 0x00, 0x00, 0x00, 0x0A, 0xC5, 0xCD];
         let s = parse_modbus_adu(true, &rtu, false).unwrap();
-        assert!(!s.contains("TID") && s.contains("U=1") && s.contains("addr=0") && s.contains("qty=10"), "{s}");
+        assert!(
+            !s.contains("TID") && s.contains("U=1") && s.contains("addr=0") && s.contains("qty=10"),
+            "{s}"
+        );
         // 太短 → None
         assert!(parse_modbus_adu(true, &[0x00, 0x01], true).is_none());
     }
@@ -3118,16 +3769,19 @@ mod tests {
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared: shared.clone(), unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared: shared.clone(),
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         let server = tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
                 let svc = svc.clone();
                 async move {
-                    tokio_modbus::server::tcp::accept_tcp_connection(
-                        stream,
-                        peer,
-                        move |_addr| Ok(Some(svc.clone())),
-                    )
+                    tokio_modbus::server::tcp::accept_tcp_connection(stream, peer, move |_addr| {
+                        Ok(Some(svc.clone()))
+                    })
                 }
             };
             let on_error = |e: std::io::Error| eprintln!("server error: {e}");
@@ -3145,11 +3799,17 @@ mod tests {
         assert_eq!(h, vec![999]);
         assert_eq!(shared.store.lock().unwrap().holding[10], 999);
 
-        ctx.write_multiple_coils(0, &[true, false, true]).await.unwrap().unwrap();
+        ctx.write_multiple_coils(0, &[true, false, true])
+            .await
+            .unwrap()
+            .unwrap();
         let c = ctx.read_coils(0, 3).await.unwrap().unwrap();
         assert_eq!(c, vec![true, false, true]);
 
-        ctx.write_multiple_registers(20, &[111, 222, 333]).await.unwrap().unwrap();
+        ctx.write_multiple_registers(20, &[111, 222, 333])
+            .await
+            .unwrap()
+            .unwrap();
         let r = ctx.read_holding_registers(20, 3).await.unwrap().unwrap();
         assert_eq!(r, vec![111, 222, 333]);
 
@@ -3188,7 +3848,12 @@ mod tests {
         // FC23: write [10,20,30] @0 then read 3 @0
         let r = handle_request(
             &shared,
-            &Request::ReadWriteMultipleRegisters(0, 3, 0, std::borrow::Cow::Owned(vec![10, 20, 30])),
+            &Request::ReadWriteMultipleRegisters(
+                0,
+                3,
+                0,
+                std::borrow::Cow::Owned(vec![10, 20, 30]),
+            ),
         );
         match r {
             Ok(Response::ReadWriteMultipleRegisters(v)) => assert_eq!(v, vec![10, 20, 30]),
@@ -3241,8 +3906,18 @@ mod tests {
             update_chart(
                 &mut ch,
                 &[
-                    DisplayRow { address: 0, value: String::new(), raw: String::new(), num: Some(v) },
-                    DisplayRow { address: 1, value: String::new(), raw: String::new(), num: Some(v * 2.0) },
+                    DisplayRow {
+                        address: 0,
+                        value: String::new(),
+                        raw: String::new(),
+                        num: Some(v),
+                    },
+                    DisplayRow {
+                        address: 1,
+                        value: String::new(),
+                        raw: String::new(),
+                        num: Some(v * 2.0),
+                    },
                 ],
             );
         }
@@ -3257,7 +3932,10 @@ mod tests {
         assert!(cmd.contains(" L "), "path must contain LineTo: {cmd}");
         for tok in cmd.split_whitespace() {
             if let Ok(n) = tok.parse::<f64>() {
-                assert!((0.0..=1000.0).contains(&n), "coord {n} out of range in {cmd}");
+                assert!(
+                    (0.0..=1000.0).contains(&n),
+                    "coord {n} out of range in {cmd}"
+                );
             }
         }
         // each register is scaled to its OWN range
@@ -3269,17 +3947,29 @@ mod tests {
     #[test]
     fn write_item_inc_wraps() {
         let mut items = vec![
-            WriteItem { address: 0, value: 65534, inc: true },
-            WriteItem { address: 1, value: 50, inc: false },
+            WriteItem {
+                address: 0,
+                value: 65534,
+                inc: true,
+            },
+            WriteItem {
+                address: 1,
+                value: 50,
+                inc: false,
+            },
         ];
         // simulate one auto-write cycle's increment step
         for it in items.iter_mut() {
-            if it.inc { it.value = it.value.wrapping_add(1); }
+            if it.inc {
+                it.value = it.value.wrapping_add(1);
+            }
         }
         assert_eq!(items[0].value, 65535);
         assert_eq!(items[1].value, 50); // non-inc unchanged
         for it in items.iter_mut() {
-            if it.inc { it.value = it.value.wrapping_add(1); }
+            if it.inc {
+                it.value = it.value.wrapping_add(1);
+            }
         }
         assert_eq!(items[0].value, 0); // wrapped
     }
@@ -3288,8 +3978,14 @@ mod tests {
     fn slave_sim_single_register() {
         let mut mem = vec![0u16; 5];
         let cfg = SimCfg {
-            mode: SimMode::Increment, area: Area::HoldingRegisters,
-            address: 1, quantity: 4, step: 5, min: 0, max: 100, interval_ms: 100,
+            mode: SimMode::Increment,
+            area: Area::HoldingRegisters,
+            address: 1,
+            quantity: 4,
+            step: 5,
+            min: 0,
+            max: 100,
+            interval_ms: 100,
             target: 3, // only absolute index 3 within [1,5)
         };
         let mut rng = Xorshift::new(3);
@@ -3304,8 +4000,18 @@ mod tests {
             update_chart(
                 &mut ch,
                 &[
-                    DisplayRow { address: 0, value: String::new(), raw: String::new(), num: Some(v) },
-                    DisplayRow { address: 1, value: String::new(), raw: String::new(), num: Some(v * 100.0) },
+                    DisplayRow {
+                        address: 0,
+                        value: String::new(),
+                        raw: String::new(),
+                        num: Some(v),
+                    },
+                    DisplayRow {
+                        address: 1,
+                        value: String::new(),
+                        raw: String::new(),
+                        num: Some(v * 100.0),
+                    },
                 ],
             );
         }
@@ -3321,16 +4027,19 @@ mod tests {
         let sb = build_series(&ch);
         assert!(sb.has_right);
         assert_eq!(sb.left_min, "10.00");
-        assert_eq!(sb.left_max, "30.00");      // only addr 0
+        assert_eq!(sb.left_max, "30.00"); // only addr 0
         assert_eq!(sb.right_min, "1000.00");
-        assert_eq!(sb.right_max, "3000.00");   // only addr 1
+        assert_eq!(sb.right_max, "3000.00"); // only addr 1
         assert_eq!(sb.series[0].axis, 0);
         assert_eq!(sb.series[1].axis, 1);
         let cmd = sb.series[1].commands.to_string();
         assert!(cmd.starts_with("M "));
         // the right-axis series is normalised to ITS own range, so it spans the
         // full 0..300 y space (last sample = max → y≈0, first = min → y≈300)
-        assert!(cmd.contains(" 0.0") || cmd.contains(" 0 "), "max should map near y=0: {cmd}");
+        assert!(
+            cmd.contains(" 0.0") || cmd.contains(" 0 "),
+            "max should map near y=0: {cmd}"
+        );
     }
 
     #[test]
@@ -3355,8 +4064,18 @@ mod tests {
             header_written: false,
         };
         let rows = vec![
-            DisplayRow { address: 0, value: "1".into(), raw: String::new(), num: Some(1.0) },
-            DisplayRow { address: 1, value: "2".into(), raw: String::new(), num: Some(2.0) },
+            DisplayRow {
+                address: 0,
+                value: "1".into(),
+                raw: String::new(),
+                num: Some(1.0),
+            },
+            DisplayRow {
+                address: 1,
+                value: "2".into(),
+                raw: String::new(),
+                num: Some(2.0),
+            },
         ];
         logger.maybe_log(&rows);
         drop(logger);
@@ -3369,7 +4088,12 @@ mod tests {
     async fn start_test_server(shared: Arc<SlaveShared>) -> std::net::SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared, unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
                 let svc = svc.clone();
@@ -3391,7 +4115,10 @@ mod tests {
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0xBEEF;
         let addr = start_test_server(shared).await;
-        let transport = Transport::Tcp { host: addr.ip().to_string(), port: addr.port() };
+        let transport = Transport::Tcp {
+            host: addr.ip().to_string(),
+            port: addr.port(),
+        };
 
         let (mut ctx, mut traffic, _) = connect_tapped(&transport, 1, None).await.unwrap();
         let v = ctx.read_holding_registers(0, 1).await.unwrap().unwrap();
@@ -3412,10 +4139,16 @@ mod tests {
                 Err(_) => tokio::time::sleep(Duration::from_millis(5)).await,
             }
         }
-        assert!(tx_seen && rx_seen, "expected raw Tx and Rx bytes to be captured");
+        assert!(
+            tx_seen && rx_seen,
+            "expected raw Tx and Rx bytes to be captured"
+        );
 
         let r = probe(&mut ctx, Area::HoldingRegisters, 0).await;
-        assert!(matches!(r, Ok(_)), "probe should succeed against a live server");
+        assert!(
+            matches!(r, Ok(_)),
+            "probe should succeed against a live server"
+        );
     }
 
     #[tokio::test]
@@ -3426,13 +4159,20 @@ mod tests {
             key_file: "certs/server.key".into(),
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else { return };
+        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
+            return;
+        };
 
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x1234;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared, unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
                 let svc = svc.clone();
@@ -3460,7 +4200,11 @@ mod tests {
         let tls = connector.connect(name, stream).await.unwrap();
         let mut ctx = tcp::attach_slave(tls, Slave(1));
         let v = ctx.read_holding_registers(0, 1).await.unwrap().unwrap();
-        assert_eq!(v, vec![0x1234], "Modbus read over TLS should return the stored value");
+        assert_eq!(
+            v,
+            vec![0x1234],
+            "Modbus read over TLS should return the stored value"
+        );
     }
 
     #[tokio::test]
@@ -3473,13 +4217,20 @@ mod tests {
             client_ca: "certs/ca.crt".into(),
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else { return };
+        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
+            return;
+        };
 
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x55AA;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared, unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
                 let svc = svc.clone();
@@ -3520,11 +4271,18 @@ mod tests {
             cipher: 2,
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else { return };
+        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
+            return;
+        };
         let shared = make_shared();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared, unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
                 let svc = svc.clone();
@@ -3562,12 +4320,19 @@ mod tests {
             version: 2, // TLS 1.3 only
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else { return };
+        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
+            return;
+        };
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x0BAD;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let svc = SlaveService { shared, unit_id: 1, tcp: true, ignore_unit_id: true };
+        let svc = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: true,
+            ignore_unit_id: true,
+        };
         tokio::spawn(async move {
             let on_connected = move |stream: tokio::net::TcpStream, _peer: std::net::SocketAddr| {
                 let svc = svc.clone();
@@ -3595,6 +4360,9 @@ mod tests {
         let desc = crate::tls::describe(tls.get_ref().1);
         assert!(desc.starts_with("TLS1.3"), "expected TLS1.3, got '{desc}'");
         let mut ctx = tcp::attach_slave(tls, Slave(1));
-        assert_eq!(ctx.read_holding_registers(0, 1).await.unwrap().unwrap(), vec![0x0BAD]);
+        assert_eq!(
+            ctx.read_holding_registers(0, 1).await.unwrap().unwrap(),
+            vec![0x0BAD]
+        );
     }
 }

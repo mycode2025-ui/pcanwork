@@ -20,7 +20,6 @@ fn wire_main(
     console_help_window: &ConsoleHelpWindow,
     script_runner_window: &ScriptRunnerWindow,
 ) {
-    // 关闭仿真面板窗口 = 停止仿真(否则信号发生器会在窗口隐藏后继续发帧)
     {
         let app = app.clone();
         let spw = sim_panel_window.as_weak();
@@ -39,21 +38,35 @@ fn wire_main(
             slint::CloseRequestResponse::HideWindow
         });
     }
-    // 高亮信号（双击工程树触发，2.5 秒内有效）
-// 退出前先断开设备并关闭句柄，否则设备被占用，下次打开需拔插重置
+    macro_rules! hide_child_on_close {
+        ($window:expr) => {
+            $window
+                .window()
+                .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
+        };
+    }
+    hide_child_on_close!(chart_window);
+    hide_child_on_close!(signal_window);
+    hide_child_on_close!(uds_window);
+    hide_child_on_close!(xcp_window);
+    hide_child_on_close!(channel_window);
+    hide_child_on_close!(playback_window);
+    hide_child_on_close!(convert_window);
+    hide_child_on_close!(cache_window);
+    hide_child_on_close!(trigger_window);
+    hide_child_on_close!(sim_prop_window);
+    hide_child_on_close!(console_help_window);
+    hide_child_on_close!(script_runner_window);
 {
         let cmd_quit = app.borrow().cmd.clone();
         let app_s = app.clone();
         let uiw = ui.as_weak();
         ui.window().on_close_requested(move || {
-            // 退出前保存配置
             if let Some(ui) = uiw.upgrade() {
                 settings::save(&gather_settings(&app_s.borrow(), &ui));
             }
-            // 退出前杀掉正在运行的 Python 脚本子进程；停 IPC 监听。
             {
                 let mut a = app_s.borrow_mut();
-                // 录制中关窗：先把 BLF 缓冲落盘，否则整段录制丢失(BLF 只在停止时才写)。
                 if a.recording && a.rec_fmt == RecFmt::Blf
                     && let Some(p) = a.rec_path.clone()
                 {
@@ -71,14 +84,12 @@ fn wire_main(
             }
             let _ = cmd_quit.send(Cmd::Disconnect);
             let _ = cmd_quit.send(Cmd::Quit);
-            // 给控制线程一点时间执行 CloseDevice 再退出
 std::thread::sleep(std::time::Duration::from_millis(200));
             let _ = slint::quit_event_loop();
             slint::CloseRequestResponse::HideWindow
         });
     }
 
-    // ---------------- 回调 ----------------
     {
         let app = app.clone();
         ui.on_connect(move || {
@@ -96,7 +107,7 @@ std::thread::sleep(std::time::Duration::from_millis(200));
         let app = app.clone();
         ui.on_start_rx(move || {
             let mut a = app.borrow_mut();
-            a.capture_wall_epoch = None; // 新采集会话重新标定墙钟起
+            a.capture_wall_epoch = None;
 if !a.connected {
                 let _ = a.cmd.send(Cmd::ConnectChannels(a.channels.clone()));
             }
@@ -115,13 +126,13 @@ if !a.connected {
             let mut a = app.borrow_mut();
             a.trace.clear();
             a.last.clear();
-            a.last_dirty = true; // 让清空状态传播到 IPC 快照
+            a.last_dirty = true;
             a.selected_key = None;
             a.selected_index = -1;
             a.display_items.clear();
             a.expanded_keys.clear();
             a.capture_wall_epoch = None;
-            a.no_counter = 0; // 清除后报文序号从头计数，而非沿用累计值
+            a.no_counter = 0;
             a.log("已清空显示缓存");
         });
     }
@@ -164,7 +175,6 @@ if !a.connected {
             a.autoscroll = !a.autoscroll;
         });
     }
-    // ---- CAN 报文日志 (printf-over-CAN 控制台) ----
     {
         let app = app.clone();
         ui.on_console_set_enabled(move |en| {
@@ -199,7 +209,7 @@ if !a.connected {
         let hw = console_help_window.as_weak();
         ui.on_console_help(move || {
             if let Some(w) = hw.upgrade() {
-                let _ = w.show();
+                show_child_window(&w);
             }
         });
     }
@@ -241,15 +251,12 @@ if !a.connected {
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_toggle_record(move || {
-            // 弹文件对话框时不能持有 app 借用：对话框的内层消息泵会让 100ms 定时器再次
-            // borrow_mut() 触发 RefCell 双借用而卡死。故先读 recording，再分支内按需借用。
             let recording = app.borrow().recording;
             if recording {
                 let mut a = app.borrow_mut();
                 a.recording = false;
                 a.rec_file = None;
                 if a.rec_fmt == RecFmt::Blf {
-                    // BLF：停止时统一写出缓冲
                     if let Some(p) = a.rec_path.clone() {
                         let buf = std::mem::take(&mut a.rec_blf_buf);
                         let n = buf.len();
@@ -261,8 +268,6 @@ if !a.connected {
                 }
                 a.log("停止记录");
             } else {
-                // 异步文件对话框：不在 UI 线程跑嵌套模态消息循环，避免对话框内 WM_TIMER
-                // 重入 winit 事件循环造成死锁（点「保存」无反应、主界面卡死的真因）。
                 let app = app.clone();
                 let uiw = uiw.clone();
                 let _ = slint::spawn_local(async move {
@@ -291,7 +296,6 @@ if !a.connected {
                 a.rec_fmt = fmt;
                 a.rec_path = Some(path.clone());
                 if fmt == RecFmt::Blf {
-                    // 缓冲到内存，停止时一次性写
 a.rec_blf_buf.clear();
                     a.rec_file = None;
                     a.recording = true;
@@ -330,7 +334,6 @@ a.rec_blf_buf.clear();
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_load_dbc(move || {
-            // 异步对话框（见 toggle_record 注释）：避免同步对话框在 UI 线程嵌套模态循环死锁。
             let app = app.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
@@ -492,7 +495,7 @@ a.rec_blf_buf.clear();
             let mut a = app.borrow_mut();
             a.filter = parse_filter(&ui.get_f_id(), &ui.get_f_name(), &ui.get_f_data());
             a.filter.dir_filter = dir_idx_to_opt(ui.get_dir_filter());
-            a.last_msg_sig = u64::MAX; // 触发重绘
+            a.last_msg_sig = u64::MAX;
             a.log("已应用过滤");
         });
     }
@@ -515,7 +518,7 @@ a.rec_blf_buf.clear();
         ui.on_set_dir_filter(move |idx| {
             let mut a = app.borrow_mut();
             a.filter.dir_filter = dir_idx_to_opt(idx);
-            a.last_msg_sig = u64::MAX; // 立即重绘
+            a.last_msg_sig = u64::MAX;
         });
     }
     {
@@ -606,7 +609,6 @@ a.rec_blf_buf.clear();
             }
         });
     }
-    // 高亮信号（双击工程树触发，2.5 秒内有效）
 {
         let app = app.clone();
         let cw = chart_window.as_weak();
@@ -614,7 +616,6 @@ a.rec_blf_buf.clear();
             let mut a = app.borrow_mut();
             if let Some(Some(name)) = a.tree_curve_sig.get(i as usize).cloned() {
                 a.chart_highlight = Some((name.clone(), std::time::Instant::now()));
-                // 确保该信号可
 for s in a.series.iter_mut() {
                     if s.name == name {
                         s.visible = true;
@@ -622,7 +623,7 @@ for s in a.series.iter_mut() {
                 }
                 a.log(format!("高亮曲线信号: {name}"));
                 if let Some(w) = cw.upgrade() {
-                    let _ = w.show();
+                    show_child_window(&w);
                 }
             }
         });
@@ -671,7 +672,7 @@ for s in a.series.iter_mut() {
         let chart = chart_window.as_weak();
         ui.on_open_chart_window(move || {
             if let Some(chart) = chart.upgrade() {
-                let _ = chart.show();
+                show_child_window(&chart);
             }
         });
     }
@@ -679,7 +680,7 @@ for s in a.series.iter_mut() {
         let picker = signal_window.as_weak();
         chart_window.on_open_signal_selector(move || {
             if let Some(picker) = picker.upgrade() {
-                let _ = picker.show();
+                show_child_window(&picker);
             }
         });
     }
@@ -687,7 +688,7 @@ for s in a.series.iter_mut() {
         let txw = tx_window.as_weak();
         ui.on_open_tx_window(move || {
             if let Some(txw) = txw.upgrade() {
-                let _ = txw.show();
+                show_child_window(&txw);
             }
         });
     }
@@ -695,15 +696,16 @@ for s in a.series.iter_mut() {
         let app = app.clone();
         let chw = channel_window.as_weak();
         ui.on_open_channel_config(move || {
-            let a = app.borrow();
+            let mut a = app.borrow_mut();
+            a.pcan_devices = can::pcan_attached_channels();
             if let Some(chw) = chw.upgrade() {
                 let sel = a.channel_sel.clamp(0, a.channels.len() as i32 - 1).max(0);
                 chw.set_chan_sel(sel);
-                chw.set_channels(ModelRc::from(Rc::new(VecModel::from(chan_list_strings(&a)))));
+                refresh_channel_window_lists(&chw, &a);
                 if let Some(c) = a.channels.get(sel as usize) {
                     set_chan_form(&chw, c);
                 }
-                let _ = chw.show();
+                show_child_window(&chw);
             }
         });
     }
@@ -752,7 +754,7 @@ for s in a.series.iter_mut() {
                 if !a.sort_desc {
                     a.sort_desc = true;
                 } else {
-                    a.sort_col = -1; // 第三次点击恢复默认顺
+                    a.sort_col = -1;
 a.sort_desc = false;
                 }
             } else {
@@ -858,7 +860,6 @@ a.sort_desc = false;
                 app.borrow_mut().log("曲线为空，无可导出数据".to_string());
                 return;
             }
-            // 异步对话框（见 toggle_record 注释）。
             let app = app.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
@@ -937,7 +938,6 @@ a.sort_desc = false;
             }
         });
     }
-    // 工程：保存（配置 + 发送列表 → .zcp）
 {
         let app = app.clone();
         let uiw = ui.as_weak();
@@ -946,16 +946,19 @@ a.sort_desc = false;
             let proj = {
                 let a = app.borrow();
                 Project {
+                    name: a.project_name.clone(),
                     settings: gather_settings(&a, &ui),
                     txs: a.txs.iter().map(TxTaskDto::from_task).collect(),
                 }
             };
+            let default_file_name = format!("{}.pcprj", proj.name);
             let app = app.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
-                    .add_filter("工程文件", &["zcp", "json"])
-                    .set_file_name("project.zcp");
+                    .add_filter("PcanWork 工程", &["pcprj"])
+                    .add_filter("旧工程/JSON", &["zcp", "json"])
+                    .set_file_name(&default_file_name);
                 if let Some(w) = uiw.upgrade() {
                     dlg = dlg.set_parent(&w.window().window_handle());
                 }
@@ -973,7 +976,6 @@ a.sort_desc = false;
             });
         });
     }
-    // 高亮信号（双击工程树触发，2.5 秒内有效）
 {
         let app = app.clone();
         let uiw = ui.as_weak();
@@ -1000,7 +1002,9 @@ a.sort_desc = false;
             let ppw = ppw.clone();
             let _ = slint::spawn_local(async move {
                 let Some(ui) = uiw.upgrade() else { return };
-                let mut dlg = rfd::AsyncFileDialog::new().add_filter("工程文件", &["zcp", "json"]);
+                let mut dlg = rfd::AsyncFileDialog::new()
+                    .add_filter("PcanWork 工程", &["pcprj"])
+                    .add_filter("旧工程/JSON", &["zcp", "json"]);
                 dlg = dlg.set_parent(&ui.window().window_handle());
                 let Some(file) = dlg.pick_file().await else { return };
                 let path = file.path().to_path_buf();
@@ -1022,8 +1026,15 @@ a.sort_desc = false;
             let big = proj.settings.big;
             {
                 let mut a = app.borrow_mut();
+                a.project_name = if proj.name.trim().is_empty() {
+                    path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("CAN_Test_Project")
+                        .to_string()
+                } else {
+                    proj.name.clone()
+                };
                 apply_settings(&mut a, &ui, &proj.settings);
-                // 重建发送列表（先停掉现有周期任务）
                 let stops: Vec<Cmd> = a
                     .txs
                     .iter()
@@ -1046,12 +1057,12 @@ a.sort_desc = false;
                     a.next_handle += 1;
                     a.txs.push(dto.into_task(h));
                 }
+                a.last_tree_sig = u64::MAX;
                 a.log(format!(
                     "已打开工程: {}（发送任务 {n} 条，默认停发）",
                     path.display()
                 ));
             }
-            // 主题分发（apply_settings 不含主题
 ui.global::<Theme>().set_dark(dark);
             ui.global::<Theme>().set_big(big);
             if let Some(w) = cw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
@@ -1063,18 +1074,17 @@ ui.global::<Theme>().set_dark(dark);
             if let Some(w) = ccw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
             if let Some(w) = spw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
             if let Some(w) = ppw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            // 打开工程后刷新仿真面
 refresh_sim(&app.borrow());
             });
         });
     }
-    // 工程：新建（清空发送列表/过滤/曲线/报文缓存；保留设备与主题）
 {
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_new_project(move || {
             {
                 let mut a = app.borrow_mut();
+                a.project_name = format!("Project_{}", chrono::Local::now().format("%H%M%S"));
                 let stops: Vec<Cmd> = a
                     .txs
                     .iter()
@@ -1102,7 +1112,9 @@ refresh_sim(&app.borrow());
                 a.expanded_keys.clear();
                 a.sim_widgets.clear();
                 refresh_sim(&a);
-                a.log("已新建工程（清空发送列表/过滤/曲线/报文缓存/仿真控件；保留设备与主题）".to_string());
+                a.last_tree_sig = u64::MAX;
+                let project_name = a.project_name.clone();
+                a.log(format!("已新建工程: {project_name}"));
             }
             if let Some(ui) = uiw.upgrade() {
                 ui.set_f_id("".into());
@@ -1112,29 +1124,46 @@ refresh_sim(&app.borrow());
             }
         });
     }
-    // 渲染器切换(auto→gpu→cpu→…)：保存到配置，重启后生效
     {
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_cycle_renderer(move || {
             let Some(ui) = uiw.upgrade() else { return };
+            let old = ui.get_renderer_mode().to_string();
             let next = match ui.get_renderer_mode().as_str() {
                 "auto" => "gpu",
                 "gpu" => "cpu",
                 _ => "auto",
             };
+            let label = match next {
+                "gpu" => "GPU",
+                "cpu" => "CPU",
+                _ => "Auto",
+            };
+            let confirmed = matches!(
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Warning)
+                    .set_title("切换渲染模式")
+                    .set_description(format!(
+                        "将切换到 {label} 渲染模式。\n\n该设置需要重启程序后生效，现在保存设置并自动重启吗？"
+                    ))
+                    .set_buttons(rfd::MessageButtons::YesNo)
+                    .show(),
+                rfd::MessageDialogResult::Yes
+            );
+            if !confirmed {
+                ui.set_renderer_mode(old.into());
+                return;
+            }
             ui.set_renderer_mode(next.into());
             let mut a = app.borrow_mut();
             settings::save(&gather_settings(&a, &ui));
-            let label = match next {
-                "gpu" => "GPU(femtovg，本地显卡)",
-                "cpu" => "CPU(software，省内存)",
-                _ => "自动(远程/虚拟显示用CPU，本地用GPU)",
-            };
-            a.log(format!("渲染器已设为 {label}；重启程序后生效"));
+            a.log(format!("渲染器已设为 {label}，正在重启程序"));
+            if let Err(e) = restart_current_process() {
+                a.log(format!("自动重启失败: {e}"));
+            }
         });
     }
-    // 主题 / 布局开关：同步到所有窗口的 Theme 全局
     {
         let uiw = ui.as_weak();
         let cw = chart_window.as_weak();
@@ -1185,7 +1214,6 @@ refresh_sim(&app.borrow());
             if let Some(w) = cvw.upgrade() { w.global::<Theme>().set_big(big); }
         });
     }
-    // 中英切换：翻转 I18n.en 到所有窗口
 {
         let uiw = ui.as_weak();
         let cw = chart_window.as_weak();
@@ -1205,7 +1233,6 @@ refresh_sim(&app.borrow());
         ui.on_toggle_lang(move || {
             let en = !uiw.unwrap().global::<I18n>().get_en();
             {
-                // 同步到 Rust 端语言标志，并强制重建工程树（树标签在 Rust 构建）
                 let mut a = app.borrow_mut();
                 a.lang_en = en;
                 a.last_tree_sig = u64::MAX;

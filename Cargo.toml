@@ -30,6 +30,9 @@ slint-build = "1.17.0"
 winresource = "0.1"
 
 # 体积优化(工作区根 profile, 对 pcanwork 与 serial 同时生效)
+[patch.crates-io]
+i-slint-backend-winit = { path = "vendor/slint/i-slint-backend-winit" }
+
 [profile.release]
 opt-level = "z"
 lto = true

@@ -42,7 +42,10 @@ pub fn seed_to_key(seed: u32) -> Option<u32> {
 }
 
 pub fn single_frame(ch: u8, id: u32, payload: &[u8]) -> CanFrame {
-    assert!(payload.len() <= 7, "UDS single frame payload is larger than 7 bytes");
+    assert!(
+        payload.len() <= 7,
+        "UDS single frame payload is larger than 7 bytes"
+    );
     let mut data = Vec::with_capacity(payload.len() + 1);
     data.push(payload.len() as u8);
     data.extend_from_slice(payload);
@@ -128,7 +131,12 @@ pub fn routine_control_jump(ch: u8, id: u32, routine_id: u16) -> CanFrame {
     single_frame(
         ch,
         id,
-        &[ROUTINE_CONTROL, 0x01, (routine_id >> 8) as u8, routine_id as u8],
+        &[
+            ROUTINE_CONTROL,
+            0x01,
+            (routine_id >> 8) as u8,
+            routine_id as u8,
+        ],
     )
 }
 
@@ -165,7 +173,10 @@ pub fn request_download(ch: u8, id: u32, addr: u32, len: u32) -> [CanFrame; 2] {
 
 pub fn transfer_data_block(ch: u8, id: u32, block_counter: u8, data: &[u8]) -> Vec<CanFrame> {
     let block_size = data.len() + 2;
-    assert!(block_size <= 0x0FFF, "UDS transfer block is too large for one ISO-TP message");
+    assert!(
+        block_size <= 0x0FFF,
+        "UDS transfer block is too large for one ISO-TP message"
+    );
 
     let mut frames = Vec::with_capacity(data.len().div_ceil(7) + 1);
     let first_copy_len = data.len().min(4);
@@ -193,7 +204,11 @@ pub fn transfer_data_block(ch: u8, id: u32, block_counter: u8, data: &[u8]) -> V
 }
 
 pub fn request_transfer_exit(ch: u8, id: u32, crc: u16) -> CanFrame {
-    single_frame(ch, id, &[REQUEST_TRANSFER_EXIT, (crc >> 8) as u8, crc as u8])
+    single_frame(
+        ch,
+        id,
+        &[REQUEST_TRANSFER_EXIT, (crc >> 8) as u8, crc as u8],
+    )
 }
 
 pub fn is_positive_response(data: &[u8], service: u8) -> bool {
@@ -217,7 +232,10 @@ mod tests {
     #[test]
     fn builds_download_request_like_uds_source() {
         let frames = request_download(1, ACO_OTA_CAN_ID, 0x1122_3344, 0x5566_7788);
-        assert_eq!(frames[0].data, vec![0x10, 0x0B, 0x34, 0x00, 0x44, 0x11, 0x22, 0x33]);
+        assert_eq!(
+            frames[0].data,
+            vec![0x10, 0x0B, 0x34, 0x00, 0x44, 0x11, 0x22, 0x33]
+        );
         assert_eq!(frames[1].data, vec![0x21, 0x44, 0x55, 0x66, 0x77, 0x88]);
     }
 

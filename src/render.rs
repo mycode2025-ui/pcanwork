@@ -3,8 +3,8 @@
 
 use crate::dbc::MessageDef;
 use crate::{
-    fmtf, App, AppWindow, ChanStat, IdStat, LastInfo, SigRow, SignalPickItem, SignalPickRow,
-    SignalSelectWindow,
+    App, AppWindow, ChanStat, IdStat, LastInfo, SigRow, SignalPickItem, SignalPickRow,
+    SignalSelectWindow, fmtf,
 };
 use slint::{ModelRc, VecModel};
 use std::rc::Rc;
@@ -49,13 +49,21 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
     signal_window.set_sig_cat(a.sig_cat);
     if a.sig_cat == 3 {
         // ---- Expression Variables: 列出用户定义的派生信号 ----
-        signal_window.set_signal_pick_dbc_name(if en { "Expression".into() } else { "表达式".into() });
+        signal_window.set_signal_pick_dbc_name(if en {
+            "Expression".into()
+        } else {
+            "表达式".into()
+        });
         for ev in &a.expr_vars {
             if filtering && !ev.name.to_ascii_lowercase().contains(&filter_text) {
                 continue;
             }
             let sel = a.signal_pick_expr_selected.as_deref() == Some(ev.name.as_str());
-            let unit = if ev.unit.is_empty() { String::new() } else { format!(" [{}]", ev.unit) };
+            let unit = if ev.unit.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", ev.unit)
+            };
             push(
                 &mut rows,
                 &mut items,
@@ -71,7 +79,12 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
             );
         }
         signal_window.set_signal_pick_summary(
-            if en { format!("Expressions: {}", a.expr_vars.len()) } else { format!("表达式: {} 个", a.expr_vars.len()) }.into(),
+            if en {
+                format!("Expressions: {}", a.expr_vars.len())
+            } else {
+                format!("表达式: {} 个", a.expr_vars.len())
+            }
+            .into(),
         );
     } else if a.sig_cat != 0 {
         // ---- System / User Defined / Function Signals: 占位(未实现) ----
@@ -86,8 +99,16 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
             &mut items,
             SignalPickItem::DbcRoot,
             0,
-            if en { "(not implemented)".to_string() } else { "(未实现)".to_string() },
-            if en { "This category is a placeholder".to_string() } else { "该分类暂未实现".to_string() },
+            if en {
+                "(not implemented)".to_string()
+            } else {
+                "(未实现)".to_string()
+            },
+            if en {
+                "This category is a placeholder".to_string()
+            } else {
+                "该分类暂未实现".to_string()
+            },
             "folder",
             false,
             false,
@@ -98,7 +119,13 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
     } else if a.dbc_loaded() {
         let dbc_label = match a.dbcs.len() {
             1 => a.dbcs[0].file_name.clone(),
-            n => if en { format!("{} +{} more", a.dbcs[0].file_name, n - 1) } else { format!("{} 等 {n} 个", a.dbcs[0].file_name) },
+            n => {
+                if en {
+                    format!("{} +{} more", a.dbcs[0].file_name, n - 1)
+                } else {
+                    format!("{} 等 {n} 个", a.dbcs[0].file_name)
+                }
+            }
         };
         signal_window.set_signal_pick_dbc_name(dbc_label.clone().into());
         push(
@@ -107,7 +134,11 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
             SignalPickItem::DbcRoot,
             0,
             dbc_label.clone(),
-            if en { "Mapped to: CAN 1".to_string() } else { "关联至: CAN 1".to_string() },
+            if en {
+                "Mapped to: CAN 1".to_string()
+            } else {
+                "关联至: CAN 1".to_string()
+            },
             "dbc",
             true,
             a.signal_pick_root_open,
@@ -171,7 +202,11 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
                     SignalPickItem::Message(m.id),
                     2,
                     msg_label,
-                    if en { format!("{} signals", m.signals.len()) } else { format!("信号 {}", m.signals.len()) },
+                    if en {
+                        format!("{} signals", m.signals.len())
+                    } else {
+                        format!("信号 {}", m.signals.len())
+                    },
                     "message",
                     !m.signals.is_empty(),
                     msg_open,
@@ -222,8 +257,20 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
         }
 
         let summary = match selected {
-            Some((id, signal)) => if en { format!("Selected: groups 1, signals 1  0x{id:X} / {signal}") } else { format!("已选中: 分组 1, 信号 1  0x{id:X} / {signal}") },
-            None => if en { format!("Selected: groups 0, signals 0    visible signals {visible_signals}") } else { format!("已选中: 分组 0, 信号 0    可见信号 {visible_signals}") },
+            Some((id, signal)) => {
+                if en {
+                    format!("Selected: groups 1, signals 1  0x{id:X} / {signal}")
+                } else {
+                    format!("已选中: 分组 1, 信号 1  0x{id:X} / {signal}")
+                }
+            }
+            None => {
+                if en {
+                    format!("Selected: groups 0, signals 0    visible signals {visible_signals}")
+                } else {
+                    format!("已选中: 分组 0, 信号 0    可见信号 {visible_signals}")
+                }
+            }
         };
         signal_window.set_signal_pick_summary(summary.into());
     } else {
@@ -233,15 +280,27 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
             &mut items,
             SignalPickItem::DbcRoot,
             0,
-            if en { "(no DBC loaded)".to_string() } else { "(未加载 DBC)".to_string() },
-            if en { "Load a DBC file first".to_string() } else { "请先加载 DBC 文件".to_string() },
+            if en {
+                "(no DBC loaded)".to_string()
+            } else {
+                "(未加载 DBC)".to_string()
+            },
+            if en {
+                "Load a DBC file first".to_string()
+            } else {
+                "请先加载 DBC 文件".to_string()
+            },
             "dbc",
             false,
             false,
             false,
             false,
         );
-        signal_window.set_signal_pick_summary(if en { "Selected: groups 0, signals 0".into() } else { "已选中: 分组 0, 信号 0".into() });
+        signal_window.set_signal_pick_summary(if en {
+            "Selected: groups 0, signals 0".into()
+        } else {
+            "已选中: 分组 0, 信号 0".into()
+        });
     }
 
     a.signal_pick_items = items;
@@ -318,7 +377,11 @@ pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
                 // tx 帧(发送/回显)在统计里加 (Tx) 标记，与同 ID 的 rx 行区分。
                 let base = a.dbc_message_name(id).unwrap_or("");
                 if (*k >> 39) & 1 == 1 {
-                    if base.is_empty() { "(Tx)".into() } else { format!("{base} (Tx)").into() }
+                    if base.is_empty() {
+                        "(Tx)".into()
+                    } else {
+                        format!("{base} (Tx)").into()
+                    }
                 } else {
                     base.into()
                 }
@@ -332,7 +395,14 @@ pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
             },
             max: format!("{:.0}ms", li.max_cycle * 1000.0).into(),
             last_time: format!("{:.3}", li.t).into(),
-            timeout: if timed_out { if a.lang_en { "Yes" } else { "是" } } else if a.lang_en { "No" } else { "否" }.into(),
+            timeout: if timed_out {
+                if a.lang_en { "Yes" } else { "是" }
+            } else if a.lang_en {
+                "No"
+            } else {
+                "否"
+            }
+            .into(),
         });
     }
     ui.set_id_stats(ModelRc::from(Rc::new(VecModel::from(id_rows))));
@@ -345,47 +415,71 @@ pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
     let en = a.lang_en;
     let mut sig_rows: Vec<SigRow> = Vec::new();
     a.sig_panel.clear();
-    let mut sig_title = if en { "No message selected".to_string() } else { "未选择报文".to_string() };
+    let mut sig_title = if en {
+        "No message selected".to_string()
+    } else {
+        "未选择报文".to_string()
+    };
     if let Some(k) = a.selected_key
-        && let Some(li) = a.last.get(&k) {
-            let id = (k & 0xFFFF_FFFF) as u32;
-            let data = li.data.clone();
-            let count = li.count;
-            let name = a.dbc_message_name(id).unwrap_or("").to_string();
+        && let Some(li) = a.last.get(&k)
+    {
+        let id = (k & 0xFFFF_FFFF) as u32;
+        let data = li.data.clone();
+        let count = li.count;
+        let name = a.dbc_message_name(id).unwrap_or("").to_string();
+        sig_title = if en {
+            format!(
+                "Current: 0x{id:X} {name} / Len={} / Count={count}",
+                data.len()
+            )
+        } else {
+            format!(
+                "当前报文: 0x{id:X} {name} / Len={} / Count={count}",
+                data.len()
+            )
+        };
+        if !a.dbc_loaded() {
             sig_title = if en {
-                format!("Current: 0x{id:X} {name} / Len={} / Count={count}", data.len())
+                "DBC not loaded".into()
             } else {
-                format!("当前报文: 0x{id:X} {name} / Len={} / Count={count}", data.len())
+                "未加载 DBC".into()
             };
-            if !a.dbc_loaded() {
-                sig_title = if en { "DBC not loaded".into() } else { "未加载 DBC".into() };
-            } else {
-                let decoded = a.dbc_decode(id, &data);
-                if decoded.is_empty() {
-                    sig_title = if en { format!("0x{id:X} message not matched in DBC") } else { format!("0x{id:X} 当前报文未匹配 DBC") };
-                }
-                for s in decoded {
-                    a.sig_panel.push((id, s.name.clone()));
-                    sig_rows.push(SigRow {
-                        signal: s.name.into(),
-                        raw: s.raw.to_string().into(),
-                        physical: format!("{:.3}", s.physical).into(),
-                        unit: s.unit.into(),
-                        min: fmtf(s.min).into(),
-                        max: fmtf(s.max).into(),
-                        enum_txt: s.enum_txt.into(),
-                        startbit: s.start_bit.to_string().into(),
-                        length: s.size.to_string().into(),
-                        byteorder: if s.little_endian { "Intel" } else { "Motorola" }.into(),
-                        signed: if s.signed { "Yes" } else { "No" }.into(),
-                        factor: fmtf(s.factor).into(),
-                        offset: fmtf(s.offset).into(),
-                        status: if s.out_of_range { if en { "Out of range" } else { "越界" } } else { "Normal" }.into(),
-                        out_of_range: s.out_of_range,
-                    });
-                }
+        } else {
+            let decoded = a.dbc_decode(id, &data);
+            if decoded.is_empty() {
+                sig_title = if en {
+                    format!("0x{id:X} message not matched in DBC")
+                } else {
+                    format!("0x{id:X} 当前报文未匹配 DBC")
+                };
+            }
+            for s in decoded {
+                a.sig_panel.push((id, s.name.clone()));
+                sig_rows.push(SigRow {
+                    signal: s.name.into(),
+                    raw: s.raw.to_string().into(),
+                    physical: format!("{:.3}", s.physical).into(),
+                    unit: s.unit.into(),
+                    min: fmtf(s.min).into(),
+                    max: fmtf(s.max).into(),
+                    enum_txt: s.enum_txt.into(),
+                    startbit: s.start_bit.to_string().into(),
+                    length: s.size.to_string().into(),
+                    byteorder: if s.little_endian { "Intel" } else { "Motorola" }.into(),
+                    signed: if s.signed { "Yes" } else { "No" }.into(),
+                    factor: fmtf(s.factor).into(),
+                    offset: fmtf(s.offset).into(),
+                    status: if s.out_of_range {
+                        if en { "Out of range" } else { "越界" }
+                    } else {
+                        "Normal"
+                    }
+                    .into(),
+                    out_of_range: s.out_of_range,
+                });
             }
         }
+    }
     ui.set_sig_title(sig_title.into());
     ui.set_sigs(ModelRc::from(Rc::new(VecModel::from(sig_rows))));
 }

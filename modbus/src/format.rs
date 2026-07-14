@@ -73,7 +73,10 @@ impl RegFormat {
     }
 
     fn numeric_display(self) -> bool {
-        !matches!(self, RegFormat::Hex16 | RegFormat::Bin16 | RegFormat::AsciiHex)
+        !matches!(
+            self,
+            RegFormat::Hex16 | RegFormat::Bin16 | RegFormat::AsciiHex
+        )
     }
 }
 
@@ -90,7 +93,14 @@ pub struct Scaling {
 
 impl Scaling {
     pub fn off() -> Self {
-        Scaling { enabled: false, x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0, decimals: 2 }
+        Scaling {
+            enabled: false,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 1.0,
+            y2: 1.0,
+            decimals: 2,
+        }
     }
     pub fn apply(&self, x: f64) -> f64 {
         if !self.enabled || self.x2 == self.x1 {
@@ -167,7 +177,10 @@ fn single_base(v: u16, fmt: RegFormat) -> (String, f64) {
         RegFormat::Hex16 => (format!("0x{v:04X}"), v as f64),
         RegFormat::Bin16 => {
             let s = format!("{v:016b}");
-            (format!("{} {} {} {}", &s[0..4], &s[4..8], &s[8..12], &s[12..16]), v as f64)
+            (
+                format!("{} {} {} {}", &s[0..4], &s[4..8], &s[8..12], &s[12..16]),
+                v as f64,
+            )
         }
         RegFormat::AsciiHex => {
             let hi = (v >> 8) as u8;
@@ -320,7 +333,12 @@ pub fn encode_value(value: f64, fmt: RegFormat) -> Option<Vec<u16>> {
     // The four orders are involutions, so applying `ordered` maps the value's
     // big-endian bytes to the canonical register byte layout.
     let canon = ordered(&be, order_for(fmt));
-    Some(canon.chunks(2).map(|c| ((c[0] as u16) << 8) | (c[1] as u16)).collect())
+    Some(
+        canon
+            .chunks(2)
+            .map(|c| ((c[0] as u16) << 8) | (c[1] as u16))
+            .collect(),
+    )
 }
 
 /// 把用户输入编码为多寄存器格式的寄存器字。整数格式按精确整数解析并范围校验
@@ -348,16 +366,35 @@ pub fn encode_typed(text: &str, fmt: RegFormat) -> Result<Vec<u16>, String> {
         Ok(v)
     };
     let be: Vec<u8> = match fmt {
-        RegFormat::I32(_) => (parse_int(i32::MIN as i128, i32::MAX as i128)? as i32).to_be_bytes().to_vec(),
-        RegFormat::U32(_) => (parse_int(0, u32::MAX as i128)? as u32).to_be_bytes().to_vec(),
-        RegFormat::I64(_) => (parse_int(i64::MIN as i128, i64::MAX as i128)? as i64).to_be_bytes().to_vec(),
-        RegFormat::U64(_) => (parse_int(0, u64::MAX as i128)? as u64).to_be_bytes().to_vec(),
-        RegFormat::F32(_) => t.parse::<f32>().map_err(|_| "invalid number".to_string())?.to_be_bytes().to_vec(),
-        RegFormat::F64(_) => t.parse::<f64>().map_err(|_| "invalid number".to_string())?.to_be_bytes().to_vec(),
+        RegFormat::I32(_) => (parse_int(i32::MIN as i128, i32::MAX as i128)? as i32)
+            .to_be_bytes()
+            .to_vec(),
+        RegFormat::U32(_) => (parse_int(0, u32::MAX as i128)? as u32)
+            .to_be_bytes()
+            .to_vec(),
+        RegFormat::I64(_) => (parse_int(i64::MIN as i128, i64::MAX as i128)? as i64)
+            .to_be_bytes()
+            .to_vec(),
+        RegFormat::U64(_) => (parse_int(0, u64::MAX as i128)? as u64)
+            .to_be_bytes()
+            .to_vec(),
+        RegFormat::F32(_) => t
+            .parse::<f32>()
+            .map_err(|_| "invalid number".to_string())?
+            .to_be_bytes()
+            .to_vec(),
+        RegFormat::F64(_) => t
+            .parse::<f64>()
+            .map_err(|_| "invalid number".to_string())?
+            .to_be_bytes()
+            .to_vec(),
         _ => return Err("unsupported type".to_string()),
     };
     let canon = ordered(&be, order_for(fmt));
-    Ok(canon.chunks(2).map(|c| ((c[0] as u16) << 8) | (c[1] as u16)).collect())
+    Ok(canon
+        .chunks(2)
+        .map(|c| ((c[0] as u16) << 8) | (c[1] as u16))
+        .collect())
 }
 
 pub fn parse_bit(text: &str) -> Option<bool> {
@@ -408,7 +445,10 @@ mod tests {
     #[test]
     fn word_orders_32() {
         let regs = [0x1122u16, 0x3344u16];
-        assert_eq!(multi_base(&regs, RegFormat::U32(Order::Abcd)).1 as u64, 0x11223344);
+        assert_eq!(
+            multi_base(&regs, RegFormat::U32(Order::Abcd)).1 as u64,
+            0x11223344
+        );
         assert_eq!(
             multi_base(&regs, RegFormat::U32(Order::Dcba)).1 as u64,
             u32::from_be_bytes([0x44, 0x33, 0x22, 0x11]) as u64
@@ -449,7 +489,14 @@ mod tests {
     #[test]
     fn scaling_linear() {
         // raw 0..65535 -> 0..100
-        let sc = Scaling { enabled: true, x1: 0.0, y1: 0.0, x2: 65535.0, y2: 100.0, decimals: 1 };
+        let sc = Scaling {
+            enabled: true,
+            x1: 0.0,
+            y1: 0.0,
+            x2: 65535.0,
+            y2: 100.0,
+            decimals: 1,
+        };
         let ov = std::collections::HashMap::new();
         let rows = render_registers(0, &[32768], RegFormat::U16, &ov, &sc);
         assert_eq!(rows.len(), 1);

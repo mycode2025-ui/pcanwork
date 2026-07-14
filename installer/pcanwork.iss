@@ -22,6 +22,7 @@ UninstallDisplayIcon={app}\pcanwork.exe
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+ChangesAssociations=yes
 
 [Languages]
 ; 此 Inno Setup 未自带简体中文语言文件，安装向导用英文(app 本身仍是中文)。
@@ -51,6 +52,14 @@ Source: "{#Root}\GCAN\x64\CHUSBDLL64.dll"; DestDir: "{app}"; Flags: ignoreversio
 ; ---- ZHCX 驱动 ----
 Source: "{#Root}\zhcxCAN\x64\ControlCAN.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; 注: PCAN(PEAK) 的 PCANBasic.dll 由 PEAK 官方驱动包安装到系统目录，不随本包分发。
+
+
+[Registry]
+Root: HKCR; Subkey: ".pcprj"; ValueType: string; ValueName: ""; ValueData: "PcanWork.Project"; Flags: uninsdeletevalue
+Root: HKCR; Subkey: ".pcprj"; ValueType: string; ValueName: "Content Type"; ValueData: "application/x-pcanwork-project"; Flags: uninsdeletevalue
+Root: HKCR; Subkey: "PcanWork.Project"; ValueType: string; ValueName: ""; ValueData: "PcanWork Project"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "PcanWork.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\pcanwork.exe,0"
+Root: HKCR; Subkey: "PcanWork.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\pcanwork.exe"" ""%1"""
 
 [Icons]
 Name: "{group}\PcanWork"; Filename: "{app}\pcanwork.exe"; WorkingDir: "{app}"; IconFilename: "{app}\app.ico"

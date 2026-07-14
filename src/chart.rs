@@ -3,7 +3,7 @@
 //! turns the live/frozen series into the `ChartSeries` model and axis labels.
 //! Extracted from main.rs. Chinese text below lives only in string literals (UI data).
 
-use crate::{fmt_wall, App, AppWindow, ChartSeries, ChartWindow, Series};
+use crate::{App, AppWindow, ChartSeries, ChartWindow, Series, fmt_wall};
 use slint::{Model, ModelRc, SharedString, VecModel};
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -70,9 +70,10 @@ pub(crate) fn window_pts(
     let step = (slice.len() / max_pts.max(1)).max(1);
     let mut out: Vec<(f64, f64)> = slice.iter().step_by(step).copied().collect();
     if let Some(&last) = slice.last()
-        && out.last() != Some(&last) {
-            out.push(last); // ensure the window end point is present (cursor at right edge)
-        }
+        && out.last() != Some(&last)
+    {
+        out.push(last); // ensure the window end point is present (cursor at right edge)
+    }
     out
 }
 
@@ -266,8 +267,16 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
                 cursor2_valid,
                 visible: s.visible,
                 highlight: hl.as_deref() == Some(s.name.as_str()),
-                smin: if pts.is_empty() { "-".into() } else { format!("{smin:.2}").into() },
-                smax: if pts.is_empty() { "-".into() } else { format!("{smax:.2}").into() },
+                smin: if pts.is_empty() {
+                    "-".into()
+                } else {
+                    format!("{smin:.2}").into()
+                },
+                smax: if pts.is_empty() {
+                    "-".into()
+                } else {
+                    format!("{smax:.2}").into()
+                },
             }
         })
         .collect();
@@ -283,17 +292,26 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
             if r.visible
                 && r.cursor_valid
                 && r.cursor2_valid
-                && let (Some(v1), Some(v2)) = (parse_lead(r.cursor_value.as_str()), parse_lead(r.cursor2_value.as_str()))
+                && let (Some(v1), Some(v2)) = (
+                    parse_lead(r.cursor_value.as_str()),
+                    parse_lead(r.cursor2_value.as_str()),
+                )
             {
                 parts.push(format!(
                     "{}: {} -> {}  d{:.2}",
-                    r.name, r.cursor_value, r.cursor2_value, v2 - v1
+                    r.name,
+                    r.cursor_value,
+                    r.cursor2_value,
+                    v2 - v1
                 ))
             }
         }
         parts.join("   |   ")
     } else if a.chart_cursor && has {
-        let mut parts = vec![format!("t={}", chart_cursor_time_label(a, cursor_time, dmin))];
+        let mut parts = vec![format!(
+            "t={}",
+            chart_cursor_time_label(a, cursor_time, dmin)
+        )];
         for r in &rows {
             if r.visible && r.cursor_valid {
                 parts.push(format!("{}={}", r.name, r.cursor_value));
@@ -340,8 +358,9 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
         ui.set_chart_xend_label("".into());
         chart_window.set_chart_xstart_label("".into());
         chart_window.set_chart_xend_label("".into());
-        chart_window
-            .set_chart_xlabels(ModelRc::from(Rc::new(VecModel::from(Vec::<SharedString>::new()))));
+        chart_window.set_chart_xlabels(ModelRc::from(Rc::new(VecModel::from(
+            Vec::<SharedString>::new(),
+        ))));
     }
 
     // Cursor readout.

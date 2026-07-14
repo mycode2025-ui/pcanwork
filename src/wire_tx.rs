@@ -5,17 +5,11 @@
 fn wire_tx(
     app: Rc<std::cell::RefCell<App>>,
     ui: &AppWindow,
-    chart_window: &ChartWindow,
-    signal_window: &SignalSelectWindow,
     tx_window: &TxWindow,
-    channel_window: &ChannelConfigWindow,
-    playback_window: &PlaybackWindow,
-    convert_window: &ConvertWindow,
-    cache_window: &CacheConfigWindow,
-    trigger_window: &TriggerWindow,
-    sim_panel_window: &SimPanelWindow,
-    sim_prop_window: &SimPropWindow,
 ) {
+    tx_window
+        .window()
+        .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
     {
         let app = app.clone();
         tx_window.on_tx_add(move || {

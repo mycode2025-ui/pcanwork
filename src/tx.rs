@@ -3,8 +3,8 @@
 //! Extracted from main.rs. Chinese text below lives only in user-facing string literals.
 
 use crate::{
-    fmtf, id_str, parse_tx_bytes, parse_u32, vary, App, AppWindow, TxRow, TxSigRow, TxTask,
-    TxWindow,
+    App, AppWindow, TxRow, TxSigRow, TxTask, TxWindow, fmtf, id_str, parse_tx_bytes, parse_u32,
+    vary,
 };
 use slint::{ModelRc, SharedString, VecModel};
 use std::rc::Rc;
@@ -117,9 +117,10 @@ pub(crate) fn update_tx_task(a: &mut App, row: i32, field: &str, value: &str) {
                 for chunk in s.as_bytes().chunks(2) {
                     if chunk.len() == 2
                         && let Ok(hex) = std::str::from_utf8(chunk)
-                            && let Ok(b) = u8::from_str_radix(hex, 16) {
-                                data.push(b);
-                            }
+                        && let Ok(b) = u8::from_str_radix(hex, 16)
+                    {
+                        data.push(b);
+                    }
                 }
             } else {
                 for p in parts {
@@ -195,27 +196,51 @@ pub(crate) fn vary_to_ui(m: Option<&vary::VaryMode>) -> (i32, [String; 6], Strin
         Some(vary::VaryMode::Arithmetic { diff, lo, hi }) => {
             (1, [f(*diff), f(*lo), f(*hi), e(), e(), e()], e())
         }
-        Some(vary::VaryMode::Geometric { init, ratio, lo, hi }) => {
-            (2, [f(*init), f(*ratio), f(*lo), f(*hi), e(), e()], e())
-        }
-        Some(vary::VaryMode::Sine { amp, omega, phase, offset, lo, hi }) => (
+        Some(vary::VaryMode::Geometric {
+            init,
+            ratio,
+            lo,
+            hi,
+        }) => (2, [f(*init), f(*ratio), f(*lo), f(*hi), e(), e()], e()),
+        Some(vary::VaryMode::Sine {
+            amp,
+            omega,
+            phase,
+            offset,
+            lo,
+            hi,
+        }) => (
             3,
             [f(*amp), f(*omega), f(*phase), f(*offset), f(*lo), f(*hi)],
             e(),
         ),
-        Some(vary::VaryMode::Triangle { period, amp, h_off, v_off, lo, hi }) => (
+        Some(vary::VaryMode::Triangle {
+            period,
+            amp,
+            h_off,
+            v_off,
+            lo,
+            hi,
+        }) => (
             4,
             [f(*period), f(*amp), f(*h_off), f(*v_off), f(*lo), f(*hi)],
             e(),
         ),
-        Some(vary::VaryMode::Rect { period, duty, high, low }) => {
-            (5, [f(*period), f(*duty), f(*high), f(*low), e(), e()], e())
-        }
+        Some(vary::VaryMode::Rect {
+            period,
+            duty,
+            high,
+            low,
+        }) => (5, [f(*period), f(*duty), f(*high), f(*low), e(), e()], e()),
         Some(vary::VaryMode::Random { lo, hi }) => (6, [f(*lo), f(*hi), e(), e(), e(), e()], e()),
         Some(vary::VaryMode::Sequence { values }) => (
             7,
             [e(), e(), e(), e(), e(), e()],
-            values.iter().map(|v| fmtf(*v)).collect::<Vec<_>>().join(", "),
+            values
+                .iter()
+                .map(|v| fmtf(*v))
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
         _ => (0, [e(), e(), e(), e(), e(), e()], e()),
     }
@@ -225,8 +250,17 @@ pub(crate) fn vary_to_ui(m: Option<&vary::VaryMode>) -> (i32, [String; 6], Strin
 pub(crate) fn ui_to_vary(mode: i32, p: &[String; 6], seq: &str) -> vary::VaryMode {
     let pf = |i: usize| p[i].trim().parse::<f64>().unwrap_or(0.0);
     match mode {
-        1 => vary::VaryMode::Arithmetic { diff: pf(0), lo: pf(1), hi: pf(2) },
-        2 => vary::VaryMode::Geometric { init: pf(0), ratio: pf(1), lo: pf(2), hi: pf(3) },
+        1 => vary::VaryMode::Arithmetic {
+            diff: pf(0),
+            lo: pf(1),
+            hi: pf(2),
+        },
+        2 => vary::VaryMode::Geometric {
+            init: pf(0),
+            ratio: pf(1),
+            lo: pf(2),
+            hi: pf(3),
+        },
         3 => vary::VaryMode::Sine {
             amp: pf(0),
             omega: pf(1),
@@ -243,9 +277,19 @@ pub(crate) fn ui_to_vary(mode: i32, p: &[String; 6], seq: &str) -> vary::VaryMod
             lo: pf(4),
             hi: pf(5),
         },
-        5 => vary::VaryMode::Rect { period: pf(0), duty: pf(1), high: pf(2), low: pf(3) },
-        6 => vary::VaryMode::Random { lo: pf(0), hi: pf(1) },
-        7 => vary::VaryMode::Sequence { values: vary::parse_sequence(seq) },
+        5 => vary::VaryMode::Rect {
+            period: pf(0),
+            duty: pf(1),
+            high: pf(2),
+            low: pf(3),
+        },
+        6 => vary::VaryMode::Random {
+            lo: pf(0),
+            hi: pf(1),
+        },
+        7 => vary::VaryMode::Sequence {
+            values: vary::parse_sequence(seq),
+        },
         _ => vary::VaryMode::None,
     }
 }
@@ -285,8 +329,19 @@ pub(crate) fn populate_sig_panel(a: &App, w: &TxWindow, sig_idx: i32) {
     w.set_tx_sel_sig_offset(fmtf(s.offset).into());
     w.set_tx_sel_sig_startbit(s.start_bit.to_string().into());
     w.set_tx_sel_sig_length(s.size.to_string().into());
-    w.set_tx_sel_sig_comment(if a.lang_en { format!("Valid range [{}, {}]", fmtf(s.min), fmtf(s.max)) } else { format!("有效范围 [{}, {}]", fmtf(s.min), fmtf(s.max)) }.into());
-    let vm = t.varies.iter().find(|v| v.signal == s.name).map(|v| &v.mode);
+    w.set_tx_sel_sig_comment(
+        if a.lang_en {
+            format!("Valid range [{}, {}]", fmtf(s.min), fmtf(s.max))
+        } else {
+            format!("有效范围 [{}, {}]", fmtf(s.min), fmtf(s.max))
+        }
+        .into(),
+    );
+    let vm = t
+        .varies
+        .iter()
+        .find(|v| v.signal == s.name)
+        .map(|v| &v.mode);
     let (mi, p, seq) = vary_to_ui(vm);
     w.set_tx_vary_mode(mi);
     w.set_tx_vp1(p[0].clone().into());
@@ -322,7 +377,11 @@ pub(crate) fn build_tx_rows(a: &App) -> Vec<TxRow> {
                 .into(),
             mode: if t.periodic { "Periodic" } else { "Single" }.into(),
             period: format!("{}", t.period_ms).into(),
-            count: if t.repeat < 0 { "-1".into() } else { t.repeat.to_string().into() },
+            count: if t.repeat < 0 {
+                "-1".into()
+            } else {
+                t.repeat.to_string().into()
+            },
             sent: t.sent.to_string().into(),
             status: if t.periodic { "Running" } else { "Stopped" }.into(),
             running: t.periodic,
@@ -401,7 +460,11 @@ pub(crate) fn build_tx_dbc_page(a: &mut App, tx_window: &TxWindow) {
     // Signal editor: gate the rebuild on (selection + bound id + signal values) so typing
     // into a field isn't clobbered by the per-frame refresh.
     let sel = a.tx_sel;
-    let mut title = if en { "No DBC send task selected".to_string() } else { "未选择 DBC 发送任务".to_string() };
+    let mut title = if en {
+        "No DBC send task selected".to_string()
+    } else {
+        "未选择 DBC 发送任务".to_string()
+    };
     let sig = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -423,7 +486,11 @@ pub(crate) fn build_tx_dbc_page(a: &mut App, tx_window: &TxWindow) {
             let t = &a.txs[sel as usize];
             if let Some(id) = t.dbc_id {
                 let name = a.dbc_message_name(id).unwrap_or("");
-                title = if en { format!("Current: 0x{id:X} {name}") } else { format!("当前: 0x{id:X} {name}") };
+                title = if en {
+                    format!("Current: 0x{id:X} {name}")
+                } else {
+                    format!("当前: 0x{id:X} {name}")
+                };
                 if let Some(m) = a.dbc_message(id) {
                     for s in &m.signals {
                         let phys = t
@@ -448,7 +515,11 @@ pub(crate) fn build_tx_dbc_page(a: &mut App, tx_window: &TxWindow) {
                     }
                 }
             } else {
-                title = if en { "Selected task is not a DBC message (no signals to edit)".to_string() } else { "选中任务不是 DBC 报文（无信号可编辑）".to_string() };
+                title = if en {
+                    "Selected task is not a DBC message (no signals to edit)".to_string()
+                } else {
+                    "选中任务不是 DBC 报文（无信号可编辑）".to_string()
+                };
             }
         }
         tx_window.set_tx_sel_title(title.into());

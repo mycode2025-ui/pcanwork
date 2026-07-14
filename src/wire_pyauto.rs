@@ -1,4 +1,4 @@
-// Python 自动化测试「脚本运行器」窗口的事件接线 + Python 版本检测/校验/启动。
+﻿// Python 自动化测试「脚本运行器」窗口的事件接线 + Python 版本检测/校验/启动。
 // 通过 include! 进 main.rs 的 crate-root 模块，共享其 import 与私有项（无单独 use）。
 //
 // 版本切换 = 改 interp 路径字符串；每次 Run 现读现校验，零 rebuild、零 pip。
@@ -317,7 +317,7 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
             if app.borrow().py_output.is_empty() {
                 w.set_status_text("就绪".into());
             }
-            let _ = w.show();
+            show_child_window(&w);
         });
     }
 

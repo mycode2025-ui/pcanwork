@@ -30,7 +30,10 @@ fn main() {
     // OUT_DIR = target/<profile>/build/<pkg-hash>/out.
     // Going up three levels reaches the executable directory: target/<profile>.
     if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        let exe_dir = std::path::Path::new(&out_dir).join("..").join("..").join("..");
+        let exe_dir = std::path::Path::new(&out_dir)
+            .join("..")
+            .join("..")
+            .join("..");
         let _ = std::fs::copy("pcanwork.py", exe_dir.join("pcanwork.py"));
 
         let tdir = exe_dir.join("templates");

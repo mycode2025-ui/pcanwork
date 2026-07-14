@@ -1,12 +1,5 @@
-//! CAN 设备抽象层：统一帧结构 + 适配器 trait + 虚拟总线 + PCAN(PEAK) 后端 + 控制线程。
 //!
-//! 设计要点：
-//! - `CanAdapter` 把硬件差异隐藏在 poll/send 之后；上层只认 `CanFrame`。
-//! - 连接时优先尝试真实 PCAN 卡，失败则自动回退到虚拟总线，保证无硬件也能跑通全链路。
-//! - 控制线程独占适配器，UI 线程通过 channel 下发命令 / 收取事件，绝不直接碰硬件。
 
-// FFI 后端里多处 `drop(symbol)` 是故意提前结束 libloading Symbol 的借用（如卸载设备前），
-// 这些类型并不实现 Drop，clippy::drop_non_drop 在此为误报。
 #![allow(clippy::drop_non_drop)]
 
 use serde::{Deserialize, Serialize};
@@ -21,33 +14,33 @@ pub fn cancel_ota() {
     OTA_CANCEL.store(true, Ordering::Relaxed);
 }
 
-/// 统一 CAN/CAN FD 帧。
 #[derive(Clone, Debug)]
 pub struct CanFrame {
-    pub t: f64,        // 相对时间(秒)，从控制线程启动算起
-    pub ch: u8,        // 通道号，从 1 开始
-    pub tx: bool,      // true=发送帧(回显)，false=接收帧
-    pub id: u32,       // 不含扩展标志的 ID
-    pub ext: bool,     // 扩展帧
+    pub t: f64,
+    pub ch: u8,
+    pub tx: bool,
+    pub id: u32,
+    pub ext: bool,
     pub fd: bool,      // CAN FD
-    pub brs: bool,     // 波特率切换
-    pub remote: bool,  // 远程帧
-    pub error: bool,   // 错误帧
-    pub data: Vec<u8>, // 数据区
+    pub brs: bool,
+    pub remote: bool,
+    pub error: bool,
+    pub data: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(default)] // 缺字段用类型默认值填充，避免 IPC 传入部分配置时整条静默丢弃
+#[serde(default)]
 pub struct DeviceConfig {
-    pub sw_channel: u8, // 软件通道号（CAN1=1, CAN2=2...）
-    pub is_fd: bool,    // 协议：false=CAN, true=CAN FD
+    pub sw_channel: u8,
+    pub is_fd: bool,
     pub device_type: String,
+    pub hardware_label: String,
     pub device_index: u32,
     pub channel_index: u32,
     pub baud: String,
     pub data_baud: String,
     pub termination: bool,
-    pub net_server: bool, // 网络设备：true=服务器, false=客户端
+    pub net_server: bool,
     pub ip: String,
     pub port: String,
 }
@@ -62,16 +55,12 @@ impl CanFrame {
     }
 }
 
-/// 适配器接口：不同 CAN 硬件实现这套即可接入。
 pub trait CanAdapter: Send {
-    /// 把当前可读到的帧追加到 out（非阻塞）。
     fn poll(&mut self, out: &mut Vec<CanFrame>);
-    /// 发送一帧。
     fn send(&mut self, f: &CanFrame) -> Result<(), String>;
     fn name(&self) -> &str;
 }
 
-// ======================= PCAN (PEAK) 后端 =======================
 
 fn normalize_baud(baud: &str) -> String {
     let b = baud.trim().to_ascii_uppercase().replace(' ', "");
@@ -84,7 +73,6 @@ fn normalize_baud(baud: &str) -> String {
     }
 }
 
-/// SJA1000 定时寄存器值（ControlCAN/ECanVci 通用），覆盖常用波特率。
 fn zlg_timing(baud: &str) -> Option<(u8, u8)> {
     match normalize_baud(baud).as_str() {
         "1000K" => Some((0x00, 0x14)),
@@ -103,12 +91,11 @@ fn zlg_timing(baud: &str) -> Option<(u8, u8)> {
 
 #[allow(non_camel_case_types)]
 mod pcan_ffi {
-    // PCANBasic.dll 导出为 __stdcall（WINAPI）。用 "system" 而非 "C"：在 x86(32位)上
-    // "C"=cdecl 会与 stdcall 栈清理不匹配导致每次调用栈损坏；x86_64 两者等价。
     pub type FnInit = unsafe extern "system" fn(u16, u16, u8, u32, u16) -> u32;
     pub type FnUninit = unsafe extern "system" fn(u16) -> u32;
     pub type FnRead = unsafe extern "system" fn(u16, *mut TPCANMsg, *mut TPCANTimestamp) -> u32;
     pub type FnWrite = unsafe extern "system" fn(u16, *const TPCANMsg) -> u32;
+    pub type FnGetValue = unsafe extern "system" fn(u16, u8, *mut std::ffi::c_void, u32) -> u32;
 
     #[repr(C)]
     #[derive(Clone, Copy)]
@@ -127,26 +114,25 @@ mod pcan_ffi {
         pub micros: u16,
     }
 
-    pub const PCAN_USBBUS1: u16 = 0x51;
-    pub const PCAN_USBBUS2: u16 = 0x52;
-    pub const PCAN_USBBUS3: u16 = 0x53;
-    pub const PCAN_USBBUS4: u16 = 0x54;
+    pub const PCAN_NONEBUS: u16 = 0x00;
     pub const PCAN_BAUD_125K: u16 = 0x031C;
     pub const PCAN_BAUD_250K: u16 = 0x011C;
     pub const PCAN_BAUD_500K: u16 = 0x001C;
     pub const PCAN_BAUD_1M: u16 = 0x0014;
     pub const PCAN_ERROR_OK: u32 = 0x0000_0000;
     pub const PCAN_ERROR_QRCVEMPTY: u32 = 0x0000_0020;
+    pub const PCAN_ATTACHED_CHANNELS_COUNT: u8 = 0x2A;
+    pub const PCAN_ATTACHED_CHANNELS: u8 = 0x2B;
+    pub const PCAN_FEATURE_FD_CAPABLE: u32 = 0x01;
 
     pub const MSGTYPE_STANDARD: u8 = 0x00;
     pub const MSGTYPE_RTR: u8 = 0x01;
     pub const MSGTYPE_EXTENDED: u8 = 0x02;
-    pub const MSGTYPE_FD: u8 = 0x04; // CAN FD 帧
-    pub const MSGTYPE_BRS: u8 = 0x08; // 比特率切换
+    pub const MSGTYPE_FD: u8 = 0x04;
+    pub const MSGTYPE_BRS: u8 = 0x08;
     pub const MSGTYPE_ERRFRAME: u8 = 0x40;
     pub const MSGTYPE_STATUS: u8 = 0x80;
 
-    // ---- CAN FD 接口（CAN_InitializeFD/WriteFD/ReadFD，PCANBasic.h 镜像）----
     pub type FnInitFd = unsafe extern "system" fn(u16, *const std::os::raw::c_char) -> u32;
     pub type FnWriteFd = unsafe extern "system" fn(u16, *const TPCANMsgFD) -> u32;
     pub type FnReadFd = unsafe extern "system" fn(u16, *mut TPCANMsgFD, *mut u64) -> u32;
@@ -156,12 +142,146 @@ mod pcan_ffi {
     pub struct TPCANMsgFD {
         pub id: u32,
         pub msgtype: u8,
-        pub dlc: u8, // DLC 码 0..15（非字节数）
+        pub dlc: u8,
         pub data: [u8; 64],
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct TPCANChannelInformation {
+        pub channel_handle: u16,
+        pub device_type: u8,
+        pub controller_number: u8,
+        pub device_features: u32,
+        pub device_name: [std::os::raw::c_char; 33],
+        pub device_id: u32,
+        pub channel_condition: u32,
     }
 }
 
-/// CAN FD 数据字节数 → DLC 码（0..15 ↔ 0,1..8,12,16,20,24,32,48,64）。
+#[derive(Clone, Debug)]
+pub struct PcanChannelInfo {
+    pub channel_index: u32,
+    pub channel_name: String,
+    pub device_name: String,
+    pub device_id: u32,
+    pub fd_capable: bool,
+    pub channel_condition: u32,
+}
+
+fn pcan_channel_index(handle: u16) -> Option<u32> {
+    match handle {
+        0x51..=0x58 => Some((handle - 0x51) as u32),
+        0x509..=0x510 => Some((handle - 0x509 + 8) as u32),
+        _ => None,
+    }
+}
+
+fn pcan_channel_name(index: u32) -> String {
+    format!("PCAN_USBBUS{}", index + 1)
+}
+
+fn pcan_usb_channel(index: u32) -> Option<u16> {
+    match index {
+        0 => Some(0x51),
+        1 => Some(0x52),
+        2 => Some(0x53),
+        3 => Some(0x54),
+        4 => Some(0x55),
+        5 => Some(0x56),
+        6 => Some(0x57),
+        7 => Some(0x58),
+        8 => Some(0x509),
+        9 => Some(0x50A),
+        10 => Some(0x50B),
+        11 => Some(0x50C),
+        12 => Some(0x50D),
+        13 => Some(0x50E),
+        14 => Some(0x50F),
+        15 => Some(0x510),
+        _ => None,
+    }
+}
+
+fn pcan_device_name(raw: &[std::os::raw::c_char; 33]) -> String {
+    let bytes: Vec<u8> = raw
+        .iter()
+        .copied()
+        .take_while(|&c| c != 0)
+        .map(|c| c as u8)
+        .collect();
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+pub fn pcan_attached_channels() -> Vec<PcanChannelInfo> {
+    use pcan_ffi::*;
+
+    let Ok(lib) = (unsafe { libloading::Library::new("PCANBasic.dll") }) else {
+        return Vec::new();
+    };
+    let Ok(get_value) = (unsafe { lib.get::<FnGetValue>(b"CAN_GetValue\0") }) else {
+        return Vec::new();
+    };
+
+    let mut count = 0u32;
+    let status = unsafe {
+        get_value(
+            PCAN_NONEBUS,
+            PCAN_ATTACHED_CHANNELS_COUNT,
+            (&mut count as *mut u32).cast::<std::ffi::c_void>(),
+            std::mem::size_of::<u32>() as u32,
+        )
+    };
+    if status != PCAN_ERROR_OK || count == 0 {
+        return Vec::new();
+    }
+
+    let empty = TPCANChannelInformation {
+        channel_handle: 0,
+        device_type: 0,
+        controller_number: 0,
+        device_features: 0,
+        device_name: [0; 33],
+        device_id: 0,
+        channel_condition: 0,
+    };
+    let mut raw = vec![empty; count as usize];
+    let status = unsafe {
+        get_value(
+            PCAN_NONEBUS,
+            PCAN_ATTACHED_CHANNELS,
+            raw.as_mut_ptr().cast::<std::ffi::c_void>(),
+            (raw.len() * std::mem::size_of::<TPCANChannelInformation>()) as u32,
+        )
+    };
+    if status != PCAN_ERROR_OK {
+        return Vec::new();
+    }
+
+    raw.into_iter()
+        .filter_map(|info| {
+            let channel_index = pcan_channel_index(info.channel_handle)?;
+            let mut device_name = pcan_device_name(&info.device_name);
+            let fd_capable = info.device_features & PCAN_FEATURE_FD_CAPABLE != 0;
+            if device_name.is_empty() {
+                device_name = if fd_capable {
+                    "PCAN-USB FD".to_string()
+                } else {
+                    "PCAN-USB".to_string()
+                };
+            }
+            Some(PcanChannelInfo {
+                channel_index,
+                channel_name: pcan_channel_name(channel_index),
+                device_name,
+                device_id: info.device_id,
+                fd_capable,
+                channel_condition: info.channel_condition,
+            })
+        })
+        .collect()
+}
+
 fn fd_len_to_dlc(len: usize) -> u8 {
     match len {
         0..=8 => len as u8,
@@ -175,7 +295,6 @@ fn fd_len_to_dlc(len: usize) -> u8 {
     }
 }
 
-/// DLC 码 → CAN FD 数据字节数。
 fn fd_dlc_to_len(dlc: u8) -> usize {
     match dlc & 0x0F {
         n @ 0..=8 => n as usize,
@@ -189,31 +308,29 @@ fn fd_dlc_to_len(dlc: u8) -> usize {
     }
 }
 
-/// 由仲裁/数据速率构造 PEAK CAN FD 比特率串（f_clock=80MHz，采样点≈80%）。
-/// 也支持直接传入完整串（含 "f_clock"）作为高级覆盖。所有节点只需仲裁/数据"速率"一致，
-/// 采样点在容差内可不同，故此处用统一推导值即可与其它设备互通。
 fn pcan_fd_bitrate(arb: &str, data: &str) -> Result<String, String> {
-    // 高级覆盖：用户直接给了完整时序串（normalize_baud 已转大写，故匹配大写；返回原串保留大小写）
     let a = normalize_baud(arb);
     if a.contains("F_CLOCK") || a.contains("NOM_BRP") {
         return Ok(arb.to_string());
     }
-    // 仲裁段（80MHz，ntq=80，tseg1=63/tseg2=16/sjw=16，brp 缩放速率）
     let nom = match a.as_str() {
         "1M" | "1000K" => "nom_brp=2,nom_tseg1=31,nom_tseg2=8,nom_sjw=8",
+        "800K" => "nom_brp=5,nom_tseg1=15,nom_tseg2=4,nom_sjw=4",
         "500K" => "nom_brp=2,nom_tseg1=63,nom_tseg2=16,nom_sjw=16",
         "250K" => "nom_brp=4,nom_tseg1=63,nom_tseg2=16,nom_sjw=16",
         "125K" => "nom_brp=8,nom_tseg1=63,nom_tseg2=16,nom_sjw=16",
         other => return Err(format!("CAN FD 不支持的仲裁速率: {other}（支持 1M/500K/250K/125K，或直接填完整 f_clock 串）")),
     };
-    // 数据段（80MHz，dtq=20，tseg1=15/tseg2=4/sjw=4，brp 缩放；8M/5M 用更小 dtq）
     let dat = match normalize_baud(data).as_str() {
         "8M" | "8000K" => "data_brp=1,data_tseg1=7,data_tseg2=2,data_sjw=2",
         "5M" | "5000K" => "data_brp=1,data_tseg1=12,data_tseg2=3,data_sjw=3",
         "4M" | "4000K" => "data_brp=1,data_tseg1=15,data_tseg2=4,data_sjw=4",
         "2M" | "2000K" => "data_brp=2,data_tseg1=15,data_tseg2=4,data_sjw=4",
         "1M" | "1000K" => "data_brp=4,data_tseg1=15,data_tseg2=4,data_sjw=4",
+        "800K" => "data_brp=5,data_tseg1=15,data_tseg2=4,data_sjw=4",
         "500K" => "data_brp=8,data_tseg1=15,data_tseg2=4,data_sjw=4",
+        "250K" => "data_brp=16,data_tseg1=15,data_tseg2=4,data_sjw=4",
+        "125K" => "data_brp=32,data_tseg1=15,data_tseg2=4,data_sjw=4",
         other => return Err(format!("CAN FD 不支持的数据速率: {other}（支持 8M/5M/4M/2M/1M/500K，或直接填完整 f_clock 串）")),
     };
     Ok(format!("f_clock=80000000,{nom},{dat}"))
@@ -222,29 +339,22 @@ fn pcan_fd_bitrate(arb: &str, data: &str) -> Result<String, String> {
 pub struct PcanBus {
     lib: libloading::Library,
     channel: u16,
-    is_fd: bool, // 通道是否按 CAN FD 初始化（决定走 CAN_ReadFD/WriteFD）
+    is_fd: bool,
     start: Instant,
     name: String,
 }
 
 impl PcanBus {
-    /// 尝试打开 PCAN_USBBUS1 @500K。失败返回 Err（上层据此回退到虚拟总线）。
     pub fn open(start: Instant) -> Result<Self, String> {
         Self::open_config(start, 0, "500K")
     }
 
     pub fn open_config(start: Instant, channel_index: u32, baud: &str) -> Result<Self, String> {
         use pcan_ffi::*;
-        let channel = match channel_index {
-            0 => PCAN_USBBUS1,
-            1 => PCAN_USBBUS2,
-            2 => PCAN_USBBUS3,
-            3 => PCAN_USBBUS4,
-            _ => {
-                return Err(format!(
-                    "PCAN only supports configured USB channel index 0..3, got {channel_index}"
-                ));
-            }
+        let Some(channel) = pcan_usb_channel(channel_index) else {
+            return Err(format!(
+                "PCAN only supports configured USB channel index 0..15, got {channel_index}"
+            ));
         };
         let baud_code = match normalize_baud(baud).as_str() {
             "125K" => PCAN_BAUD_125K,
@@ -276,18 +386,16 @@ impl PcanBus {
         }
     }
 
-    /// 按 DeviceConfig 打开：cfg.is_fd=true 走 CAN_InitializeFD（CAN FD），否则经典。
     pub fn open_cfg(start: Instant, cfg: &DeviceConfig) -> Result<Self, String> {
         use pcan_ffi::*;
         if !cfg.is_fd {
             return Self::open_config(start, cfg.channel_index, &cfg.baud);
         }
-        let channel = match cfg.channel_index {
-            0 => PCAN_USBBUS1,
-            1 => PCAN_USBBUS2,
-            2 => PCAN_USBBUS3,
-            3 => PCAN_USBBUS4,
-            other => return Err(format!("PCAN 仅支持 USB 通道 0..3，收到 {other}")),
+        let Some(channel) = pcan_usb_channel(cfg.channel_index) else {
+            return Err(format!(
+                "PCAN only supports configured USB channel index 0..15, got {}",
+                cfg.channel_index
+            ));
         };
         let bitrate = pcan_fd_bitrate(&cfg.baud, &cfg.data_baud)?;
         let bitrate_c = std::ffi::CString::new(bitrate.clone()).unwrap();
@@ -334,7 +442,6 @@ impl CanAdapter for PcanBus {
     fn poll(&mut self, out: &mut Vec<CanFrame>) {
         use pcan_ffi::*;
         unsafe {
-            // CAN FD 通道：用 CAN_ReadFD（同一队列里既有经典也有 FD 帧）
             if self.is_fd {
                 let read_fd: libloading::Symbol<FnReadFd> = match self.lib.get(b"CAN_ReadFD\0") {
                     Ok(s) => s,
@@ -371,7 +478,6 @@ impl CanAdapter for PcanBus {
                 Ok(s) => s,
                 Err(_) => return,
             };
-            // 一次性把接收队列读空
             for _ in 0..512 {
                 let mut msg = TPCANMsg {
                     id: 0,
@@ -413,7 +519,6 @@ impl CanAdapter for PcanBus {
 
     fn send(&mut self, f: &CanFrame) -> Result<(), String> {
         use pcan_ffi::*;
-        // FD 通道：用 CAN_WriteFD（经典帧与 FD 帧都能发）
         if self.is_fd {
             unsafe {
                 let write: libloading::Symbol<FnWriteFd> = self
@@ -423,7 +528,6 @@ impl CanAdapter for PcanBus {
                 let len = f.data.len().min(64);
                 let mut data = [0u8; 64];
                 data[..len].copy_from_slice(&f.data[..len]);
-                // >8 字节必须以 FD 帧发送：自动置 FD 位，避免"无 FD 位却 DLC>8"的非法经典帧。
                 let send_fd = f.fd || len > 8;
                 let mut msgtype = if f.ext { MSGTYPE_EXTENDED } else { MSGTYPE_STANDARD };
                 if send_fd {
@@ -443,7 +547,6 @@ impl CanAdapter for PcanBus {
             }
             return Ok(());
         }
-        // 经典通道：不支持 FD 帧，明确报错而非静默截断成 8 字节
         if f.fd || f.data.len() > 8 {
             return Err("当前 PCAN 适配器未按 CAN FD 初始化（请在设备配置里选 CAN FD）".into());
         }
@@ -461,7 +564,7 @@ impl CanAdapter for PcanBus {
                 MSGTYPE_STANDARD
             };
             if f.remote {
-                msgtype |= MSGTYPE_RTR; // 远程帧标志(此前漏置, 远程帧被当普通数据帧发)
+                msgtype |= MSGTYPE_RTR;
             }
             let msg = TPCANMsg {
                 id: f.id,
@@ -482,7 +585,6 @@ impl CanAdapter for PcanBus {
     }
 }
 
-// ======================= 控制线程 =======================
 
 #[allow(non_camel_case_types)]
 mod zlg_ffi {
@@ -521,9 +623,6 @@ mod zlg_ffi {
     }
 }
 
-/// 通用 VCI 风格适配器：覆盖结构体/函数签名完全相同、只是 DLL 名与符号前缀不同的几家：
-/// - ZLG/zhcxCAN：ControlCAN.dll + "VCI_" 前缀（VCI_OpenDevice...）
-/// - GCAN（广成）：ECanVci64.dll + 无前缀（OpenDevice...）
 pub struct VciBus {
     lib: libloading::Library,
     device_type: u32,
@@ -535,7 +634,6 @@ pub struct VciBus {
 }
 
 impl VciBus {
-    /// dll_candidates 按序尝试加载；prefix 为符号前缀（"VCI_" 或 ""）。
     pub fn open(
         start: Instant,
         cfg: &DeviceConfig,
@@ -677,8 +775,6 @@ impl CanAdapter for VciBus {
 
     fn send(&mut self, f: &CanFrame) -> Result<(), String> {
         use zlg_ffi::*;
-        // VCI(ControlCAN/ECanVci) 后端为经典 CAN（VCI_Transmit/VCI_CAN_OBJ，≤8 字节）；
-        // FD 须 VCI_TransmitFD。明确报错，避免把 FD 帧静默截断成 8 字节。
         if f.fd || f.data.len() > 8 {
             return Err("当前 VCI 适配器不支持 CAN FD 发送".into());
         }
@@ -730,10 +826,7 @@ fn zlg_device_type(device_type: &str) -> Option<u32> {
     }
 }
 
-// ======================= ZLG 新版 zlgcan.dll（ZCAN_ 接口，支持 CAN FD） =======================
 
-/// 解析新版 zlgcan.dll 设备：返回 (类型号, 是否网络设备, 网络是否 TCP, 是否 USBCANFD)。
-/// 类型号见手册附录1；网络设备波特率不经 API 设置（在设备本身配置）。
 fn zcan_resolve(device_type: &str) -> Option<(u32, bool, bool, bool)> {
     match device_type.trim().to_ascii_uppercase().replace(' ', "").as_str() {
         "USBCANFD" | "USBCANFD-200U" | "USBCANFD200U" => Some((41, false, false, true)),
@@ -750,7 +843,6 @@ fn zcan_resolve(device_type: &str) -> Option<(u32, bool, bool, bool)> {
     }
 }
 
-/// 波特率字符串 → bps（用于 ZCAN_SetValue）。支持 "500K"/"1M"/"2M"/"1000K"/裸数字。
 fn baud_to_bps(s: &str) -> u32 {
     let b = s.trim().to_ascii_uppercase().replace(' ', "").replace("BPS", "");
     if let Some(x) = b.strip_suffix('M') {
@@ -783,8 +875,8 @@ mod zcan_ffi {
     pub type FnReceiveFd =
         unsafe extern "system" fn(ChHandle, *mut ZcanReceiveFdData, u32, i32) -> u32;
 
-    pub const EFF: u32 = 0x8000_0000; // 扩展帧标志
-    pub const RTR: u32 = 0x4000_0000; // 远程帧标志
+    pub const EFF: u32 = 0x8000_0000;
+    pub const RTR: u32 = 0x4000_0000;
     pub const ID_MASK: u32 = 0x1FFF_FFFF;
 
     #[repr(C)]
@@ -831,7 +923,6 @@ mod zcan_ffi {
         pub frame: CanfdFrameC,
         pub timestamp: u64,
     }
-    // can_type(u32) + union(28 字节，取 canfd 较大者)，总 32 字节。
     #[repr(C)]
     #[derive(Clone, Copy)]
     pub struct ZcanChannelInitConfig {
@@ -840,12 +931,11 @@ mod zcan_ffi {
     }
 }
 
-/// 新版 ZLG CAN(FD) 适配器（zlgcan.dll）。句柄以 usize 保存以满足 Send。
 pub struct ZcanFdBus {
     lib: libloading::Library,
     dev: usize,
     ch: usize,
-    fd_capable: bool, // 通道是否按 CANFD 初始化（决定是否抽取 FD 接收队列；USBCANFD 恒为真）
+    fd_capable: bool,
     start: Instant,
     name: String,
 }
@@ -868,14 +958,12 @@ impl ZcanFdBus {
                 return Err("ZCAN_OpenDevice 失败（检查设备是否插好、驱动是否安装）".into());
             }
 
-            // 打开成功后，后续任何失败都必须先关闭设备，否则句柄泄漏会导致再也打不开
             let close_dev = || {
                 if let Ok(close) = lib.get::<FnCloseDevice>(b"ZCAN_CloseDevice\0") {
                     let _ = close(dev);
                 }
             };
 
-            // 属性设置（波特率/网络参数，均须在 InitCAN/StartCAN 之前）
             let setval: libloading::Symbol<FnSetValue> = match lib.get(b"ZCAN_SetValue\0") {
                 Ok(s) => s,
                 Err(e) => {
@@ -893,20 +981,14 @@ impl ZcanFdBus {
                 }
             };
             let cfg_res: Result<(), String> = if is_net {
-                // 网络设备（CANFDNET/CANFDWIFI）：波特率在设备自身配置，这里只设连接参数
                 let mode = if net_tcp {
-                    // work_mode: 0=客户端, 1=服务器（连对端 server 时本端应为客户端）
                     set("work_mode", if cfg.net_server { "1" } else { "0" })
                 } else {
-                    // UDP：设本地监听端口
                     set("local_port", &cfg.port)
                 };
                 mode.and_then(|_| set("ip", &cfg.ip))
                     .and_then(|_| set("work_port", &cfg.port))
             } else if is_usbcanfd {
-                // USBCANFD（200U/100U/MINI/800U）：CANFD 控制器，始终按 CANFD 初始化。
-                // 没有 baud_rate 键；仲裁域=经典 CAN 波特率；abit/dbit 必须都设，否则 StartCAN 失败。
-                // 跑经典 CAN 时数据域沿用仲裁域波特率（不影响经典帧）。
                 let _ = set("canfd_standard", "0"); // 0=ISO
                 let abit = baud_to_bps(&cfg.baud).to_string();
                 let dbit = if cfg.is_fd {
@@ -917,7 +999,6 @@ impl ZcanFdBus {
                 set("canfd_abit_baud_rate", &abit)
                     .and_then(|_| set("canfd_dbit_baud_rate", &dbit))
             } else {
-                // 经典 ZLG USB（USBCAN-E-U / USBCAN-2E-U）：用 baud_rate
                 set("baud_rate", &baud_to_bps(&cfg.baud).to_string())
             };
             if let Err(e) = cfg_res {
@@ -926,7 +1007,6 @@ impl ZcanFdBus {
             }
             drop(setval);
 
-            // 初始化通道
             let init: libloading::Symbol<FnInitCan> = match lib.get(b"ZCAN_InitCAN\0") {
                 Ok(s) => s,
                 Err(e) => {
@@ -934,8 +1014,6 @@ impl ZcanFdBus {
                     return Err(format!("ZCAN_InitCAN 未找到: {e}"));
                 }
             };
-            // USBCANFD 设备恒为 CANFD 初始化；经典 USB 卡按协议；网络设备 InitCAN 不做实际操作。
-            // 通道一旦按 CANFD 初始化，总线上的 FD 帧就会进 FD 接收队列，须照此抽取。
             let fd_capable = cfg.is_fd || (is_usbcanfd && !is_net);
             let mut init_cfg = ZcanChannelInitConfig {
                 can_type: if fd_capable { 1 } else { 0 },
@@ -948,7 +1026,6 @@ impl ZcanFdBus {
                 return Err("ZCAN_InitCAN 失败".into());
             }
 
-            // 终端电阻（仅 USBCANFD 内置，须在 ZCAN_InitCAN 之后设置，尽力而为）
             if is_usbcanfd && !is_net
                 && let Ok(setres) = lib.get::<FnSetValue>(b"ZCAN_SetValue\0") {
                     let path = CString::new(format!("{}/initenal_resistance", cfg.channel_index))
@@ -957,7 +1034,6 @@ impl ZcanFdBus {
                     let _ = setres(dev, path.as_ptr(), v.as_ptr());
                 }
 
-            // 启动通道
             let start_can: libloading::Symbol<FnStartCan> = match lib.get(b"ZCAN_StartCAN\0") {
                 Ok(s) => s,
                 Err(e) => {
@@ -1020,7 +1096,6 @@ impl CanAdapter for ZcanFdBus {
                     Ok(s) => s,
                     Err(_) => return,
                 };
-            // 标准 CAN 帧（type=0）
             if let Ok(recv) = self.lib.get::<FnReceive>(b"ZCAN_Receive\0") {
                 let n = getnum(ch, 0).min(100);
                 if n > 0 {
@@ -1049,8 +1124,6 @@ impl CanAdapter for ZcanFdBus {
                     }
                 }
             }
-            // CAN FD 帧（type=1）：只要通道按 CANFD 初始化(fd_capable)就必须抽取，
-            // 否则 USBCANFD 在"经典模式"下总线上的 FD 帧会进 FD 队列却从不读出→丢帧+FIFO堆积。
             if self.fd_capable
                 && let Ok(recv) = self.lib.get::<FnReceiveFd>(b"ZCAN_ReceiveFD\0") {
                     let n = getnum(ch, 1).min(100);
@@ -1153,30 +1226,24 @@ pub enum Cmd {
     Connect,
     #[allow(dead_code)]
     ConnectConfig(DeviceConfig),
-    /// 连接一组通道（多通道）。
     ConnectChannels(Vec<DeviceConfig>),
     Disconnect,
     Start,
     Stop,
     SendOnce(CanFrame),
     OtaRun(OtaJob),
-    /// 周期发送：handle 唯一标识任务；enable=false 表示停止该任务。
     SetPeriodic {
         handle: u64,
         frame: CanFrame,
         period_ms: u64,
-        /// 发送次数：-1 = 无限循环；N>=1 = 发 N 次后自动停止。
         repeat: i64,
         enable: bool,
     },
-    /// 载入回放帧序列（已在上层做好通道映射/过滤/时间段裁剪）。
     PlaybackLoad(Vec<CanFrame>),
-    /// 开始/继续回放。online=true 发到总线；speed<=0 表示尽可能快，否则为倍率。loop_play=到尾循环。
     PlaybackPlay { online: bool, speed: f64, loop_play: bool },
     PlaybackStep,
     PlaybackPause,
     PlaybackCancel,
-    /// 跳转到指定进度(0.0~1.0)。
     PlaybackSeek(f64),
     #[allow(dead_code)]
     Quit,
@@ -1218,12 +1285,9 @@ pub enum Evt {
     PlaybackFrame(CanFrame),
     Log(String),
     OtaProgress(usize, usize, String),
-    /// 连接状态变化：(connected, 后端名称)
     Connected(bool, String),
     Running(bool),
-    /// 回放进度：(已回放, 总数, 正在回放)
     Playback(usize, usize, bool),
-    /// 周期任务发够设定次数后自动停止：携带任务 handle，供上层更新 UI 状态。
     PeriodicDone(u64),
 }
 
@@ -1236,18 +1300,16 @@ struct Playback {
     paused: bool,
     base: Instant,
     base_t: f64,
-    loop_play: bool, // 回放到尾后自动从头循环
+    loop_play: bool,
 }
 
 struct Periodic {
     frame: CanFrame,
     period: Duration,
     next: Instant,
-    /// 剩余发送次数：-1 = 无限；否则发完归 0 即移除。
     remaining: i64,
 }
 
-/// 启动控制线程，返回 (命令发送端, 事件接收端)。
 pub fn spawn() -> (Sender<Cmd>, Receiver<Evt>) {
     let (cmd_tx, cmd_rx) = channel::<Cmd>();
     let (evt_tx, evt_rx) = channel::<Evt>();
@@ -1255,7 +1317,6 @@ pub fn spawn() -> (Sender<Cmd>, Receiver<Evt>) {
     (cmd_tx, evt_rx)
 }
 
-/// 按配置打开一个适配器（设备类型分派）。
 fn open_adapter(start: Instant, cfg: &DeviceConfig) -> Result<Box<dyn CanAdapter>, String> {
     let device = cfg.device_type.trim().to_ascii_uppercase();
     if device == "VIRTUAL" || device == "SIM" {
@@ -1264,18 +1325,14 @@ fn open_adapter(start: Instant, cfg: &DeviceConfig) -> Result<Box<dyn CanAdapter
         PcanBus::open_cfg(start, cfg)
             .map(|b| Box::new(b) as Box<dyn CanAdapter>)
     } else if device == "GCAN" {
-        // 广成 GCAN：ECanVci64.dll，符号无前缀，设备类型 USBCAN2=4
         VciBus::open(start, cfg, &["ECanVci64.dll", "ECanVci.dll"], "", 4)
             .map(|b| Box::new(b) as Box<dyn CanAdapter>)
     } else if device == "ZHCX" || device == "ZHCXCAN" {
-        // zhcxCAN：ControlCAN.dll + VCI_ 前缀，设备类型 4
         VciBus::open(start, cfg, &["ControlCAN.dll"], "VCI_", 4)
             .map(|b| Box::new(b) as Box<dyn CanAdapter>)
     } else if zcan_resolve(&cfg.device_type).is_some() {
-        // 新版统一 ZLG 设备（USBCANFD-*/USBCAN-E-U/2E-U/CANFDNET/CANFDWIFI）走 zlgcan.dll
         ZcanFdBus::open(start, cfg).map(|b| Box::new(b) as Box<dyn CanAdapter>)
     } else if let Some(dtype) = zlg_device_type(&cfg.device_type) {
-        // 老 ZLG USBCAN-I/II 走 ControlCAN.dll + VCI_ 前缀
         VciBus::open(start, cfg, &["ControlCAN.dll"], "VCI_", dtype)
             .map(|b| Box::new(b) as Box<dyn CanAdapter>)
     } else {
@@ -1283,8 +1340,6 @@ fn open_adapter(start: Instant, cfg: &DeviceConfig) -> Result<Box<dyn CanAdapter
     }
 }
 
-/// 在指定通道（或首个可用）上发送一帧。返回实际发送所用的软件通道号，
-/// 以便回显帧标注真实通道（请求的通道无匹配时回退到首个适配器）。
 fn send_on(adapters: &mut [(u8, Box<dyn CanAdapter>)], f: &CanFrame) -> Result<u8, String> {
     if adapters.is_empty() {
         return Err("无已连接通道".into());
@@ -1298,7 +1353,6 @@ fn send_on(adapters: &mut [(u8, Box<dyn CanAdapter>)], f: &CanFrame) -> Result<u
     }
 }
 
-/// 连接一组通道：逐个打开适配器，成功的按软件通道号收进 adapters。
 fn connect_channels(
     adapters: &mut Vec<(u8, Box<dyn CanAdapter>)>,
     running: &mut bool,
@@ -1470,7 +1524,6 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
     let mut playback: Option<Playback> = None;
 
     loop {
-        // 处理命令（非阻塞批量）
         loop {
             match cmd_rx.try_recv() {
                 Ok(cmd) => match cmd {
@@ -1522,7 +1575,7 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                                 Ok(used) => {
                                     let mut echo = f.clone();
                                     echo.tx = true;
-                                    echo.ch = used; // 标注实际发送通道(回退时与请求不同)
+                                    echo.ch = used;
                                     let _ = evt_tx.send(Evt::Frame(echo));
                                 }
                                 Err(e) => {
@@ -1645,19 +1698,18 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                             }
                     }
                     Cmd::Quit => {
-                        adapters.clear(); // 触发各适配器 Drop → CloseDevice，释放设备
+                        adapters.clear();
                         return;
                     }
                 },
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    adapters.clear(); // UI 退出、命令通道断开时也要关闭设备
+                    adapters.clear();
                     return;
                 }
             }
         }
 
-        // 周期发送
         if !periodics.is_empty() && !adapters.is_empty() {
             let now = Instant::now();
             let mut due: Vec<CanFrame> = Vec::new();
@@ -1679,7 +1731,7 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
             }
             for mut f in due {
                 if let Ok(used) = send_on(&mut adapters, &f) {
-                    f.ch = used; // 标注实际发送通道
+                    f.ch = used;
                     let _ = evt_tx.send(Evt::Frame(f));
                 }
             }
@@ -1689,13 +1741,11 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
             }
         }
 
-        // 回放推进
         let mut pb_active = false;
         if let Some(pb) = playback.as_mut()
             && pb.playing && !pb.paused {
                 pb_active = true;
                 if pb.speed <= 0.0 {
-                    // 尽可能快：每轮放一批，避免一次性灌爆
                     for _ in 0..500 {
                         if pb.idx >= pb.frames.len() {
                             break;
@@ -1734,7 +1784,6 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                 }
                 if pb.idx >= pb.frames.len() {
                     if pb.loop_play && !pb.frames.is_empty() {
-                        // 循环：回到开头继续播
                         pb.idx = 0;
                         pb.base = Instant::now();
                         pb.base_t = pb.frames[0].t;
@@ -1749,7 +1798,6 @@ fn controller(cmd_rx: Receiver<Cmd>, evt_tx: Sender<Evt>) {
                 }
             }
 
-        // 接收（逐通道轮询，按软件通道号给帧打标签）
         if running {
             for (ch, a) in adapters.iter_mut() {
                 buf.clear();

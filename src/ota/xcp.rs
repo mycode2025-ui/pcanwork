@@ -175,16 +175,21 @@ mod tests {
 
     #[test]
     fn parses_new_and_old_connect_responses() {
-        let info = parse_connect_response(&[0xFF, 0x10, 0x00, 0x01, 0x08, 0x00, 0x01, 0x01])
-            .unwrap();
+        let info =
+            parse_connect_response(&[0xFF, 0x10, 0x00, 0x01, 0x08, 0x00, 0x01, 0x01]).unwrap();
         assert_eq!(info.target_partition, 1);
-        assert!(parse_connect_response(&[0xFF, 0x10, 0x00, 0x08, 0x08, 0x00, 0x01, 0x01]).is_some());
+        assert!(
+            parse_connect_response(&[0xFF, 0x10, 0x00, 0x08, 0x08, 0x00, 0x01, 0x01]).is_some()
+        );
     }
 
     #[test]
     fn prepares_xcp_download_frames() {
         let frames = prepare_download(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(frames[0], XcpPreparedFrame::Download([0xC9, 1, 2, 3, 4, 5, 6, 7]));
+        assert_eq!(
+            frames[0],
+            XcpPreparedFrame::Download([0xC9, 1, 2, 3, 4, 5, 6, 7])
+        );
         assert_eq!(frames[1], XcpPreparedFrame::DownloadNext(vec![0xD0, 1, 8]));
         assert_eq!(frames[2], XcpPreparedFrame::End);
     }

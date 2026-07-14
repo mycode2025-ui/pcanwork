@@ -8,7 +8,7 @@
 enum Tok {
     Num(f64),
     Reg(usize),
-    Op(char),  // + - * / % & | ^ ( )
+    Op(char), // + - * / % & | ^ ( )
     Shl,
     Shr,
 }
@@ -31,7 +31,9 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, String> {
             if i == start {
                 return Err("expected register index after 'r'".into());
             }
-            let idx: usize = s[start..i].parse().map_err(|_| "bad register index".to_string())?;
+            let idx: usize = s[start..i]
+                .parse()
+                .map_err(|_| "bad register index".to_string())?;
             out.push(Tok::Reg(idx));
         } else if c.is_ascii_digit() || c == '.' {
             // number (hex or decimal float)
@@ -144,8 +146,14 @@ impl<'a> Parser<'a> {
         let mut v = self.mul_expr()?;
         loop {
             match self.peek() {
-                Some(Tok::Op('+')) => { self.eat(); v += self.mul_expr()?; }
-                Some(Tok::Op('-')) => { self.eat(); v -= self.mul_expr()?; }
+                Some(Tok::Op('+')) => {
+                    self.eat();
+                    v += self.mul_expr()?;
+                }
+                Some(Tok::Op('-')) => {
+                    self.eat();
+                    v -= self.mul_expr()?;
+                }
                 _ => break,
             }
         }
@@ -155,9 +163,20 @@ impl<'a> Parser<'a> {
         let mut v = self.unary()?;
         loop {
             match self.peek() {
-                Some(Tok::Op('*')) => { self.eat(); v *= self.unary()?; }
-                Some(Tok::Op('/')) => { self.eat(); let r = self.unary()?; v /= r; }
-                Some(Tok::Op('%')) => { self.eat(); let r = self.unary()?; v %= r; }
+                Some(Tok::Op('*')) => {
+                    self.eat();
+                    v *= self.unary()?;
+                }
+                Some(Tok::Op('/')) => {
+                    self.eat();
+                    let r = self.unary()?;
+                    v /= r;
+                }
+                Some(Tok::Op('%')) => {
+                    self.eat();
+                    let r = self.unary()?;
+                    v %= r;
+                }
                 _ => break,
             }
         }
@@ -215,7 +234,12 @@ pub fn eval_formula(expr: &str, regs: &[u16]) -> Result<f64, String> {
     if t.is_empty() {
         return Err("empty formula".into());
     }
-    let mut p = Parser { t, pos: 0, regs, depth: 0 };
+    let mut p = Parser {
+        t,
+        pos: 0,
+        regs,
+        depth: 0,
+    };
     let v = p.or_expr()?;
     if p.pos != p.t.len() {
         return Err("unexpected trailing input".into());
@@ -231,7 +255,10 @@ mod tests {
     fn arithmetic_and_registers() {
         let regs = [0x1234u16, 0x00FFu16, 10u16];
         assert_eq!(eval_formula("r0", &regs).unwrap(), 4660.0);
-        assert_eq!(eval_formula("r0*256 + r1", &regs).unwrap(), 4660.0 * 256.0 + 255.0);
+        assert_eq!(
+            eval_formula("r0*256 + r1", &regs).unwrap(),
+            4660.0 * 256.0 + 255.0
+        );
         assert_eq!(eval_formula("(r1 & 0x0F)", &regs).unwrap(), 15.0);
         assert_eq!(eval_formula("r2 * 0.1", &regs).unwrap(), 1.0);
         assert_eq!(eval_formula("-r2 + 5", &regs).unwrap(), -5.0);

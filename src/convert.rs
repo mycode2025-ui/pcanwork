@@ -60,9 +60,16 @@ pub fn parse_csv_frames(text: &str) -> Vec<CanFrame> {
         let Ok(t) = p[0].trim().parse::<f64>() else {
             continue;
         };
-        let ch = p[1].trim().trim_start_matches("CAN").parse::<u8>().unwrap_or(1);
+        let ch = p[1]
+            .trim()
+            .trim_start_matches("CAN")
+            .parse::<u8>()
+            .unwrap_or(1);
         let tx = p[2].trim().eq_ignore_ascii_case("Tx");
-        let ids = p[3].trim().trim_start_matches("0x").trim_start_matches("0X");
+        let ids = p[3]
+            .trim()
+            .trim_start_matches("0x")
+            .trim_start_matches("0X");
         let Ok(id) = u32::from_str_radix(ids, 16) else {
             continue;
         };
@@ -125,7 +132,9 @@ pub fn parse_asc_frames(text: &str) -> Vec<CanFrame> {
                 continue;
             };
             let tx = toks[dir_idx] == "Tx";
-            let Some(idtok) = toks.get(dir_idx + 1) else { continue };
+            let Some(idtok) = toks.get(dir_idx + 1) else {
+                continue;
+            };
             let ext = idtok.ends_with('x') || idtok.ends_with('X');
             let Ok(id) = u32::from_str_radix(idtok.trim_end_matches(['x', 'X']), 16) else {
                 continue;
@@ -208,10 +217,9 @@ fn parse_asc_date_epoch(s: &str) -> Option<f64> {
     ];
     for fmt in formats {
         if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
-            return dt
-                .and_local_timezone(chrono::Local)
-                .single()
-                .map(|local| local.timestamp() as f64 + local.timestamp_subsec_nanos() as f64 / 1e9);
+            return dt.and_local_timezone(chrono::Local).single().map(|local| {
+                local.timestamp() as f64 + local.timestamp_subsec_nanos() as f64 / 1e9
+            });
         }
     }
     None
@@ -336,9 +344,17 @@ pub fn convert_dir(in_dir: &str, out_dir: &str, fmt: LogFmt) -> (usize, usize, V
             continue;
         }
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
-        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         let dst = std::path::Path::new(out_dir).join(format!("{stem}.{}", fmt.ext()));
-        let dst_name = dst.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let dst_name = dst
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         match convert(&path.to_string_lossy(), &dst.to_string_lossy(), fmt) {
             Ok(n) => {
                 ok += 1;
@@ -364,11 +380,44 @@ mod tests {
     fn asc_fd_and_remote_roundtrip() {
         let frames = vec![
             // 经典数据帧
-            CanFrame { t: 0.001, ch: 1, tx: false, id: 0x123, ext: false, fd: false, brs: false, remote: false, error: false, data: vec![0x11, 0x22] },
+            CanFrame {
+                t: 0.001,
+                ch: 1,
+                tx: false,
+                id: 0x123,
+                ext: false,
+                fd: false,
+                brs: false,
+                remote: false,
+                error: false,
+                data: vec![0x11, 0x22],
+            },
             // 经典远程帧(无数据)
-            CanFrame { t: 0.002, ch: 1, tx: true, id: 0x7FF, ext: false, fd: false, brs: false, remote: true, error: false, data: vec![] },
+            CanFrame {
+                t: 0.002,
+                ch: 1,
+                tx: true,
+                id: 0x7FF,
+                ext: false,
+                fd: false,
+                brs: false,
+                remote: true,
+                error: false,
+                data: vec![],
+            },
             // CAN FD 帧: BRS + 扩展 ID + 16 字节
-            CanFrame { t: 0.003, ch: 2, tx: false, id: 0x18FF1234, ext: true, fd: true, brs: true, remote: false, error: false, data: (0u8..16).collect() },
+            CanFrame {
+                t: 0.003,
+                ch: 2,
+                tx: false,
+                id: 0x18FF1234,
+                ext: true,
+                fd: true,
+                brs: true,
+                remote: false,
+                error: false,
+                data: (0u8..16).collect(),
+            },
         ];
         let p = std::env::temp_dir().join("pcanwork_asc_fd_test.asc");
         let path = p.to_str().unwrap();
@@ -476,7 +525,11 @@ base hex timestamps absolute\n\
         write_asc(&base.join("b.asc").to_string_lossy(), &[frame.clone()]).unwrap();
         // a non-log file should be ignored
         std::fs::write(base.join("note.txt"), "ignore me").unwrap();
-        let (ok, fail, _log) = convert_dir(&base.to_string_lossy(), &outd.to_string_lossy(), LogFmt::Blf);
+        let (ok, fail, _log) = convert_dir(
+            &base.to_string_lossy(),
+            &outd.to_string_lossy(),
+            LogFmt::Blf,
+        );
         assert_eq!(ok, 2);
         assert_eq!(fail, 0);
         assert!(outd.join("a.blf").exists());

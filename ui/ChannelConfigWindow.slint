@@ -1,18 +1,93 @@
 // One-window Slint page split from the original monolithic file.
-import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { Button, ComboBox, LineEdit, CheckBox, ListView } from "std-widgets.slint";
+import { I18n, Theme, TBtn } from "common.slint";
+
+component SlimCombo inherits Rectangle {
+    in property <[string]> model;
+    in-out property <string> value;
+    in property <bool> combo-enabled: true;
+    callback selected(string);
+
+    height: 26px;
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: combo-enabled ? Theme.border : Theme.border.darker(0.05);
+    background: combo-enabled ? Theme.panel : Theme.panel2;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 6px;
+        spacing: 4px;
+        Text {
+            text: root.value;
+            font-size: 11px;
+            color: root.combo-enabled ? Theme.text : Theme.text-dim;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            text: "v";
+            font-size: 11px;
+            color: Theme.text-dim;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            width: 12px;
+        }
+    }
+
+    TouchArea {
+        enabled: root.combo-enabled;
+        clicked => { popup.show(); }
+    }
+
+    popup := PopupWindow {
+        width: root.width;
+        height: Math.min(root.model.length * 28px, 96px);
+        Rectangle {
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            border-radius: 4px;
+            ListView {
+                for option in root.model: Rectangle {
+                    height: 28px;
+                    background: option == root.value ? Theme.sel : (row_touch.has-hover ? Theme.accent-soft : Theme.panel);
+                    Text {
+                        text: option;
+                        font-size: 12px;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                        x: 10px;
+                    }
+                    row_touch := TouchArea {
+                        clicked => {
+                            root.value = option;
+                            root.selected(option);
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 export component ChannelConfigWindow inherits Window {
     title: I18n.en ? "CAN Channel Config" : "CAN 通道配置";
     icon: @image-url("logo.svg");
-    preferred-width: 760px;
-    preferred-height: 460px;
+    preferred-width: 900px;
+    preferred-height: 580px;
     background: Theme.bg;
 
+    in property <[string]> pcan-hardware;
+    in property <[string]> pcan-hardware-details;
+    in property <[bool]> pcan-hardware-added;
     in property <[string]> channels;
+    in property <[string]> channel-details;
     in-out property <int> chan-sel: 0;
     in-out property <bool> is-fd: false;
     in-out property <string> device-type: "Virtual";
+    in-out property <string> hardware-label: "";
     in-out property <string> device-index: "0";
     in-out property <string> channel-index: "0";
     in-out property <string> baud: "500K";
@@ -22,8 +97,10 @@ export component ChannelConfigWindow inherits Window {
     in-out property <string> ip: "192.168.0.178";
     in-out property <string> port: "8000";
     property <bool> is-net: device-type == "CANFDNET" || device-type == "CANFDWIFI";
-    in-out property <length> list-w: 220px; // 通道列表宽度（可拖动分隔条调整）
+    property <string> active-channel-title: "CAN" + (chan-sel + 1);
 
+    callback pcan-rescan();
+    callback pcan-select(int);
     callback chan-add();
     callback chan-clone();
     callback chan-remove(int);
@@ -34,143 +111,305 @@ export component ChannelConfigWindow inherits Window {
     callback cancel();
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 10px;
-        Rectangle {
-            height: 38px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
-            Text {
-                text: I18n.en ? "Software CAN1/CAN2… each map to a device hardware channel (HW from CAN0). Click CAN+ to add a channel; Clone copies the config." : "软件 CAN1/CAN2… 各映射到设备的硬件通道（硬件从 CAN0 起）。点 CAN+ 添加通道，克隆可复制配置。";
-                x: 10px; width: parent.width - 20px; color: Theme.text; font-size: 13px;
-                vertical-alignment: center; overflow: elide;
-            }
-        }
+        padding: 8px;
+        spacing: 4px;
+
         HorizontalLayout {
-            spacing: 10px;
-            // 通道列表
+            spacing: 4px;
+
             Rectangle {
-                width: root.list-w; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                width: 240px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
                 VerticalLayout {
-                    Rectangle { height: 28px; background: Theme.header;
-                        Text { text: I18n.en ? "Channel list" : "通道列表"; x: 8px; vertical-alignment: center; font-weight: 700; font-size: 13px; color: Theme.text; } }
-                    ListView {
-                        for c[i] in root.channels: Rectangle {
-                            height: 32px;
-                            background: i == root.chan-sel ? Theme.sel : (cta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra));
-                            cta := TouchArea { clicked => { root.chan-select(i); } }
-                            Text { text: c; x: 10px; vertical-alignment: center; font-size: 13px; color: Theme.text; overflow: elide; }
-                        }
-                    }
-                    Rectangle { height: 40px; background: Theme.panel2;
-                        HorizontalLayout { padding: 5px; spacing: 5px;
-                            TBtn { text: "CAN+"; clicked => { root.chan-add(); } }
-                            TBtn { text: I18n.en ? "Clone" : "克隆"; clicked => { root.chan-clone(); } }
-                            TBtn { text: I18n.en ? "Delete" : "删除"; clicked => { root.chan-remove(root.chan-sel); } }
-                        }
-                    }
-                }
-            }
-            // -------- 可拖拽分隔条：调整通道列表宽度 --------
-            Rectangle {
-                width: 6px;
-                background: clsp.has-hover || clsp.pressed ? Theme.accent : Theme.border;
-                property <length> press-x;
-                property <length> press-w;
-                clsp := TouchArea {
-                    mouse-cursor: col-resize;
-                    pointer-event(e) => {
-                        if (e.kind == PointerEventKind.down) {
-                            press-x = self.absolute-position.x + self.mouse-x;
-                            press-w = root.list-w;
-                        }
-                    }
-                    moved => {
-                        if (self.pressed) {
-                            root.list-w = Math.max(140px, Math.min(480px,
-                                press-w + (self.absolute-position.x + self.mouse-x - press-x)));
-                        }
-                    }
-                }
-            }
-            // 编辑表单
-            Rectangle {
-                horizontal-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border;
-                VerticalLayout {
-                    padding: 12px; spacing: 8px;
-                    GridLayout {
-                        spacing: 8px;
-                        Row {
-                            Text { text: I18n.en ? "Device type" : "设备类型"; font-size: 14px; vertical-alignment: center; }
-                            ComboBox {
-                                width: 240px;
-                                model: ["Virtual", "PCAN", "USBCANFD-200U", "USBCANFD-100U", "USBCANFD-MINI", "USBCAN2", "USBCAN-E-U", "USBCAN-2E-U", "GCAN", "ZHCX", "CANFDNET", "CANFDWIFI"];
-                                current-value <=> root.device-type;
-                                selected(v) => { root.chan-edit("device_type", v); }
+                    Rectangle {
+                        height: 46px;
+                        background: Theme.header;
+                        VerticalLayout {
+                            padding-left: 8px;
+                            padding-right: 6px;
+                            padding-top: 5px;
+                            spacing: 3px;
+                            Text {
+                                text: I18n.en ? "CAN hardware device pool" : "CAN 硬件设备池";
+                                font-weight: 700;
+                                font-size: 12px;
+                                color: Theme.text;
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                TBtn { text: I18n.en ? "Rescan" : "重新扫描"; h: 24px; fs: 11px; clicked => { root.pcan-rescan(); } }
+                                TBtn { text: I18n.en ? "Add" : "手动添加"; h: 24px; fs: 11px; clicked => { root.chan-add(); } }
                             }
                         }
-                        Row {
-                            Text { text: I18n.en ? "Device index" : "设备索引"; font-size: 14px; vertical-alignment: center; }
-                            LineEdit { text: root.device-index; width: 120px; edited(v) => { root.device-index = v; root.chan-edit("device_index", v); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "HW channel index" : "硬件通道索引"; font-size: 14px; vertical-alignment: center; }
-                            LineEdit { text: root.channel-index; width: 120px; edited(v) => { root.channel-index = v; root.chan-edit("channel_index", v); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "Proto" : "协议"; font-size: 14px; vertical-alignment: center; }
-                            ComboBox { width: 160px; model: ["CAN", "CAN FD"];
-                                current-value: root.is-fd ? "CAN FD" : "CAN";
-                                selected(v) => { root.is-fd = v == "CAN FD"; root.chan-edit("is_fd", v == "CAN FD" ? "1" : "0"); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "Arb baud" : "仲裁域波特率"; font-size: 14px; vertical-alignment: center; }
-                            ComboBox { width: 160px; model: ["1M", "800K", "500K", "250K", "125K", "100K", "50K", "20K"];
-                                current-value <=> root.baud; selected(v) => { root.chan-edit("baud", v); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "Data baud" : "数据域波特率"; font-size: 14px; vertical-alignment: center; color: root.is-fd ? Theme.text : Theme.text-dim; }
-                            ComboBox { width: 160px; enabled: root.is-fd; model: ["5M", "4M", "2M", "1M", "800K", "500K", "250K", "125K", "100K"];
-                                current-value <=> root.data-baud; selected(v) => { root.chan-edit("data_baud", v); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "Termination" : "终端电阻"; font-size: 14px; vertical-alignment: center; }
-                            CheckBox { checked: root.termination; text: I18n.en ? "Enable" : "启用"; toggled => { root.termination = self.checked; root.chan-edit("termination", self.checked ? "1" : "0"); } }
+                    }
+                    ListView {
+                        for h[i] in root.pcan-hardware: Rectangle {
+                            height: 70px;
+                            background: root.pcan-hardware-added[i] ? Theme.sel : (scan_area.has-hover ? Theme.accent-soft : Theme.panel);
+                            border-width: 1px;
+                            border-color: root.pcan-hardware-added[i] ? Theme.accent : Theme.border;
+                            scan_area := TouchArea { clicked => { root.pcan-select(i); } }
+                            VerticalLayout {
+                                padding-left: 10px;
+                                padding-right: 8px;
+                                padding-top: 6px;
+                                spacing: 3px;
+                                Text {
+                                    text: h;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: root.pcan-hardware-details[i];
+                                    font-size: 9px;
+                                    color: Theme.text-dim;
+                                    overflow: elide;
+                                }
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    Rectangle { horizontal-stretch: 1; }
+                                    TBtn {
+                                        text: root.pcan-hardware-added[i] ? (I18n.en ? "Added" : "已添加") : (I18n.en ? "Bind" : "绑定为通道");
+                                        h: 24px;
+                                        fs: 11px;
+                                        clicked => { root.pcan-select(i); }
+                                    }
+                                }
+                            }
                         }
                     }
-                    // 网络设备参数（仅 CANFDNET/WIFI 显示）
-                    if root.is-net: GridLayout {
-                        spacing: 8px;
-                        Row {
-                            Text { text: I18n.en ? "Work mode" : "工作模式"; font-size: 14px; vertical-alignment: center; }
-                            ComboBox { width: 160px; model: I18n.en ? ["Server", "Client"] : ["服务器", "客户端"];
-                                current-value: root.net-server ? (I18n.en ? "Server" : "服务器") : (I18n.en ? "Client" : "客户端");
-                                selected(v) => { root.net-server = (v == "服务器" || v == "Server"); root.chan-edit("net_server", (v == "服务器" || v == "Server") ? "1" : "0"); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "IP address" : "IP 地址"; font-size: 14px; vertical-alignment: center; }
-                            LineEdit { text: root.ip; width: 200px; edited(v) => { root.ip = v; root.chan-edit("ip", v); } }
-                        }
-                        Row {
-                            Text { text: I18n.en ? "Port" : "端口"; font-size: 14px; vertical-alignment: center; }
-                            LineEdit { text: root.port; width: 120px; edited(v) => { root.port = v; root.chan-edit("port", v); } }
+                }
+            }
+
+            Rectangle {
+                width: 280px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle {
+                        height: 46px;
+                        background: Theme.header;
+                        VerticalLayout {
+                            padding-left: 8px;
+                            padding-right: 6px;
+                            padding-top: 5px;
+                            spacing: 3px;
+                            Text {
+                                text: I18n.en ? "CAN channel mapping" : "CAN 通道映射";
+                                font-weight: 700;
+                                font-size: 12px;
+                                color: Theme.text;
+                            }
                         }
                     }
-                    Rectangle { vertical-stretch: 1;
-                        Text {
-                            text: I18n.en ? "PCAN needs PEAK driver; Virtual needs no hardware; USBCAN/USBCANFD need zlgcan.dll; GCAN needs ECanVci64.dll; ZHCX/USBCAN2 need ControlCAN.dll; CANFDNET/WIFI are network devices (IP/port). Data-phase baud is for CAN FD only." : "PCAN需PEAK驱动；Virtual免硬件；USBCAN/USBCANFD需zlgcan.dll；GCAN需ECanVci64.dll；ZHCX/USBCAN2需ControlCAN.dll；CANFDNET/WIFI为网络设备(IP/端口)。数据域波特率仅CAN FD用。";
-                            x: 2px; y: 4px; width: parent.width - 4px; color: Theme.text-dim; font-size: 12px; wrap: word-wrap;
+                    ListView {
+                        for c[i] in root.channels: Rectangle {
+                            height: 70px;
+                            background: i == root.chan-sel ? Theme.sel : (chan_area.has-hover ? Theme.accent-soft : Theme.panel);
+                            border-width: 1px;
+                            border-color: i == root.chan-sel ? Theme.accent : Theme.border;
+                            chan_area := TouchArea { clicked => { root.chan-sel = i; root.chan-select(i); } }
+                            VerticalLayout {
+                                padding-left: 10px;
+                                padding-right: 8px;
+                                padding-top: 6px;
+                                spacing: 3px;
+                                Text {
+                                    text: c;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+                                Text {
+                                    text: root.channel-details[i];
+                                    font-size: 9px;
+                                    color: Theme.text-dim;
+                                    overflow: elide;
+                                }
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    Rectangle { horizontal-stretch: 1; }
+                                    TBtn { text: I18n.en ? "Configure" : "配置"; h: 24px; fs: 11px; clicked => { root.chan-sel = i; root.chan-select(i); } }
+                                    TBtn { text: I18n.en ? "Delete" : "删除"; h: 24px; fs: 11px; clicked => { root.chan-remove(i); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 300px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                VerticalLayout {
+                    Rectangle {
+                        height: 46px;
+                        background: Theme.header;
+                        VerticalLayout {
+                            padding-left: 8px;
+                            padding-right: 6px;
+                            padding-top: 6px;
+                            spacing: 2px;
+                            Text {
+                                text: I18n.en ? "Dynamic operation area" : "动态操作区";
+                                font-weight: 700;
+                                font-size: 12px;
+                                color: Theme.text;
+                            }
+                            Text {
+                                text: (I18n.en ? "Current operation: " : "当前操作：") + root.active-channel-title + (I18n.en ? " parameter config" : " 参数配置");
+                                font-size: 10px;
+                                color: Theme.text-dim;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        vertical-stretch: 1;
+                        background: Theme.panel2;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        VerticalLayout {
+                            padding: 6px;
+                            spacing: 4px;
+
+                            Text { height: 18px; text: I18n.en ? "Basic information" : "基本信息"; font-size: 11px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Channel" : "通道"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                Text { width: 110px; text: root.active-channel-title; font-size: 11px; vertical-alignment: center; color: Theme.text; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Note" : "备注"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                LineEdit {
+                                    text: root.hardware-label;
+                                    height: 26px;
+                                    width: 170px;
+                                    font-size: 11px;
+                                    placeholder-text: I18n.en ? "e.g. BMS CAN" : "例如 BMS CAN";
+                                    edited(v) => { root.hardware-label = v; root.chan-edit("hardware_label", v); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+
+                            Text { height: 18px; text: I18n.en ? "Hardware binding" : "硬件绑定"; font-size: 11px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Vendor" : "厂商"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                SlimCombo {
+                                    width: 170px;
+                                    model: ["Virtual", "PCAN", "USBCANFD-200U", "USBCANFD-100U", "USBCANFD-MINI", "USBCAN2", "USBCAN-E-U", "USBCAN-2E-U", "GCAN", "ZHCX", "CANFDNET", "CANFDWIFI"];
+                                    value <=> root.device-type;
+                                    selected(v) => { root.chan-edit("device_type", v); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Dev idx" : "设备索引"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                LineEdit {
+                                    text: root.device-index;
+                                    height: 26px;
+                                    width: 65px;
+                                    font-size: 11px;
+                                    enabled: root.device-type != "PCAN";
+                                    edited(v) => { root.device-index = v; root.chan-edit("device_index", v); }
+                                }
+                                Text { width: 48px; text: root.device-type == "PCAN" ? "PEAK" : (I18n.en ? "HW ch" : "硬件"); font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                LineEdit { text: root.channel-index; height: 26px; width: 65px; font-size: 11px; edited(v) => { root.channel-index = v; root.chan-edit("channel_index", v); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+
+                            Text { height: 18px; text: I18n.en ? "Communication" : "通信参数"; font-size: 11px; font-weight: 700; color: Theme.text; vertical-alignment: center; }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Protocol" : "协议"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                SlimCombo {
+                                    width: 90px;
+                                    model: ["CAN", "CAN FD"];
+                                    value: root.is-fd ? "CAN FD" : "CAN";
+                                    selected(v) => { root.is-fd = v == "CAN FD"; root.chan-edit("is_fd", v == "CAN FD" ? "1" : "0"); }
+                                }
+                                Text { width: 34px; text: I18n.en ? "Term" : "终端"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                CheckBox { checked: root.termination; text: I18n.en ? "120R" : "120Ω"; toggled => { root.termination = self.checked; root.chan-edit("termination", self.checked ? "1" : "0"); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                height: 26px;
+                                spacing: 4px;
+                                Text { width: 45px; text: I18n.en ? "Arb" : "仲裁"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                SlimCombo {
+                                    width: 90px;
+                                    model: ["1M", "800K", "500K", "250K", "125K"];
+                                    value <=> root.baud;
+                                    selected(v) => { root.chan-edit("baud", v); }
+                                }
+                                Text { width: 34px; text: I18n.en ? "Data" : "数据"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                SlimCombo {
+                                    width: 90px;
+                                    combo-enabled: root.is-fd;
+                                    model: ["1M", "800K", "500K", "250K", "125K"];
+                                    value <=> root.data-baud;
+                                    selected(v) => { root.chan-edit("data_baud", v); }
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+
+                            if root.is-net: VerticalLayout {
+                                spacing: 4px;
+                                HorizontalLayout {
+                                    height: 26px;
+                                    spacing: 4px;
+                                    Text { width: 45px; text: I18n.en ? "Mode" : "模式"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                    SlimCombo {
+                                        width: 90px;
+                                        model: I18n.en ? ["Server", "Client"] : ["服务器", "客户端"];
+                                        value: root.net-server ? (I18n.en ? "Server" : "服务器") : (I18n.en ? "Client" : "客户端");
+                                        selected(v) => { root.net-server = (v == "服务器" || v == "Server"); root.chan-edit("net_server", (v == "服务器" || v == "Server") ? "1" : "0"); }
+                                    }
+                                    Text { width: 34px; text: I18n.en ? "Port" : "端口"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                    LineEdit { text: root.port; height: 26px; width: 90px; font-size: 11px; edited(v) => { root.port = v; root.chan-edit("port", v); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                HorizontalLayout {
+                                    height: 26px;
+                                    spacing: 4px;
+                                    Text { width: 45px; text: I18n.en ? "IP" : "IP"; font-size: 10px; vertical-alignment: center; color: Theme.text-dim; }
+                                    LineEdit { text: root.ip; height: 26px; width: 170px; font-size: 11px; edited(v) => { root.ip = v; root.chan-edit("ip", v); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                            }
+                            Rectangle { vertical-stretch: 1; }
                         }
                     }
                 }
             }
         }
+
         Rectangle {
-            height: 38px;
+            height: 42px;
             HorizontalLayout {
                 spacing: 8px;
                 Rectangle { horizontal-stretch: 1; }
-                Button { text: I18n.en ? "Save" : "保存"; clicked => { root.save-all(); } }
-                Button { text: I18n.en ? "Save & Connect" : "保存并连接"; clicked => { root.connect-all(); } }
                 Button { text: I18n.en ? "Cancel" : "取消"; clicked => { root.cancel(); } }
+                Button { text: I18n.en ? "Save config" : "保存配置"; clicked => { root.save-all(); } }
+                Button { text: I18n.en ? "Save && Connect" : "保存并连接"; clicked => { root.connect-all(); } }
             }
         }
     }

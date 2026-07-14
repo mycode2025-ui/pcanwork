@@ -3,7 +3,7 @@
 
 use crate::can::{CanFrame, Cmd};
 use crate::dbc::DbcDb;
-use crate::{fmtf, key_of, App, GenMode, SimKind, SimPropWindow, SimRow, SimWidget};
+use crate::{App, GenMode, SimKind, SimPropWindow, SimRow, SimWidget, fmtf, key_of};
 use slint::Model;
 
 /// Current generator value for a SignalGen widget at its tick counter.
@@ -97,9 +97,10 @@ pub(crate) fn sim_tick(a: &mut App) {
         let key = key_of(a.sim_widgets[i].channel, false, id);
         let data = a.last.get(&key).map(|li| li.data.clone());
         if let Some(data) = data
-            && let Some(v) = sim_decode_value(&a.dbcs, id, &sig, &data) {
-                a.sim_widgets[i].cur = v;
-            }
+            && let Some(v) = sim_decode_value(&a.dbcs, id, &sig, &data)
+        {
+            a.sim_widgets[i].cur = v;
+        }
     }
 }
 
@@ -171,7 +172,11 @@ pub(crate) fn refresh_sim(a: &App) {
 /// Update a single sim row in place.
 pub(crate) fn sim_set_row(a: &App, i: usize) {
     if i < a.sim_widgets.len() && i < a.sim_model.row_count() {
-        let row = sim_make_row(&a.sim_widgets[i], a.sim_multi.contains(&(i as i32)), a.sim_sel == i as i32);
+        let row = sim_make_row(
+            &a.sim_widgets[i],
+            a.sim_multi.contains(&(i as i32)),
+            a.sim_sel == i as i32,
+        );
         a.sim_model.set_row_data(i, row);
     }
 }
@@ -216,9 +221,10 @@ pub(crate) fn sim_signal_range(a: &App, id: u32, signal: &str) -> Option<(f64, f
     for d in &a.dbcs {
         if let Some(m) = d.message(id)
             && let Some(s) = m.signals.iter().find(|s| s.name == signal)
-                && s.max > s.min {
-                    return Some((s.min, s.max));
-                }
+            && s.max > s.min
+        {
+            return Some((s.min, s.max));
+        }
     }
     None
 }
