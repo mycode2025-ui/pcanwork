@@ -17,4 +17,122 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dtolnay/r
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Patch child-window lifecycle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+
+          function Read-Text([string]$Path) {
+            return [System.IO.File]::ReadAllText($Path)
+          }
+
+          function Write-Text([string]$Path, [string]$Text) {
+            [System.IO.File]::WriteAllText($Path, $Text, $utf8)
+          }
+
+          function Replace-RegexOnce(
+            [string]$Path,
+            [string]$Pattern,
+            [string]$Replacement
+          ) {
+            $text = Read-Text $Path
+            $matches = [regex]::Matches($text, $Pattern)
+            if ($matches.Count -ne 1) {
+              throw "$Path: expected exactly one match, found $($matches.Count)"
+            }
+            $text = [regex]::Replace($text, $Pattern, $Replacement, 1)
+            Write-Text $Path $text
+          }
+
+          function Replace-SimpleShowCalls([string]$Path) {
+            $text = Read-Text $Path
+            $pattern = '(?m)^(?<indent>[ \t]*)let _ = (?<name>[A-Za-z_][A-Za-z0-9_]*)\.show\(\);[ \t]*$'
+            $count = [regex]::Matches($text, $pattern).Count
+            if ($count -gt 0) {
+              $text = [regex]::Replace(
+                $text,
+                $pattern,
+                '${indent}show_child_window(&${name});'
+              )
+              Write-Text $Path $text
+              Write-Host "$Path: routed $count child-window show call(s) through helper"
+            }
+          }
+
+          $helper = @'
+          fn show_child_window<C: slint::ComponentHandle + 'static>(component: &C) {
+              if component.show().is_err() {
+                  return;
+              }
+
+              // A window restored from HideWindow may be mapped after Slint's first
+              // redraw request. Redraw immediately, then again after the native window
+              // has had a chance to become visible. This prevents blank child windows
+              // with the Windows winit/FemtoVG backend.
+              component.window().request_redraw();
+
+              for delay_ms in [30_u64, 120_u64] {
+                  let weak = component.as_weak();
+                  slint::Timer::single_shot(
+                      std::time::Duration::from_millis(delay_ms),
+                      move || {
+                          if let Some(component) = weak.upgrade() {
+                              if component.window().is_visible() {
+                                  component.window().request_redraw();
+                              }
+                          }
+                      },
+                  );
+              }
+          }
+          '@
+          $helper = $helper.TrimStart()
+
+          $mainPattern = '(?s)pub\(crate\) fn show_child_window<C: slint::ComponentHandle \+ ''static>\(component: &C\) \{\s*let _ = component\.show\(\);\s*component\.window\(\)\.request_redraw\(\);\s*\}'
+          Replace-RegexOnce 'src/main.rs' $mainPattern ($helper -replace '^fn ', 'pub(crate) fn ')
+
+          foreach ($path in @('serial/src/main.rs', 'modbus/src/main.rs')) {
+            $insertPattern = 'slint::include_modules!\(\);'
+            $replacement = "slint::include_modules!();`n`n$helper"
+            Replace-RegexOnce $path $insertPattern $replacement
+          }
+
+          Get-ChildItem 'src' -Filter '*.rs' -File | ForEach-Object {
+            Replace-SimpleShowCalls $_.FullName
+          }
+          Replace-SimpleShowCalls 'serial/src/main.rs'
+          Replace-SimpleShowCalls 'modbus/src/main.rs'
+
+          $remaining = @()
+          foreach ($path in @('src', 'serial/src', 'modbus/src')) {
+            $remaining += Get-ChildItem $path -Filter '*.rs' -File -Recurse |
+              Select-String -Pattern '^\s*let _ = [A-Za-z_][A-Za-z0-9_]*\.show\(\);\s*$'
+          }
+          if ($remaining.Count -gt 0) {
+            $remaining | ForEach-Object { Write-Host $_ }
+            throw 'Unrouted direct child-window show calls remain'
+          }
+
+          git diff --check
+
+      - name: Check workspace
+        shell: pwsh
+        run: cargo check --workspace --all-targets
+
+      - name: Commit validated fix
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-slint-child-window.yml
+          git add src serial/src/main.rs modbus/src/main.rs
+          git diff --cached --check
+          if (git diff --cached --quiet) {
+            throw 'No source changes were produced'
+          }
+          git commit -m 'fix: redraw Slint child windows after reopen'
+          git push origin HEAD:agent/fix-slint-child-window-reopen
