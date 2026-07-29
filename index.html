@@ -597,16 +597,39 @@ const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.targ
 document.querySelectorAll('.rv').forEach(el=>io.observe(el));
 
 /* ══════════ 访问里程表 ══════════ */
-const ODO_KEY = 'https://www.hexbyte.cn/';   // ← 拿域名当"账户名"，换成你的域名
-async function odoRead(increment){
-  const url = 'https://hits.seeyoufarm.com/api/count/' + (increment?'incr':'keep')
-            + '/badge.json?url=' + encodeURIComponent(ODO_KEY);
-  const res = await fetch(url, {cache:'no-store'});
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const data = await res.json();
-  const n = Number(data.count ?? data.value ?? data);
-  if(!Number.isFinite(n)) throw new Error('bad payload');
-  return n;
+// 访问次数保存在 hitscounter.dev 的服务器中，ODO_KEY 是本网站的唯一计数键。
+// 每次页面加载会调用一次 /api/hit，因此当前统计口径是 PV（页面浏览次数）。
+const ODO_KEY = 'https://www.hexbyte.cn/';
+const ODO_API = 'https://hitscounter.dev/api/hit';
+
+async function odoRead(){
+  const params = new URLSearchParams({
+    output: 'json',
+    tz: 'Asia/Shanghai',
+    url: ODO_KEY
+  });
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try{
+    const res = await fetch(ODO_API + '?' + params.toString(), {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+
+    const data = await res.json();
+    const n = Number(data.total_hits);
+
+    if(!Number.isFinite(n)) throw new Error('bad payload');
+    return n;
+  }finally{
+    clearTimeout(timeoutId);
+  }
 }
 const odoEl = document.getElementById('odo');
 const odoStateEl = document.getElementById('odoState');
@@ -647,11 +670,12 @@ function odoPlus1(){
   odoSetState('sync');
   odoRollTo(odoStore.get() ?? 0);            // 先用缓存垫底，断网不开天窗
   try{
-    const n = await odoRead(true);           // incr = 读并+1，每个访客贡献一次
+    const n = await odoRead();               // 请求成功后，本次页面访问已计入 total_hits
     odoStore.set(n);
     setTimeout(()=>{ odoRollTo(n, 150); odoPlus1(); }, 600);
     odoSetState('live');
   }catch(e){
+    console.error('访问计数器请求失败：', e);
     odoSetState(odoStore.get()!=null ? 'cache' : 'off');
   }
 })();
