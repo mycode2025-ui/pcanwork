@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PcanWork — CAN/CAN FD 报文分析工具</title>
+<meta name="description" content="PcanWork：Rust + Slint 开发的 CAN/CAN FD 报文分析工具，原生支持 PCAN(PEAK) CAN 卡。DBC 信号解码、实时曲线、周期发送、CSV 导出。">
+<link rel="icon" href="app.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg0:#0a0f18; --bg1:#0e1522; --panel:#111a2b; --panel2:#152138;
+  --line:#1e2c46; --line2:#2b3d60;
+  --txt:#d9e4f4; --dim:#8296b5; --faint:#5a6d8c;
+  --rx:#41e08d; --tx:#ffb02e; --err:#ff5d5d; --sig:#3ec7e8; --vio:#9d8cff;
+  --disp:"Chakra Petch",system-ui,sans-serif;
+  --mono:"JetBrains Mono",Consolas,monospace;
+  --body:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--body); color:var(--txt); background:var(--bg0);
+  background-image:
+    radial-gradient(1100px 560px at 85% -8%, rgba(62,199,232,.08), transparent 60%),
+    radial-gradient(900px 520px at -8% 32%, rgba(65,224,141,.05), transparent 55%);
+  overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(130,150,181,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(130,150,181,.045) 1px, transparent 1px);
+  background-size:44px 44px;
+  -webkit-mask-image:radial-gradient(ellipse at 50% 0%, #000 25%, transparent 78%);
+          mask-image:radial-gradient(ellipse at 50% 0%, #000 25%, transparent 78%);
+}
+main,header,footer{position:relative;z-index:1}
+a{color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono)}
+
+/* ---------- 顶部工具栏（模拟软件 Toolbar） ---------- */
+.toolbar{
+  position:sticky;top:0;z-index:50;
+  background:rgba(10,15,24,.82);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.toolbar .wrap{display:flex;align-items:center;gap:22px;height:52px}
+.brand{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:.5px;display:flex;align-items:center;gap:9px}
+.brand .mark{width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--sig),#2b7fd4);display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:#06121f;font-family:var(--mono);font-weight:700}
+.leds{display:flex;gap:16px;margin-left:8px}
+.led-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);font-family:var(--mono)}
+.led{width:8px;height:8px;border-radius:50%;background:#26344e;transition:background .15s,box-shadow .15s}
+.led.g.on{background:var(--rx);box-shadow:0 0 9px rgba(65,224,141,.8)}
+.led.a.on{background:var(--tx);box-shadow:0 0 9px rgba(255,176,46,.8)}
+.led.r.on{background:var(--err);box-shadow:0 0 9px rgba(255,93,93,.85)}
+.led.c.on{background:var(--sig);box-shadow:0 0 9px rgba(62,199,232,.8)}
+.led.pulse.on{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.tb-right{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+/* ▼ 修复：Rx/Tx 计数加粗 + 固定占位 + 等宽数字，防止跳动时左右晃 */
+.tb-right b,.tb-right .txc{font-weight:500;display:inline-block;min-width:5.5ch;text-align:right;font-variant-numeric:tabular-nums}
+.tb-right b{color:var(--rx)}
+.tb-right .txc{color:var(--tx)}
+@media(max-width:860px){.leds{display:none}.tb-right span.dev{display:none}}
+
+/* ---------- Hero ---------- */
+.hero{padding:72px 0 56px}
+.hero .wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:center}
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:2px;color:var(--sig);text-transform:uppercase;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--sig)}
+h1{font-family:var(--disp);font-size:clamp(46px,6.5vw,76px);font-weight:700;line-height:1.02;margin:18px 0 6px;letter-spacing:.5px}
+h1 .ver{font-size:15px;font-family:var(--mono);font-weight:500;color:var(--tx);border:1px solid rgba(255,176,46,.4);border-radius:4px;padding:3px 9px;vertical-align:middle;margin-left:12px;letter-spacing:0}
+.tagline{font-size:clamp(18px,2.4vw,24px);color:var(--dim);font-weight:500;margin-bottom:20px}
+.tagline em{font-style:normal;color:var(--txt)}
+.lead{color:var(--dim);font-size:15.5px;line-height:1.85;max-width:520px;margin-bottom:30px}
+.lead code{font-family:var(--mono);font-size:13px;color:var(--sig);background:rgba(62,199,232,.08);padding:2px 6px;border-radius:4px}
+.btns{display:flex;gap:14px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:13px 26px;border-radius:7px;font-size:15px;font-weight:600;text-decoration:none;transition:transform .18s,box-shadow .18s,background .18s;font-family:var(--disp);letter-spacing:.3px}
+.btn-p{background:linear-gradient(135deg,#2fbf7b,#1f9d63);color:#04120a;box-shadow:0 6px 22px rgba(47,191,123,.28)}
+.btn-p:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(47,191,123,.4)}
+.btn-s{border:1px solid var(--line2);color:var(--txt);background:rgba(21,33,56,.5)}
+.btn-s:hover{border-color:var(--sig);color:var(--sig);transform:translateY(-2px)}
+.stats{display:flex;gap:0;margin-top:38px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:rgba(17,26,43,.6);max-width:560px}
+.stat{flex:1;padding:16px 14px;border-right:1px solid var(--line);transition:background .2s}
+.stat:last-child{border-right:none}
+.stat:hover{background:rgba(62,199,232,.05)}
+.stat b{display:block;font-family:var(--mono);font-size:21px;font-weight:700;color:var(--txt)}
+.stat span{font-size:11.5px;color:var(--faint)}
+.stat:nth-child(1) b{color:var(--sig)} .stat:nth-child(2) b{color:var(--rx)}
+.stat:nth-child(3) b{color:var(--tx)} .stat:nth-child(4) b{color:var(--vio)}
+
+/* ---------- 实时面板 ---------- */
+.live{display:flex;flex-direction:column;gap:14px}
+.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:11px;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.p-head{display:flex;align-items:center;gap:2px;padding:0 14px;height:40px;border-bottom:1px solid var(--line);background:rgba(10,15,24,.5)}
+.p-tab{font-family:var(--mono);font-size:12px;color:var(--faint);padding:6px 12px;border-radius:5px 5px 0 0;cursor:default}
+.p-tab.on{color:var(--sig);background:rgba(62,199,232,.09);border:1px solid var(--line);border-bottom-color:transparent}
+.p-head .bus{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
+.p-head .bus i{font-style:normal;color:var(--rx)}
+.t-body{padding:8px 0;min-height:298px;font-family:var(--mono);font-size:12px}
+.trow{display:grid;grid-template-columns:70px 96px 32px 108px 24px 1fr;gap:8px;padding:3.5px 14px;align-items:center;animation:rowin .3s ease both;white-space:nowrap}
+@keyframes rowin{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+.trow:hover{background:rgba(62,199,232,.06)}
+.c-time{color:var(--faint)} .c-dlc{color:var(--faint)}
+.c-id{color:var(--txt);font-weight:500}
+.trow.rx .c-dir{color:var(--rx)} .trow.tx .c-dir{color:var(--tx)}
+.trow.tx .c-id{color:var(--tx)}
+.c-name{color:var(--sig);overflow:hidden;text-overflow:ellipsis}
+.trow.tx .c-name{color:#ffd28a}
+.c-data{color:#a9bcd9;overflow:hidden;text-overflow:ellipsis}
+.chg{background:rgba(255,176,46,.22);color:#ffd28a;border-radius:2px;padding:0 2px}
+/* 曲线 */
+.chart-wrap{padding:12px 14px 14px}
+.legend{display:flex;gap:18px;font-family:var(--mono);font-size:11.5px;margin-bottom:8px}
+.legend .l1{color:var(--sig)} .legend .l2{color:var(--rx)}
+.legend b{font-weight:700}
+canvas{width:100%;height:110px;display:block}
+
+/* ---------- 通用 Section ---------- */
+section{padding:78px 0}
+.sec-head{margin-bottom:44px}
+h2{font-family:var(--disp);font-size:clamp(28px,3.6vw,40px);font-weight:700;margin-top:14px;letter-spacing:.3px}
+h2 .hl{color:var(--sig)}
+.sub{color:var(--dim);font-size:15px;margin-top:10px;max-width:640px;line-height:1.8}
+
+/* ---------- Bento 功能 ---------- */
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.card{background:linear-gradient(180deg,rgba(21,33,56,.75),rgba(17,26,43,.9));border:1px solid var(--line);border-radius:11px;padding:24px;transition:transform .22s,border-color .22s,box-shadow .22s;position:relative;overflow:hidden}
+.card:hover{transform:translateY(-5px);border-color:var(--line2);box-shadow:0 18px 44px rgba(0,0,0,.4)}
+.card .ico{font-family:var(--mono);font-size:19px;font-weight:700;width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;border:1px solid}
+.card h3{font-family:var(--disp);font-size:17.5px;font-weight:600;margin-bottom:9px}
+.card p{font-size:13.5px;color:var(--dim);line-height:1.75}
+.card .tag{display:inline-block;margin-top:13px;font-family:var(--mono);font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:3px 8px;letter-spacing:.5px}
+.card-big{grid-column:span 2;grid-row:span 2;display:flex;flex-direction:column}
+.card-w{grid-column:span 2}
+.i-sig{color:var(--sig);background:rgba(62,199,232,.1);border-color:rgba(62,199,232,.3)}
+.i-rx{color:var(--rx);background:rgba(65,224,141,.1);border-color:rgba(65,224,141,.3)}
+.i-tx{color:var(--tx);background:rgba(255,176,46,.1);border-color:rgba(255,176,46,.3)}
+.i-v{color:var(--vio);background:rgba(157,140,255,.1);border-color:rgba(157,140,255,.3)}
+.i-e{color:var(--err);background:rgba(255,93,93,.1);border-color:rgba(255,93,93,.3)}
+.mini{margin-top:auto;border:1px solid var(--line);border-radius:8px;background:rgba(10,15,24,.6);padding:10px 12px;font-family:var(--mono);font-size:11px;line-height:2;overflow:hidden}
+.mini .h{color:var(--faint);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:4px}
+.mini .r1{color:#a9bcd9}.mini .g{color:var(--rx)}.mini .a{color:var(--tx)}.mini .b{color:var(--sig)}
+
+/* ---------- 数据流 ---------- */
+.flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;justify-content:center}
+.node{flex:1;min-width:170px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:10px;padding:20px 18px;transition:transform .2s,border-color .2s}
+.node:hover{transform:translateY(-4px);border-color:var(--sig)}
+.node .n-ico{font-family:var(--mono);font-size:13px;font-weight:700;margin-bottom:10px;letter-spacing:1px}
+.node h4{font-family:var(--disp);font-size:15.5px;margin-bottom:7px}
+.node p{font-size:12.5px;color:var(--dim);line-height:1.7}
+.arrow{display:flex;align-items:center;padding:0 10px;font-family:var(--mono);color:var(--sig);font-size:18px;position:relative}
+.arrow::before{content:"";position:absolute;left:-6px;right:16px;top:50%;height:1px;background:linear-gradient(90deg,transparent,var(--sig));animation:dash 1.4s linear infinite;background-size:200% 100%}
+@keyframes dash{to{background-position:-200% 0}}
+@media(max-width:900px){.arrow{display:none}.flow{gap:12px}}
+
+/* ---------- 步骤 ---------- */
+.steps{position:relative;max-width:760px}
+.steps::before{content:"";position:absolute;left:19px;top:8px;bottom:8px;width:1px;background:linear-gradient(180deg,var(--sig),var(--rx),var(--tx))}
+.step{position:relative;padding:0 0 34px 62px}
+.step:last-child{padding-bottom:0}
+.step .num{position:absolute;left:0;top:0;width:39px;height:39px;border-radius:50%;background:var(--panel);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-weight:700;font-size:14px;color:var(--sig);transition:border-color .2s,box-shadow .2s}
+.step:hover .num{border-color:var(--sig);box-shadow:0 0 14px rgba(62,199,232,.35)}
+.step h4{font-family:var(--disp);font-size:17px;margin-bottom:6px;padding-top:7px}
+.step p{font-size:14px;color:var(--dim);line-height:1.8}
+.step code{font-family:var(--mono);font-size:12px;color:var(--tx);background:rgba(255,176,46,.08);padding:2px 7px;border-radius:4px}
+
+/* ---------- 路线图 ---------- */
+.road{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.road-item{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:9px;padding:16px 18px;background:rgba(17,26,43,.6);transition:border-color .2s,transform .2s}
+.road-item:hover{border-color:var(--line2);transform:translateX(5px)}
+.chip{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:1px;padding:4px 9px;border-radius:4px;flex-shrink:0}
+.chip.next{color:#04120a;background:var(--rx)}
+.chip.todo{color:#0d1420;background:var(--tx)}
+.chip.hold{color:var(--dim);border:1px solid var(--line2)}
+.road-item b{font-size:14.5px;font-weight:600;display:block}
+.road-item span{font-size:12px;color:var(--faint);font-family:var(--mono)}
+@media(max-width:760px){.road{grid-template-columns:1fr}}
+
+/* ---------- 硬件 ---------- */
+.hw{display:flex;gap:12px;flex-wrap:wrap}
+.hw-chip{border:1px solid var(--line2);border-radius:8px;padding:13px 20px;font-family:var(--mono);font-size:13px;color:var(--dim);background:rgba(21,33,56,.5);transition:color .2s,border-color .2s,transform .2s}
+.hw-chip:hover{color:var(--sig);border-color:var(--sig);transform:translateY(-3px)}
+.hw-chip b{color:var(--txt)}
+
+/* ---------- Footer ---------- */
+footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
+.f-grid{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap}
+.f-brand{font-family:var(--disp);font-weight:700;font-size:19px;margin-bottom:10px}
+.f-note{font-size:13px;color:var(--faint);line-height:1.9;max-width:420px}
+.f-links a{display:block;color:var(--dim);text-decoration:none;font-size:14px;padding:5px 0;transition:color .2s,transform .2s}
+.f-links a:hover{color:var(--sig);transform:translateX(4px)}
+.f-h{font-family:var(--mono);font-size:11px;letter-spacing:2px;color:var(--faint);margin-bottom:10px;text-transform:uppercase}
+.copy{margin-top:36px;padding-top:20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+/* ---------- 滚动显现 ---------- */
+.rv{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+
+/* ═══════════ 访问里程表 ═══════════ */
+.odo-sec{padding:0 0 78px}
+.odo-panel{
+  --cell-h:1.22em;
+  position:relative;display:flex;align-items:stretch;overflow:hidden;
+  background:linear-gradient(180deg,var(--panel2),var(--panel));
+  border:1px solid var(--line2);border-radius:11px;
+  box-shadow:0 24px 60px rgba(0,0,0,.45);
+}
+.odo-panel::before{ /* 网格纹理 */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(130,150,181,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(130,150,181,.04) 1px, transparent 1px);
+  background-size:22px 22px;
+  -webkit-mask-image:linear-gradient(180deg,#000,rgba(0,0,0,.25));
+          mask-image:linear-gradient(180deg,#000,rgba(0,0,0,.25));
+}
+.odo-panel::after{ /* 扫描线 */
+  content:"";position:absolute;top:0;bottom:0;left:-160px;width:140px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(62,199,232,.06),transparent);
+  animation:odo-sweep 7s linear infinite;
+}
+@keyframes odo-sweep{to{left:110%}}
+.odo-corner{position:absolute;width:12px;height:12px;border:2px solid rgba(130,150,181,.3);pointer-events:none;z-index:3}
+.odo-corner.tl{top:7px;left:7px;border-right:0;border-bottom:0}
+.odo-corner.tr{top:7px;right:7px;border-left:0;border-bottom:0}
+.odo-corner.bl{bottom:7px;left:7px;border-right:0;border-top:0}
+.odo-corner.br{bottom:7px;right:7px;border-left:0;border-top:0}
+
+.odo-status{display:flex;align-items:center;gap:13px;padding:24px 26px;z-index:1;position:relative}
+.odo-led{width:9px;height:9px;border-radius:50%;flex:none;background:var(--rx);box-shadow:0 0 11px rgba(65,224,141,.8);animation:pulse 2.2s ease-in-out infinite}
+.odo-status strong{display:block;font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.24em}
+.odo-status em{display:block;font-style:normal;margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint)}
+.odo-panel[data-state="sync"]  .odo-led{background:var(--tx);box-shadow:0 0 11px rgba(255,176,46,.8)}
+.odo-panel[data-state="cache"] .odo-led{background:var(--tx);box-shadow:0 0 8px rgba(255,176,46,.5);animation:none}
+.odo-panel[data-state="off"]   .odo-led{background:var(--err);box-shadow:0 0 8px rgba(255,93,93,.6);animation:none}
+
+.odo-divider{width:1px;align-self:stretch;margin:16px 0;background:linear-gradient(180deg,transparent,var(--line2),transparent)}
+
+.odo-gauge{position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;gap:11px;padding:22px 28px;transition:background .35s}
+.odo-gauge:hover{background:rgba(62,199,232,.04)}
+.odo-label{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.28em;color:var(--dim);text-transform:uppercase}
+.odo-label i{font-style:normal;letter-spacing:.12em;opacity:.65;margin-left:8px}
+.odo-sub{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--faint)}
+
+.odo-digits{display:flex;gap:5px;font-size:clamp(26px,4.5vw,36px);font-family:var(--mono);font-weight:700}
+.odo-cell{
+  width:.74em;height:var(--cell-h);overflow:hidden;
+  background:#0a0f18;border:1px solid var(--line);border-radius:4px;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.65);
+  transition:border-color .35s, box-shadow .35s;
+}
+.odo-reel{display:block;transition:transform 1.1s cubic-bezier(.22,.85,.25,1)}
+.odo-reel span{display:block;height:var(--cell-h);line-height:var(--cell-h);text-align:center;color:var(--txt);transition:color .35s, text-shadow .35s}
+.odo-gauge:hover .odo-cell{border-color:rgba(62,199,232,.35);box-shadow:inset 0 3px 8px rgba(0,0,0,.65), 0 0 14px rgba(62,199,232,.12)}
+.odo-gauge:hover .odo-reel span{color:var(--sig);text-shadow:0 0 14px rgba(62,199,232,.45)}
+
+.odo-plus{
+  position:absolute;top:14px;right:24px;z-index:2;pointer-events:none;
+  font-family:var(--mono);font-weight:700;font-size:15px;color:var(--sig);
+  text-shadow:0 0 12px rgba(62,199,232,.5);
+  animation:odo-rise 1.15s ease-out forwards;
+}
+@keyframes odo-rise{0%{opacity:0;transform:translateY(8px)}18%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
+
+@media(max-width:660px){
+  .odo-panel{flex-wrap:wrap}
+  .odo-status{width:100%;padding:16px 22px;border-bottom:1px solid var(--line)}
+  .odo-divider{display:none}
+  .odo-gauge{flex:1 1 100%;padding:18px 22px}
+}
+
+@media(max-width:960px){
+  .hero .wrap{grid-template-columns:1fr;gap:40px}
+  .bento{grid-template-columns:1fr 1fr}
+  .card-big{grid-column:span 2;grid-row:auto}
+}
+@media(max-width:620px){
+  .bento{grid-template-columns:1fr}
+  .card-big,.card-w{grid-column:auto}
+  .stats{flex-wrap:wrap}.stat{flex:1 1 45%;border-bottom:1px solid var(--line)}
+  .trow{grid-template-columns:60px 84px 30px 1fr;font-size:11px}
+  .c-dlc,.c-data{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════ 顶部工具栏 ═══════════ -->
+<header class="toolbar">
+  <div class="wrap">
+    <div class="brand"><span class="mark">C</span>PcanWork</div>
+    <div class="leds">
+      <span class="led-item"><i class="led g on pulse"></i>连接</span>
+      <span class="led-item"><i class="led g on pulse"></i>运行</span>
+      <span class="led-item"><i class="led g" id="ledRx"></i>Rx</span>
+      <span class="led-item"><i class="led a" id="ledTx"></i>Tx</span>
+      <span class="led-item"><i class="led r" id="ledErr"></i>Err</span>
+      <span class="led-item"><i class="led c on"></i>DBC</span>
+    </div>
+    <div class="tb-right">
+      <span class="dev">PCAN_USBBUS1 @ 500K</span>
+      <span>Rx <b id="rxCount">84,213</b></span>
+      <span>Tx <span class="txc" id="txCount">3,207</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ═══════════ Hero ═══════════ -->
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow">Rust + Slint · PCAN (PEAK) 原生支持</div>
+      <h1>PcanWork<span class="ver">v0.1-base</span></h1>
+      <p class="tagline">CAN / CAN FD <em>总线报文分析工具</em></p>
+      <p class="lead">
+        桌面级总线分析器。16 列报文摘表、DBC 信号解码、实时曲线、
+        周期发送、CSV 导出。没插卡？自动回退<code>虚拟总线</code>，无硬件也能完整跑通。
+      </p>
+      <div class="btns">
+        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork" target="_blank">▸ GitHub 仓库</a>
+        <a class="btn btn-s" href="https://github.com/mycode2025-ui/pcanwork/archive/refs/heads/master.zip">⤓ 下载源码</a>
+      </div>
+      <div class="stats">
+        <div class="stat"><b>16</b><span>列报文摘表</span></div>
+        <div class="stat"><b>100K</b><span>帧接收缓存</span></div>
+        <div class="stat"><b>100ms</b><span>批量刷新 UI</span></div>
+        <div class="stat"><b>2</b><span>种字节序解码</span></div>
+      </div>
+    </div>
+
+    <div class="live">
+      <div class="panel">
+        <div class="p-head">
+          <span class="p-tab on">Trace</span><span class="p-tab">Overwrite</span>
+          <span class="bus">CH1 · <i>● RUNNING</i> · 500 kbit/s</span>
+        </div>
+        <div class="t-body" id="trace"></div>
+      </div>
+      <div class="panel">
+        <div class="p-head"><span class="p-tab on">曲线</span><span class="bus">10 Hz 刷新</span></div>
+        <div class="chart-wrap">
+          <div class="legend">
+            <span class="l1">— EngineSpeed <b id="v1">1742</b> rpm</span>
+            <span class="l2">— SOC <b id="v2">76.4</b> %</span>
+          </div>
+          <canvas id="sig"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 功能 ═══════════ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">FEATURES · 已实现</div>
+      <h2>完整的<span class="hl">核心数据链路</span>已打通</h2>
+      <p class="sub">主框架与收发、解码、显示、记录全链路可用，高级功能留有清晰扩展点。</p>
+    </div>
+    <div class="bento">
+      <div class="card card-big rv">
+        <div class="ico i-sig">▦</div>
+        <h3>16 列报文摘表</h3>
+        <p>No. / Time / Delta / Ch / Dir / ID / Name / Type / FD / BRS / DLC / Len / Data / Cycle / Count / Comment。Rx·Tx·错误帧分色、等宽字体、变化字节高亮、虚拟滚动。</p>
+        <div class="mini">
+          <div class="h">Time&nbsp;&nbsp;&nbsp;&nbsp;ID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dir&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Data</div>
+          <div class="r1">12.4831 <span class="b">0x0C0</span> <span class="g">Rx</span> EngineData 0C 5A <span class="a">34</span> F0 00 81</div>
+          <div class="r1">12.4902 <span class="b">0x180</span> <span class="g">Rx</span> BMS_Status 01 4C 00 00 7F 02</div>
+          <div class="r1">12.5117 <span class="b">0x7E0</span> <span class="a">Tx</span> Diag_Req&nbsp;&nbsp;02 10 03 00 00 00</div>
+        </div>
+      </div>
+      <div class="card rv"><div class="ico i-rx">∿</div><h3>DBC 信号解码</h3><p>Intel / Motorola 位提取、有符号、factor/offset、越界判定，信号面板与报文联动。</p><span class="tag">can-dbc 9.1</span></div>
+      <div class="card rv"><div class="ico i-sig">◔</div><h3>实时曲线</h3><p>多信号折线、自动缩放、抽稀，10 Hz 刷新不卡顿。</p><span class="tag">10HZ REFRESH</span></div>
+      <div class="card rv"><div class="ico i-v">⇄</div><h3>Trace / Overwrite</h3><p>双显示模式，Overwrite 按 ID 聚合，更实用的实时视图。</p><span class="tag">DUAL MODE</span></div>
+      <div class="card rv"><div class="ico i-tx">⚡</div><h3>报文发送</h3><p>单次 / 周期发送，周期在独立控制线程精确计时。</p><span class="tag">TX THREAD</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⌀</div><h3>快速过滤 + 统计 + 记录</h3><p>ID 单值 / 列表 / 范围 / 排除，Name 通配，Data 字节序列过滤；通道统计 + ID 统计（Count / AvgCycle / Min / Max）；一键导出 CSV。</p><span class="tag">FILTER · STATS · CSV</span></div>
+      <div class="card card-w rv"><div class="ico i-rx">◉</div><h3>虚拟总线自动回退</h3><p>没插卡时自动切到 VirtualBus 生成演示报文（EngineData / BMS_Status…），保证无硬件也能完整演示全部功能。</p><span class="tag">ZERO HARDWARE DEMO</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 访问里程表 ═══════════ -->
+<section class="odo-sec">
+  <div class="wrap">
+    <div class="odo-panel rv" id="odo" data-state="sync" aria-label="网站访问次数">
+      <span class="odo-corner tl"></span><span class="odo-corner tr"></span>
+      <span class="odo-corner bl"></span><span class="odo-corner br"></span>
+
+      <div class="odo-status">
+        <span class="odo-led"></span>
+        <div>
+          <strong>VISIT ODOMETER</strong>
+          <em id="odoState">SYNCING · 同步中</em>
+        </div>
+      </div>
+
+      <div class="odo-divider"></div>
+
+      <div class="odo-gauge">
+        <span class="odo-label">Total Visits<i>累计访问</i></span>
+        <div class="odo-digits" id="odoDigits"></div>
+        <span class="odo-sub">SINCE 2026.07.29 · PV · PAGE VIEWS</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 架构数据流 ═══════════ -->
+<section id="arch" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">ARCHITECTURE · 架构</div>
+      <h2>接收线程与 UI <span class="hl">完全解耦</span></h2>
+      <p class="sub">控制线程独立收发，mpsc channel 传递，UI 定时批量取帧重建模型——接收永不阻塞。</p>
+    </div>
+    <div class="flow rv">
+      <div class="node"><div class="n-ico" style="color:var(--rx)">[ ADAPTER ]</div><h4>CAN 适配器</h4><p>PcanBus（PCANBasic.dll FFI）或 VirtualBus 演示数据源</p></div>
+      <div class="arrow">▸</div>
+      <div class="node"><div class="n-ico" style="color:var(--tx)">[ THREAD ]</div><h4>控制线程</h4><p>独立线程收 / 发，命令与事件走 channel 传递</p></div>
+      <div class="arrow">▸</div>
+      <div class="node"><div class="n-ico" style="color:var(--sig)">[ MPSC ]</div><h4>消息通道</h4><p>mpsc channel 缓冲，10 万帧原始缓存</p></div>
+      <div class="arrow">▸</div>
+      <div class="node"><div class="n-ico" style="color:var(--vio)">[ UI 100ms ]</div><h4>Slint 视图</h4><p>Timer 批量取帧 → 重建模型，刷新轻量流畅</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 快速上手 ═══════════ -->
+<section id="quickstart">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">QUICK START · 快速上手</div>
+      <h2>6 步跑通<span class="hl">完整链路</span></h2>
+      <p class="sub">克隆后 <span class="mono" style="color:var(--tx)">cargo run --release</span>，然后：</p>
+    </div>
+    <div class="steps">
+      <div class="step rv"><span class="num">1</span><h4>连接设备</h4><p>自动尝试打开 <code>PCAN_USBBUS1 @500K</code>；没插卡自动回退虚拟总线。</p></div>
+      <div class="step rv"><span class="num">2</span><h4>启动接收</h4><p>点「启动」，中央表格开始滚动报文。</p></div>
+      <div class="step rv"><span class="num">3</span><h4>加载 DBC</h4><p>选择工程根目录的 <code>sample.dbc</code>，报文立即出现名称（EngineData / BMS_Status…）。</p></div>
+      <div class="step rv"><span class="num">4</span><h4>信号解析</h4><p>点选任意报文，底部面板显示 Raw / Physical / 单位 / 起始位 / 字节序。</p></div>
+      <div class="step rv"><span class="num">5</span><h4>添加曲线</h4><p>信号行点「添加」，切到曲线 Tab 看实时折线。</p></div>
+      <div class="step rv"><span class="num">6</span><h4>发送报文</h4><p>发送 Tab → 新增 → <code>发一次</code> 或 <code>周期发送</code>。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 路线图 ═══════════ -->
+<section id="roadmap" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">ROADMAP · 路线图</div>
+      <h2>扩展点已<span class="hl">明确预留</span></h2>
+    </div>
+    <div class="road">
+      <div class="road-item rv"><span class="chip next">NEXT</span><div><b>CAN FD 真卡收发</b><span>CAN_InitializeFD</span></div></div>
+      <div class="road-item rv"><span class="chip next">NEXT</span><div><b>逐字节高亮</b><span>Data 拆 [byte] 按位染色</span></div></div>
+      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>高级过滤弹窗 / 多级排序</b><span>列头筛选 · 分组</span></div></div>
+      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>总线负载 / FPS 指示</b><span>绝对时间轴 · 双游标</span></div></div>
+      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>曲线 ↔ 报文时间同步</b><span>UI 与数据结构已预留</span></div></div>
+      <div class="road-item rv"><span class="chip hold">HOLD</span><div><b>停靠拖拽布局</b><span>面板自由组合</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 硬件生态 ═══════════ -->
+<section id="hardware">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">HARDWARE · 硬件生态</div>
+      <h2>多厂商 CAN 驱动<span class="hl">已入库</span></h2>
+      <p class="sub">当前原生支持 PCAN(PEAK)，仓库已预留多家 CAN 卡驱动与工业协议扩展模块。</p>
+    </div>
+    <div class="hw rv">
+      <span class="hw-chip"><b>PCAN (PEAK)</b> · 已支持 ✓</span>
+      <span class="hw-chip"><b>ZLG</b> 致远电子 · zlgcan_x64</span>
+      <span class="hw-chip"><b>ZHCX</b> 创芯科技 · zhcxCAN</span>
+      <span class="hw-chip"><b>GCAN</b> 广成科技</span>
+      <span class="hw-chip"><b>Modbus</b> 协议模块</span>
+      <span class="hw-chip"><b>Serial</b> 串口模块</span>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ═══════════ Footer ═══════════ -->
+<footer>
+  <div class="wrap">
+    <div class="f-grid">
+      <div>
+        <div class="f-brand">PcanWork</div>
+        <p class="f-note">Rust + Slint 构建的 CAN/CAN FD 报文分析工具。<br>真卡运行需安装 PEAK 驱动（PCANBasic.dll）。</p>
+      </div>
+      <div>
+        <div class="f-h">项目</div>
+        <div class="f-links">
+          <a href="https://github.com/mycode2025-ui/pcanwork" target="_blank">GitHub 仓库</a>
+          <a href="https://github.com/mycode2025-ui/pcanwork/issues" target="_blank">问题反馈</a>
+          <a href="https://github.com/mycode2025-ui/pcanwork/commits/master" target="_blank">更新日志</a>
+        </div>
+      </div>
+      <div>
+        <div class="f-h">技术栈</div>
+        <div class="f-links">
+          <a href="https://slint.dev" target="_blank">Slint 1.16</a>
+          <a href="https://www.rust-lang.org" target="_blank">Rust</a>
+          <a href="https://www.peak-system.com" target="_blank">PCANBasic FFI</a>
+        </div>
+      </div>
+    </div>
+    <div class="copy">
+      <span>© 2026 PcanWork · mycode2025-ui</span>
+      <span>cargo run --release ▸ 流畅版</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ══════════ 实时报文流模拟 ══════════ */
+const defs=[
+  {id:'0x0C0',    name:'EngineData', dir:'Rx', dlc:8, w:3},
+  {id:'0x180',    name:'BMS_Status', dir:'Rx', dlc:8, w:3},
+  {id:'0x2A0',    name:'VCU_Heart',  dir:'Rx', dlc:4, w:2},
+  {id:'0x3E0',    name:'MCU_Torque', dir:'Rx', dlc:8, w:2},
+  {id:'0x18FF50E5',name:'OBD_Ext',   dir:'Rx', dlc:8, w:1},
+  {id:'0x7E0',    name:'Diag_Req',   dir:'Tx', dlc:8, w:1},
+];
+const trace=document.getElementById('trace');
+let simT=12.4, rxN=84213, txN=3207;
+const rnd=n=>Math.floor(Math.random()*n);
+const hex=b=>b.toString(16).toUpperCase().padStart(2,'0');
+function pick(){const tot=defs.reduce((s,d)=>s+d.w,0);let r=Math.random()*tot;for(const d of defs){if((r-=d.w)<0)return d}return defs[0]}
+function pushRow(){
+  const d=pick();
+  simT+=0.02+Math.random()*0.35;
+  d.prev=d.prev||Array.from({length:d.dlc},()=>rnd(256));
+  const cur=[...d.prev]; const chg=new Set();
+  if(Math.random()<0.75){const n=1+rnd(2);for(let i=0;i<n;i++){const k=rnd(d.dlc);cur[k]=rnd(256);chg.add(k)}}
+  d.prev=cur;
+  const data=cur.map((b,i)=>chg.has(i)?'<b class="chg">'+hex(b)+'</b>':hex(b)).join(' ');
+  const row=document.createElement('div');
+  row.className='trow '+d.dir.toLowerCase();
+  row.innerHTML='<span class="c-time">'+simT.toFixed(4)+'</span><span class="c-id">'+d.id+'</span><span class="c-dir">'+d.dir+'</span><span class="c-name">'+d.name+'</span><span class="c-dlc">'+d.dlc+'</span><span class="c-data">'+data+'</span>';
+  trace.appendChild(row);
+  while(trace.children.length>11)trace.removeChild(trace.firstChild);
+  if(d.dir==='Tx'){txN++;flash('ledTx',200)}else{rxN++}
+  document.getElementById('rxCount').textContent=rxN.toLocaleString();
+  document.getElementById('txCount').textContent=txN.toLocaleString();
+}
+setInterval(pushRow,430);
+for(let i=0;i<9;i++)pushRow();
+
+/* ══════════ 指示灯 ══════════ */
+function flash(id,ms){const el=document.getElementById(id);el.classList.add('on');setTimeout(()=>el.classList.remove('on'),ms)}
+setInterval(()=>{const l=document.getElementById('ledRx');l.classList.toggle('on')},320);
+(function errLoop(){setTimeout(()=>{flash('ledErr',280);errLoop()},5000+Math.random()*6000)})();
+
+/* ══════════ 实时曲线 ══════════ */
+const cv=document.getElementById('sig'),ctx=cv.getContext('2d');
+let s1=[],s2=[];
+function sizeCv(){const dpr=window.devicePixelRatio||1;cv.width=cv.clientWidth*dpr;cv.height=110*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+sizeCv();window.addEventListener('resize',sizeCv);
+function drawLine(arr,min,max,color,y0,h){
+  const w=cv.clientWidth,n=arr.length;if(n<2)return;
+  ctx.strokeStyle=color;ctx.lineWidth=1.6;ctx.beginPath();
+  for(let i=0;i<n;i++){const x=i/(160-1)*w;const y=y0+h-(arr[i]-min)/(max-min)*h;i?ctx.lineTo(x,y):ctx.moveTo(x,y)}
+  ctx.stroke();
+}
+function stepChart(){
+  const t=Date.now()/1000;
+  s1.push(1750+Math.sin(t*0.9)*260+(Math.random()*90-45));
+  s2.push(76+Math.sin(t*0.23)*4+(Math.random()*0.7-0.35));
+  if(s1.length>160)s1.shift();if(s2.length>160)s2.shift();
+  const w=cv.clientWidth,h=110;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle='rgba(130,150,181,.12)';ctx.lineWidth=1;
+  for(let i=1;i<4;i++){ctx.beginPath();ctx.moveTo(0,h/4*i);ctx.lineTo(w,h/4*i);ctx.stroke()}
+  drawLine(s1,1200,2300,'#3ec7e8',0,h*0.46);
+  drawLine(s2,70,82,'#41e08d',h*0.54,h*0.46);
+  document.getElementById('v1').textContent=Math.round(s1[s1.length-1]);
+  document.getElementById('v2').textContent=s2[s2.length-1].toFixed(1);
+}
+setInterval(stepChart,100);
+
+/* ══════════ 滚动显现 ══════════ */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+/* ══════════ 访问里程表 ══════════ */
+const ODO_KEY = 'https://www.hexbyte.cn/';   // ← 拿域名当"账户名"，换成你的域名
+async function odoRead(increment){
+  const url = 'https://hits.seeyoufarm.com/api/count/' + (increment?'incr':'keep')
+            + '/badge.json?url=' + encodeURIComponent(ODO_KEY);
+  const res = await fetch(url, {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data = await res.json();
+  const n = Number(data.count ?? data.value ?? data);
+  if(!Number.isFinite(n)) throw new Error('bad payload');
+  return n;
+}
+const odoEl = document.getElementById('odo');
+const odoStateEl = document.getElementById('odoState');
+const odoDigitsEl = document.getElementById('odoDigits');
+const odoStore = {
+  set(v){ try{localStorage.setItem('pcan-odo', String(v))}catch(e){} },
+  get(){ try{const v=localStorage.getItem('pcan-odo'); return v==null?null:Number(v)}catch(e){return null} }
+};
+function odoSetState(mode){
+  odoEl.dataset.state = mode;
+  odoStateEl.textContent = {live:'LIVE · 实时', sync:'SYNCING · 同步中', cache:'CACHED · 缓存', off:'OFFLINE · 离线'}[mode];
+}
+function odoRollTo(count, baseDelay){
+  baseDelay = baseDelay || 0;
+  const ds = String(Math.max(0, Math.floor(count))).padStart(6,'0').split('');
+  odoDigitsEl.innerHTML = '';
+  const reels = ds.map((d,i)=>{
+    const cell = document.createElement('span'); cell.className='odo-cell';
+    const reel = document.createElement('span'); reel.className='odo-reel';
+    for(let k=0;k<=9;k++){ const s=document.createElement('span'); s.textContent=k; reel.appendChild(s); }
+    cell.appendChild(reel); odoDigitsEl.appendChild(cell);
+    return {reel, target:+d, index:i};
+  });
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    reels.forEach(r=>{
+      r.reel.style.transitionDelay = (baseDelay + r.index*90) + 'ms';
+      r.reel.style.transform = 'translateY(calc(' + (-r.target) + ' * var(--cell-h)))';
+    });
+  }));
+}
+function odoPlus1(){
+  const el = document.createElement('span');
+  el.className='odo-plus'; el.textContent='+1';
+  odoDigitsEl.appendChild(el);
+  el.addEventListener('animationend', ()=>el.remove());
+}
+(async function(){
+  odoSetState('sync');
+  odoRollTo(odoStore.get() ?? 0);            // 先用缓存垫底，断网不开天窗
+  try{
+    const n = await odoRead(true);           // incr = 读并+1，每个访客贡献一次
+    odoStore.set(n);
+    setTimeout(()=>{ odoRollTo(n, 150); odoPlus1(); }, 600);
+    odoSetState('live');
+  }catch(e){
+    odoSetState(odoStore.get()!=null ? 'cache' : 'off');
+  }
+})();
+</script>
+</body>
+</html>
