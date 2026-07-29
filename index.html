@@ -68,8 +68,8 @@ a{color:inherit}
 @media(max-width:860px){.leds{display:none}.tb-right span.dev{display:none}}
 
 /* ---------- Hero ---------- */
-.hero{padding:72px 0 56px}
-.hero .wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:center}
+.hero{padding:38px 0 56px}
+.hero .wrap{display:grid;grid-template-columns:1.05fr 1fr;gap:48px;align-items:start}
 .eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:2px;color:var(--sig);text-transform:uppercase;display:flex;align-items:center;gap:10px}
 .eyebrow::before{content:"";width:26px;height:1px;background:var(--sig)}
 h1{font-family:var(--disp);font-size:clamp(46px,6.5vw,76px);font-weight:700;line-height:1.02;margin:18px 0 6px;letter-spacing:.5px}
@@ -202,13 +202,18 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 .rv.in{opacity:1;transform:none}
 
 /* ═══════════ 访问里程表 ═══════════ */
-.odo-sec{padding:0 0 78px}
+.odo-sec{padding:18px 0 0}
 .odo-panel{
-  --cell-h:1.22em;
-  position:relative;display:flex;align-items:stretch;overflow:hidden;
+  --cell-h:1.18em;
+  position:relative;
+  display:grid;
+  grid-template-columns:300px 1px minmax(0,1fr);
+  align-items:stretch;
+  min-height:112px;
+  overflow:hidden;
   background:linear-gradient(180deg,var(--panel2),var(--panel));
   border:1px solid var(--line2);border-radius:11px;
-  box-shadow:0 24px 60px rgba(0,0,0,.45);
+  box-shadow:0 18px 46px rgba(0,0,0,.38);
 }
 .odo-panel::before{ /* 网格纹理 */
   content:"";position:absolute;inset:0;pointer-events:none;
@@ -231,23 +236,36 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 .odo-corner.bl{bottom:7px;left:7px;border-right:0;border-top:0}
 .odo-corner.br{bottom:7px;right:7px;border-left:0;border-top:0}
 
-.odo-status{display:flex;align-items:center;gap:13px;padding:24px 26px;z-index:1;position:relative}
+.odo-status{
+  display:flex;align-items:center;gap:13px;
+  padding:16px 32px;
+  z-index:1;position:relative;
+}
 .odo-led{width:9px;height:9px;border-radius:50%;flex:none;background:var(--rx);box-shadow:0 0 11px rgba(65,224,141,.8);animation:pulse 2.2s ease-in-out infinite}
-.odo-status strong{display:block;font-family:var(--disp);font-size:13px;font-weight:700;letter-spacing:.24em}
-.odo-status em{display:block;font-style:normal;margin-top:4px;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint)}
+.odo-status strong{display:block;font-family:var(--disp);font-size:12.5px;font-weight:700;letter-spacing:.22em;white-space:nowrap}
+.odo-status em{display:block;font-style:normal;margin-top:3px;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;color:var(--faint);white-space:nowrap}
 .odo-panel[data-state="sync"]  .odo-led{background:var(--tx);box-shadow:0 0 11px rgba(255,176,46,.8)}
 .odo-panel[data-state="cache"] .odo-led{background:var(--tx);box-shadow:0 0 8px rgba(255,176,46,.5);animation:none}
 .odo-panel[data-state="off"]   .odo-led{background:var(--err);box-shadow:0 0 8px rgba(255,93,93,.6);animation:none}
 
-.odo-divider{width:1px;align-self:stretch;margin:16px 0;background:linear-gradient(180deg,transparent,var(--line2),transparent)}
+.odo-divider{width:1px;align-self:stretch;margin:13px 0;background:linear-gradient(180deg,transparent,var(--line2),transparent)}
 
-.odo-gauge{position:relative;z-index:1;display:flex;flex-direction:column;justify-content:center;gap:11px;padding:22px 28px;transition:background .35s}
+.odo-gauge{
+  position:relative;z-index:1;
+  display:grid;
+  grid-template-columns:max-content max-content;
+  grid-template-areas:"label digits" "sub sub";
+  align-content:center;justify-content:center;align-items:center;
+  column-gap:20px;row-gap:7px;
+  padding:13px 28px;
+  transition:background .35s;
+}
 .odo-gauge:hover{background:rgba(62,199,232,.04)}
-.odo-label{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.28em;color:var(--dim);text-transform:uppercase}
+.odo-label{grid-area:label;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.25em;color:var(--dim);text-transform:uppercase;white-space:nowrap}
 .odo-label i{font-style:normal;letter-spacing:.12em;opacity:.65;margin-left:8px}
-.odo-sub{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--faint)}
+.odo-sub{grid-area:sub;font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;color:var(--faint);text-align:center;white-space:nowrap}
 
-.odo-digits{display:flex;gap:5px;font-size:clamp(26px,4.5vw,36px);font-family:var(--mono);font-weight:700}
+.odo-digits{grid-area:digits;display:flex;gap:4px;font-size:clamp(25px,3vw,32px);font-family:var(--mono);font-weight:700}
 .odo-cell{
   width:.74em;height:var(--cell-h);overflow:hidden;
   background:#0a0f18;border:1px solid var(--line);border-radius:4px;
@@ -260,18 +278,22 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 .odo-gauge:hover .odo-reel span{color:var(--sig);text-shadow:0 0 14px rgba(62,199,232,.45)}
 
 .odo-plus{
-  position:absolute;top:14px;right:24px;z-index:2;pointer-events:none;
+  position:absolute;top:8px;right:18px;z-index:2;pointer-events:none;
   font-family:var(--mono);font-weight:700;font-size:15px;color:var(--sig);
   text-shadow:0 0 12px rgba(62,199,232,.5);
   animation:odo-rise 1.15s ease-out forwards;
 }
 @keyframes odo-rise{0%{opacity:0;transform:translateY(8px)}18%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
 
-@media(max-width:660px){
-  .odo-panel{flex-wrap:wrap}
-  .odo-status{width:100%;padding:16px 22px;border-bottom:1px solid var(--line)}
+@media(max-width:760px){
+  .odo-panel{grid-template-columns:1fr;min-height:0}
+  .odo-status{padding:13px 20px;border-bottom:1px solid var(--line)}
   .odo-divider{display:none}
-  .odo-gauge{flex:1 1 100%;padding:18px 22px}
+  .odo-gauge{justify-content:start;padding:13px 20px}
+}
+@media(max-width:480px){
+  .odo-gauge{grid-template-columns:1fr;grid-template-areas:"label" "digits" "sub";justify-items:start;row-gap:7px}
+  .odo-sub{text-align:left;white-space:normal;line-height:1.5}
 }
 
 @media(max-width:960px){
@@ -315,6 +337,32 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 </header>
 
 <main>
+<!-- ═══════════ 访问里程表 ═══════════ -->
+<section class="odo-sec">
+  <div class="wrap">
+    <div class="odo-panel rv" id="odo" data-state="sync" aria-label="网站访问次数">
+      <span class="odo-corner tl"></span><span class="odo-corner tr"></span>
+      <span class="odo-corner bl"></span><span class="odo-corner br"></span>
+
+      <div class="odo-status">
+        <span class="odo-led"></span>
+        <div>
+          <strong>VISIT ODOMETER</strong>
+          <em id="odoState">SYNCING · 同步中</em>
+        </div>
+      </div>
+
+      <div class="odo-divider"></div>
+
+      <div class="odo-gauge">
+        <span class="odo-label">Total Visits<i>累计访问</i></span>
+        <div class="odo-digits" id="odoDigits"></div>
+        <span class="odo-sub">SINCE 2026.07.29 · PV · PAGE VIEWS</span>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ═══════════ Hero ═══════════ -->
 <section class="hero">
   <div class="wrap">
@@ -390,31 +438,6 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   </div>
 </section>
 
-<!-- ═══════════ 访问里程表 ═══════════ -->
-<section class="odo-sec">
-  <div class="wrap">
-    <div class="odo-panel rv" id="odo" data-state="sync" aria-label="网站访问次数">
-      <span class="odo-corner tl"></span><span class="odo-corner tr"></span>
-      <span class="odo-corner bl"></span><span class="odo-corner br"></span>
-
-      <div class="odo-status">
-        <span class="odo-led"></span>
-        <div>
-          <strong>VISIT ODOMETER</strong>
-          <em id="odoState">SYNCING · 同步中</em>
-        </div>
-      </div>
-
-      <div class="odo-divider"></div>
-
-      <div class="odo-gauge">
-        <span class="odo-label">Total Visits<i>累计访问</i></span>
-        <div class="odo-digits" id="odoDigits"></div>
-        <span class="odo-sub">SINCE 2026.07.29 · PV · PAGE VIEWS</span>
-      </div>
-    </div>
-  </div>
-</section>
 
 <!-- ═══════════ 架构数据流 ═══════════ -->
 <section id="arch" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
