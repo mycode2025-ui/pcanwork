@@ -285,6 +285,24 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 }
 @keyframes odo-rise{0%{opacity:0;transform:translateY(8px)}18%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
 
+/* 产品实景图集 */
+.showcase{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(14,21,34,.62)}
+.shot-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.shot{
+  position:relative;display:block;overflow:hidden;border:1px solid var(--line2);border-radius:14px;
+  background:var(--panel);box-shadow:0 18px 45px rgba(0,0,0,.22);text-decoration:none;
+  transition:transform .24s ease,border-color .24s ease,box-shadow .24s ease;
+}
+.shot:first-child,.shot:last-child{grid-column:1/-1}
+.shot:hover{transform:translateY(-4px);border-color:rgba(62,199,232,.62);box-shadow:0 24px 56px rgba(0,0,0,.34)}
+.shot img{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:cover;background:#eaf1fa}
+.shot-meta{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;
+  border-top:1px solid var(--line);font-family:var(--disp);color:var(--txt)
+}
+.shot-meta strong{font-size:15px;letter-spacing:.02em}.shot-meta span{font:11px var(--mono);color:var(--sig);white-space:nowrap}
+.showcase-note{margin-top:18px;color:var(--dim);font-size:13px;line-height:1.75}
+
 @media(max-width:760px){
   .odo-panel{grid-template-columns:1fr;min-height:0}
   .odo-status{padding:13px 20px;border-bottom:1px solid var(--line)}
@@ -303,6 +321,8 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 }
 @media(max-width:620px){
   .bento{grid-template-columns:1fr}
+  .shot-grid{grid-template-columns:1fr;gap:14px}.shot:first-child,.shot:last-child{grid-column:auto}
+  .shot-meta{padding:11px 12px}.shot-meta strong{font-size:13px}
   .card-big,.card-w{grid-column:auto}
   .stats{flex-wrap:wrap}.stat{flex:1 1 45%;border-bottom:1px solid var(--line)}
   .trow{grid-template-columns:60px 84px 30px 1fr;font-size:11px}
@@ -437,6 +457,57 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       <div class="card card-w rv"><div class="ico i-e">⌀</div><h3>快速过滤 + 统计 + 记录</h3><p>ID 单值 / 列表 / 范围 / 排除，Name 通配，Data 字节序列过滤；通道统计 + ID 统计（Count / AvgCycle / Min / Max）；一键导出 CSV。</p><span class="tag">FILTER · STATS · CSV</span></div>
       <div class="card card-w rv"><div class="ico i-rx">◉</div><h3>虚拟总线自动回退</h3><p>没插卡时自动切到 VirtualBus 生成演示报文（EngineData / BMS_Status…），保证无硬件也能完整演示全部功能。</p><span class="tag">ZERO HARDWARE DEMO</span></div>
     </div>
+  </div>
+</section>
+
+
+<!-- ═══════════ 产品实景 ═══════════ -->
+<section id="showcase" class="showcase">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">PRODUCT SHOWCASE · 产品实景</div>
+      <h2>真实软件界面，覆盖<span class="hl">完整研发工作流</span></h2>
+      <p class="sub">以下图片均来自 PcanWork 实际运行与产品资料，点击可查看原始分辨率。</p>
+    </div>
+    <div class="shot-grid">
+      <a class="shot rv" href="site-assets/product/slide-1.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-1.png" alt="PcanWork CAN/CAN FD 工程分析平台" loading="eager">
+        <div class="shot-meta"><strong>CAN / CAN FD 工程分析平台</strong><span>PRODUCT OVERVIEW ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-2.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-2.png" alt="PcanWork 工程化研发测试工作流" loading="lazy">
+        <div class="shot-meta"><strong>工程化研发测试工作流</strong><span>WORKFLOW ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-3.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-3.png" alt="PcanWork CAN 报文分析界面" loading="lazy">
+        <div class="shot-meta"><strong>CAN 报文采集、解析与曲线</strong><span>CAN ANALYSIS ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-4.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-4.png" alt="PcanWork DBC 可视化仿真面板" loading="lazy">
+        <div class="shot-meta"><strong>DBC 可视化仿真面板</strong><span>SIMULATION ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-5.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-5.png" alt="PcanWork printf-over-CAN 嵌入式日志" loading="lazy">
+        <div class="shot-meta"><strong>printf-over-CAN 嵌入式日志</strong><span>EMBEDDED DEBUG ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-6.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-6.png" alt="PcanWork Modbus Tools" loading="lazy">
+        <div class="shot-meta"><strong>Modbus 主站、从站与数据视图</strong><span>MODBUS TOOLS ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-7.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-7.png" alt="PcanWork Serial Tool" loading="lazy">
+        <div class="shot-meta"><strong>串口调试与交互终端</strong><span>SERIAL TOOL ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-8.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-8.png" alt="PcanWork 工程质量与可靠性" loading="lazy">
+        <div class="shot-meta"><strong>工程质量与可靠性</strong><span>ENGINEERING QUALITY ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/slide-9.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/slide-9.png" alt="PcanWork 产品与支持" loading="lazy">
+        <div class="shot-meta"><strong>获取产品与技术支持</strong><span>WWW.HEXBYTE.CN ↗</span></div>
+      </a>
+    </div>
+    <p class="showcase-note rv">图片随代码仓库发布，不依赖本机路径或第三方图床；GitHub Pages、Gitee Pages 与静态服务器均可直接显示。</p>
   </div>
 </section>
 
