@@ -60,11 +60,16 @@ a{color:inherit}
 .led.c.on{background:var(--sig);box-shadow:0 0 9px rgba(62,199,232,.8)}
 .led.pulse.on{animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.45}}
-.tb-right{margin-left:auto;display:flex;gap:20px;font-family:var(--mono);font-size:12px;color:var(--dim)}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:20px;font-family:var(--mono);font-size:12px;color:var(--dim)}
 /* ▼ 修复：Rx/Tx 计数加粗 + 固定占位 + 等宽数字，防止跳动时左右晃 */
 .tb-right b,.tb-right .txc{font-weight:500;display:inline-block;min-width:5.5ch;text-align:right;font-variant-numeric:tabular-nums}
 .tb-right b{color:var(--rx)}
 .tb-right .txc{color:var(--tx)}
+.visit-mini{display:inline-flex;align-items:center;gap:5px;padding-left:14px;border-left:1px solid var(--line);font-size:10.5px;color:var(--faint);white-space:nowrap}
+.visit-mini i{width:5px;height:5px;border-radius:50%;background:var(--rx);box-shadow:0 0 6px rgba(65,224,141,.65)}
+.visit-mini b{min-width:1ch!important;color:var(--dim)!important;font-size:11px;text-align:left!important;font-variant-numeric:tabular-nums}
+.visit-mini[data-state="sync"] i,.visit-mini[data-state="cache"] i{background:var(--tx)}
+.visit-mini[data-state="off"] i{background:var(--err)}
 @media(max-width:860px){.leds{display:none}.tb-right span.dev{display:none}}
 
 /* ---------- Hero ---------- */
@@ -352,37 +357,12 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       <span class="dev">PCAN_USBBUS1 @ 500K</span>
       <span>Rx <b id="rxCount">84,213</b></span>
       <span>Tx <span class="txc" id="txCount">3,207</span></span>
+      <span class="visit-mini" id="odo" data-state="sync" title="累计访问：同步中"><i></i>访问 <b id="odoDigits">0</b></span>
     </div>
   </div>
 </header>
 
 <main>
-<!-- ═══════════ 访问里程表 ═══════════ -->
-<section class="odo-sec">
-  <div class="wrap">
-    <div class="odo-panel rv" id="odo" data-state="sync" aria-label="网站访问次数">
-      <span class="odo-corner tl"></span><span class="odo-corner tr"></span>
-      <span class="odo-corner bl"></span><span class="odo-corner br"></span>
-
-      <div class="odo-status">
-        <span class="odo-led"></span>
-        <div>
-          <strong>VISIT ODOMETER</strong>
-          <em id="odoState">SYNCING · 同步中</em>
-        </div>
-      </div>
-
-      <div class="odo-divider"></div>
-
-      <div class="odo-gauge">
-        <span class="odo-label">Total Visits<i>累计访问</i></span>
-        <div class="odo-digits" id="odoDigits"></div>
-        <span class="odo-sub">SINCE 2026.07.29 · PV · PAGE VIEWS</span>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- ═══════════ 硬件生态 ═══════════ -->
 <section id="hardware">
   <div class="wrap">
@@ -731,7 +711,6 @@ async function odoRead(){
   }
 }
 const odoEl = document.getElementById('odo');
-const odoStateEl = document.getElementById('odoState');
 const odoDigitsEl = document.getElementById('odoDigits');
 const odoStore = {
   set(v){ try{localStorage.setItem('pcan-odo', String(v))}catch(e){} },
@@ -739,31 +718,10 @@ const odoStore = {
 };
 function odoSetState(mode){
   odoEl.dataset.state = mode;
-  odoStateEl.textContent = {live:'LIVE · 实时', sync:'SYNCING · 同步中', cache:'CACHED · 缓存', off:'OFFLINE · 离线'}[mode];
+  odoEl.title = {live:'累计访问 · 实时', sync:'累计访问 · 同步中', cache:'累计访问 · 缓存', off:'累计访问 · 离线'}[mode];
 }
-function odoRollTo(count, baseDelay){
-  baseDelay = baseDelay || 0;
-  const ds = String(Math.max(0, Math.floor(count))).padStart(6,'0').split('');
-  odoDigitsEl.innerHTML = '';
-  const reels = ds.map((d,i)=>{
-    const cell = document.createElement('span'); cell.className='odo-cell';
-    const reel = document.createElement('span'); reel.className='odo-reel';
-    for(let k=0;k<=9;k++){ const s=document.createElement('span'); s.textContent=k; reel.appendChild(s); }
-    cell.appendChild(reel); odoDigitsEl.appendChild(cell);
-    return {reel, target:+d, index:i};
-  });
-  requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    reels.forEach(r=>{
-      r.reel.style.transitionDelay = (baseDelay + r.index*90) + 'ms';
-      r.reel.style.transform = 'translateY(calc(' + (-r.target) + ' * var(--cell-h)))';
-    });
-  }));
-}
-function odoPlus1(){
-  const el = document.createElement('span');
-  el.className='odo-plus'; el.textContent='+1';
-  odoDigitsEl.appendChild(el);
-  el.addEventListener('animationend', ()=>el.remove());
+function odoRollTo(count){
+  odoDigitsEl.textContent = String(Math.max(0, Math.floor(count)));
 }
 (async function(){
   odoSetState('sync');
@@ -771,7 +729,7 @@ function odoPlus1(){
   try{
     const n = await odoRead();               // 请求成功后，本次页面访问已计入 total_hits
     odoStore.set(n);
-    setTimeout(()=>{ odoRollTo(n, 150); odoPlus1(); }, 600);
+    setTimeout(()=>odoRollTo(n), 300);
     odoSetState('live');
   }catch(e){
     console.error('访问计数器请求失败：', e);
