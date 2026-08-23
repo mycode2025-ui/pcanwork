@@ -387,15 +387,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div>
       <div class="eyebrow">Rust + Slint · 多厂商 CAN / CAN FD 支持</div>
-      <h1>PcanWork<span class="ver">v0.3.1</span></h1>
+      <h1>PcanWork<span class="ver">v0.3.11</span></h1>
       <p class="tagline">CAN / CAN FD <em>总线报文分析工具</em></p>
       <p class="lead">
         桌面级总线分析器。支持 PCAN、ZLG、ZHCX、GCAN，提供 DBC 四类数值解析、
-        实时曲线、周期发送、记录回放、UDS / XCP 与 OTA 工具链。
+        实时曲线、周期发送、记录回放、UDS / XCP、OTA 与工程化仿真工具链。
       </p>
       <div class="btns">
-        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.1/PcanWork-Setup-0.3.1.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.3.1</a>
-        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.1/PcanWork-Setup-0.3.1.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.3.1</a>
+        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.11/PcanWork-Setup-0.3.11.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.3.11</a>
+        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.11/PcanWork-Setup-0.3.11.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.3.11</a>
         <a class="btn btn-s" href="https://github.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">GitHub 仓库</a>
         <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">Gitee 仓库</a>
       </div>
@@ -425,6 +425,24 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
           <canvas id="sig"></canvas>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 版本更新 ═══════════ -->
+<section id="release-notes" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">WHAT'S NEW · v0.3.11</div>
+      <h2>更完整的工程能力与<span class="hl">发布可靠性</span></h2>
+      <p class="sub">本版本聚焦多厂商硬件、仿真面板、后台任务、授权更新与安装交付。</p>
+    </div>
+    <div class="bento">
+      <div class="card rv"><div class="ico i-rx">⇄</div><h3>多厂商 CAN 稳定性</h3><p>完善 PCAN、ZLG、ZHCX、GCAN 设备扫描、通道配置与连接流程，降低重复点击设备和硬件枚举异常造成的崩溃风险。</p><span class="tag">HARDWARE</span></div>
+      <div class="card rv"><div class="ico i-sig">▦</div><h3>仿真面板扩展</h3><p>新增开关、实时趋势、液位、旋钮、数值输入、柱状图、状态灯组、报警卡片和设备图片等工程控件。</p><span class="tag">SIMULATION</span></div>
+      <div class="card rv"><div class="ico i-v">◉</div><h3>响应与后台任务</h3><p>DBC、工程文件、回放、格式转换及硬件扫描采用后台处理和受控事件批量刷新，减少大文件或高报文负载下的界面阻塞。</p><span class="tag">PERFORMANCE</span></div>
+      <div class="card rv"><div class="ico i-tx">✓</div><h3>更新与授权</h3><p>启动时自动检查新版本，关于窗口支持手动检测；Gitee 优先、GitHub 回退，并提供双下载地址。主程序与 Modbus 支持机器授权。</p><span class="tag">UPDATE · LICENSE</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>安装与安全交付</h3><p>安装包统一三个独立工具及所需驱动资源，清理历史测试证书，增加完整性校验与版本元数据；0.3.11 安装包 SHA-256：<span class="mono">AED05EF02BA41D8A54723EDA3BD8342D651418A69AD2F5FD546E6A155B0FB787</span></p><span class="tag">WINDOWS INSTALLER</span></div>
     </div>
   </div>
 </section>
@@ -583,8 +601,8 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
         <div class="f-links">
           <a href="https://github.com/mycode2025-ui/pcanwork" target="_blank">GitHub 仓库</a>
           <a href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank">Gitee 镜像</a>
-          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.3.1" target="_blank">GitHub Release</a>
-          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.3.1" target="_blank">Gitee Release</a>
+          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.3.11" target="_blank">GitHub Release</a>
+          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.3.11" target="_blank">Gitee Release</a>
           <a href="https://github.com/mycode2025-ui/pcanwork/issues" target="_blank">问题反馈</a>
         </div>
       </div>
