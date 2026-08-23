@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PcanWork — CAN/CAN FD 报文分析工具</title>
-<meta name="description" content="PcanWork：Rust + Slint 开发的 CAN/CAN FD 报文分析工具，原生支持 PCAN(PEAK) CAN 卡。DBC 信号解码、实时曲线、周期发送、CSV 导出。">
+<meta name="description" content="PcanWork v0.3.11：Rust + Slint 工程化总线分析平台，支持 PCAN、ZLG、ZHCX、GCAN，集成 CAN/CAN FD、DBC、仿真、Modbus 与串口工具。">
 <link rel="icon" href="app.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -452,14 +452,14 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div class="sec-head rv">
       <div class="eyebrow">FEATURES · 已实现</div>
-      <h2>完整的<span class="hl">核心数据链路</span>已打通</h2>
-      <p class="sub">主框架与收发、解码、显示、记录全链路可用，高级功能留有清晰扩展点。</p>
+      <h2>从硬件接入到仿真诊断的<span class="hl">完整工程链路</span></h2>
+      <p class="sub">当前介绍以 v0.3.11 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
     </div>
     <div class="bento">
       <div class="card card-big rv">
         <div class="ico i-sig">▦</div>
-        <h3>16 列报文摘表</h3>
-        <p>No. / Time / Delta / Ch / Dir / ID / Name / Type / FD / BRS / DLC / Len / Data / Cycle / Count / Comment。Rx·Tx·错误帧分色、等宽字体、变化字节高亮、虚拟滚动。</p>
+        <h3>CAN / CAN FD 报文工作台</h3>
+        <p>支持 Trace / 分组视图、16 列可配置报文表、快速过滤、变化字节高亮、信号展开、曲线联动、暂停与自动滚动；状态栏持续显示收发、错误、队列、FPS 和总线负载。</p>
         <div class="mini">
           <div class="h">Time&nbsp;&nbsp;&nbsp;&nbsp;ID&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Dir&nbsp;Name&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Data</div>
           <div class="r1">12.4831 <span class="b">0x0C0</span> <span class="g">Rx</span> EngineData 0C 5A <span class="a">34</span> F0 00 81</div>
@@ -467,12 +467,12 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
           <div class="r1">12.5117 <span class="b">0x7E0</span> <span class="a">Tx</span> Diag_Req&nbsp;&nbsp;02 10 03 00 00 00</div>
         </div>
       </div>
-      <div class="card rv"><div class="ico i-rx">∿</div><h3>DBC 信号解码</h3><p>Intel / Motorola 位提取、有符号、factor/offset、越界判定，信号面板与报文联动。</p><span class="tag">can-dbc 9.1</span></div>
-      <div class="card rv"><div class="ico i-sig">◔</div><h3>实时曲线</h3><p>多信号折线、自动缩放、抽稀，10 Hz 刷新不卡顿。</p><span class="tag">10HZ REFRESH</span></div>
-      <div class="card rv"><div class="ico i-v">⇄</div><h3>Trace / Overwrite</h3><p>双显示模式，Overwrite 按 ID 聚合，更实用的实时视图。</p><span class="tag">DUAL MODE</span></div>
-      <div class="card rv"><div class="ico i-tx">⚡</div><h3>报文发送</h3><p>单次 / 周期发送，周期在独立控制线程精确计时。</p><span class="tag">TX THREAD</span></div>
-      <div class="card card-w rv"><div class="ico i-e">⌀</div><h3>快速过滤 + 统计 + 记录</h3><p>ID 单值 / 列表 / 范围 / 排除，Name 通配，Data 字节序列过滤；通道统计 + ID 统计（Count / AvgCycle / Min / Max）；一键导出 CSV。</p><span class="tag">FILTER · STATS · CSV</span></div>
-      <div class="card card-w rv"><div class="ico i-rx">◉</div><h3>虚拟总线自动回退</h3><p>没插卡时自动切到 VirtualBus 生成演示报文（EngineData / BMS_Status…），保证无硬件也能完整演示全部功能。</p><span class="tag">ZERO HARDWARE DEMO</span></div>
+      <div class="card rv"><div class="ico i-rx">∿</div><h3>DBC 完整数值语义</h3><p>Intel / Motorola 字节序，Unsigned、Signed、IEEE Float、IEEE Double 四类数值，factor、offset、单位与范围均参与物理值解析。</p><span class="tag">DBC SIGNAL TYPES</span></div>
+      <div class="card rv"><div class="ico i-sig">◔</div><h3>工程与可视化仿真</h3><p>.pcprj 保存通道、DBC、发送任务和仿真布局；指示灯、仪表盘、趋势图、开关、数值输入等控件可绑定 DBC 信号。</p><span class="tag">PROJECT · SIMULATION</span></div>
+      <div class="card rv"><div class="ico i-v">⇄</div><h3>多厂商 CAN 接入</h3><p>统一设备与通道配置入口，支持 PCAN（PEAK）、ZLG、ZHCX、GCAN，并保留虚拟通道用于无硬件验证。</p><span class="tag">PCAN · ZLG · ZHCX · GCAN</span></div>
+      <div class="card rv"><div class="ico i-tx">⚡</div><h3>发送、记录与回放</h3><p>单次和周期发送、发送列表、CSV / ASC / BLF 记录与回放、CAN 文本日志及 printf-over-CAN 调试入口。</p><span class="tag">TX · RECORD · REPLAY</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⌀</div><h3>Modbus 主站 / 从站</h3><p>覆盖 Modbus TCP / RTU 常用调试流程，提供主站轮询、写入、从站寄存器仿真、多工作区、事件日志、通信流量和曲线窗口。</p><span class="tag">MASTER · SLAVE · TCP · RTU</span></div>
+      <div class="card card-w rv"><div class="ico i-rx">◉</div><h3>串口调试与交互终端</h3><p>普通调试和交互终端双模式，支持多种编码、ANSI、本地回显、历史、长日志缓存、文件收发；粘贴多行时保留内部 CR/LF，整块一次写入串口。</p><span class="tag">SERIAL · TERMINAL · ANSI</span></div>
     </div>
   </div>
 </section>
@@ -484,44 +484,36 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">PRODUCT SHOWCASE · 产品实景</div>
       <h2>真实软件界面，覆盖<span class="hl">完整研发工作流</span></h2>
-      <p class="sub">以下图片均来自 PcanWork 实际运行与产品资料，点击可查看原始分辨率。</p>
+      <p class="sub">以下均为 v0.3.11 实际运行或同版本 UI 验证截图，不使用概念图；点击可查看原始分辨率。</p>
     </div>
     <div class="shot-grid">
-      <a class="shot rv" href="site-assets/product/slide-1.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-1.png" alt="PcanWork CAN/CAN FD 工程分析平台" loading="eager">
-        <div class="shot-meta"><strong>CAN / CAN FD 工程分析平台</strong><span>PRODUCT OVERVIEW ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0311-main.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-main.png" alt="PcanWork v0.3.11 CAN/CAN FD 主工作台真实截图" loading="eager">
+        <div class="shot-meta"><strong>主界面、工程中心与 CAN 工作台</strong><span>v0.3.11 REAL UI ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-2.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-2.png" alt="PcanWork 工程化研发测试工作流" loading="lazy">
-        <div class="shot-meta"><strong>工程化研发测试工作流</strong><span>WORKFLOW ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0311-device-config.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-device-config.png" alt="PcanWork CAN 设备与通道配置真实截图" loading="lazy">
+        <div class="shot-meta"><strong>CAN 设备扫描与通道参数</strong><span>HARDWARE CONFIG ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-3.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-3.png" alt="PcanWork CAN 报文分析界面" loading="lazy">
-        <div class="shot-meta"><strong>CAN 报文采集、解析与曲线</strong><span>CAN ANALYSIS ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0311-columns.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-columns.png" alt="PcanWork 报文列设置真实截图" loading="lazy">
+        <div class="shot-meta"><strong>报文列显示、排序与格式配置</strong><span>TRACE COLUMNS ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-4.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-4.png" alt="PcanWork DBC 可视化仿真面板" loading="lazy">
+      <a class="shot rv" href="site-assets/product/v0311-simulation.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-simulation.png" alt="PcanWork v0.3.11 DBC 可视化仿真面板真实截图" loading="lazy">
         <div class="shot-meta"><strong>DBC 可视化仿真面板</strong><span>SIMULATION ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-5.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-5.png" alt="PcanWork printf-over-CAN 嵌入式日志" loading="lazy">
-        <div class="shot-meta"><strong>printf-over-CAN 嵌入式日志</strong><span>EMBEDDED DEBUG ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0311-simulation-library.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-simulation-library.png" alt="PcanWork DBC 信号库与仿真控件绑定真实截图" loading="lazy">
+        <div class="shot-meta"><strong>DBC 信号库与控件绑定</strong><span>SIGNAL LIBRARY ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-6.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-6.png" alt="PcanWork Modbus Tools" loading="lazy">
+      <a class="shot rv" href="site-assets/product/v0311-modbus.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-modbus.png" alt="PcanWork v0.3.11 Modbus Tools 真实截图" loading="lazy">
         <div class="shot-meta"><strong>Modbus 主站、从站与数据视图</strong><span>MODBUS TOOLS ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/slide-7.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-7.png" alt="PcanWork Serial Tool" loading="lazy">
+      <a class="shot rv" href="site-assets/product/v0311-serial.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0311-serial.png" alt="PcanWork v0.3.11 Serial Tool 真实截图" loading="lazy">
         <div class="shot-meta"><strong>串口调试与交互终端</strong><span>SERIAL TOOL ↗</span></div>
-      </a>
-      <a class="shot rv" href="site-assets/product/slide-8.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-8.png" alt="PcanWork 工程质量与可靠性" loading="lazy">
-        <div class="shot-meta"><strong>工程质量与可靠性</strong><span>ENGINEERING QUALITY ↗</span></div>
-      </a>
-      <a class="shot rv" href="site-assets/product/slide-9.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/slide-9.png" alt="PcanWork 产品与支持" loading="lazy">
-        <div class="shot-meta"><strong>获取产品与技术支持</strong><span>WWW.HEXBYTE.CN ↗</span></div>
       </a>
     </div>
     <p class="showcase-note rv">图片随代码仓库发布，不依赖本机路径或第三方图床；GitHub Pages、Gitee Pages 与静态服务器均可直接显示。</p>
@@ -535,14 +527,14 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">ARCHITECTURE · 架构</div>
       <h2>接收线程与 UI <span class="hl">完全解耦</span></h2>
-      <p class="sub">控制线程独立收发，mpsc channel 传递，UI 定时批量取帧重建模型——接收永不阻塞。</p>
+      <p class="sub">硬件适配、控制命令、报文队列、记录落盘与 UI 批量刷新分层处理，避免慢界面和磁盘 I/O 阻塞实时收发。</p>
     </div>
     <div class="flow rv">
-      <div class="node"><div class="n-ico" style="color:var(--rx)">[ ADAPTER ]</div><h4>CAN 适配器</h4><p>PcanBus（PCANBasic.dll FFI）或 VirtualBus 演示数据源</p></div>
+      <div class="node"><div class="n-ico" style="color:var(--rx)">[ ADAPTER ]</div><h4>硬件适配层</h4><p>PCAN、ZLG、ZHCX、GCAN 与 Virtual 通道统一抽象</p></div>
       <div class="arrow">▸</div>
       <div class="node"><div class="n-ico" style="color:var(--tx)">[ THREAD ]</div><h4>控制线程</h4><p>独立线程收 / 发，命令与事件走 channel 传递</p></div>
       <div class="arrow">▸</div>
-      <div class="node"><div class="n-ico" style="color:var(--sig)">[ MPSC ]</div><h4>消息通道</h4><p>mpsc channel 缓冲，10 万帧原始缓存</p></div>
+      <div class="node"><div class="n-ico" style="color:var(--sig)">[ QUEUE ]</div><h4>有界队列与记录</h4><p>事件批处理、10 万帧缓存，记录路径与 UI 独立</p></div>
       <div class="arrow">▸</div>
       <div class="node"><div class="n-ico" style="color:var(--vio)">[ UI 100ms ]</div><h4>Slint 视图</h4><p>Timer 批量取帧 → 重建模型，刷新轻量流畅</p></div>
     </div>
@@ -555,33 +547,33 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">QUICK START · 快速上手</div>
       <h2>6 步跑通<span class="hl">完整链路</span></h2>
-      <p class="sub">克隆后 <span class="mono" style="color:var(--tx)">cargo run --release</span>，然后：</p>
+      <p class="sub">安装 Windows 版本后，以工程为中心完成以下流程：</p>
     </div>
     <div class="steps">
-      <div class="step rv"><span class="num">1</span><h4>连接设备</h4><p>自动尝试打开 <code>PCAN_USBBUS1 @500K</code>；没插卡自动回退虚拟总线。</p></div>
-      <div class="step rv"><span class="num">2</span><h4>启动接收</h4><p>点「启动」，中央表格开始滚动报文。</p></div>
-      <div class="step rv"><span class="num">3</span><h4>加载 DBC</h4><p>选择工程根目录的 <code>sample.dbc</code>，报文立即出现名称（EngineData / BMS_Status…）。</p></div>
-      <div class="step rv"><span class="num">4</span><h4>信号解析</h4><p>点选任意报文，底部面板显示 Raw / Physical / 单位 / 起始位 / 字节序。</p></div>
-      <div class="step rv"><span class="num">5</span><h4>添加曲线</h4><p>信号行点「添加」，切到曲线 Tab 看实时折线。</p></div>
-      <div class="step rv"><span class="num">6</span><h4>发送报文</h4><p>发送 Tab → 新增 → <code>发一次</code> 或 <code>周期发送</code>。</p></div>
+      <div class="step rv"><span class="num">1</span><h4>新建或打开工程</h4><p>使用 <code>.pcprj</code> 统一保存通道、DBC、发送任务和仿真布局。</p></div>
+      <div class="step rv"><span class="num">2</span><h4>配置硬件通道</h4><p>扫描设备或手动添加，选择厂商、协议、仲裁波特率和 CAN FD 数据波特率。</p></div>
+      <div class="step rv"><span class="num">3</span><h4>加载与诊断 DBC</h4><p>加载一个或多个数据库，检查报文、信号、字节序、数值类型和物理量范围。</p></div>
+      <div class="step rv"><span class="num">4</span><h4>采集与分析</h4><p>启动通道后使用 Trace / 分组、过滤、信号展开、实时曲线和统计定位问题。</p></div>
+      <div class="step rv"><span class="num">5</span><h4>发送与仿真</h4><p>建立单次或周期发送任务，或将 DBC 信号绑定到可视化仿真控件。</p></div>
+      <div class="step rv"><span class="num">6</span><h4>记录与复盘</h4><p>保存 CSV / ASC / BLF 或 CAN 文本日志，在回放和曲线中复现现场数据。</p></div>
     </div>
   </div>
 </section>
 
-<!-- ═══════════ 路线图 ═══════════ -->
+<!-- ═══════════ 工程能力 ═══════════ -->
 <section id="roadmap" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">ROADMAP · 路线图</div>
-      <h2>扩展点已<span class="hl">明确预留</span></h2>
+      <div class="eyebrow">ENGINEERING · 工程能力</div>
+      <h2>面向持续运行与现场诊断的<span class="hl">可靠性设计</span></h2>
     </div>
     <div class="road">
-      <div class="road-item rv"><span class="chip next">NEXT</span><div><b>CAN FD 真卡收发</b><span>CAN_InitializeFD</span></div></div>
-      <div class="road-item rv"><span class="chip next">NEXT</span><div><b>逐字节高亮</b><span>Data 拆 [byte] 按位染色</span></div></div>
-      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>高级过滤弹窗 / 多级排序</b><span>列头筛选 · 分组</span></div></div>
-      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>总线负载 / FPS 指示</b><span>绝对时间轴 · 双游标</span></div></div>
-      <div class="road-item rv"><span class="chip todo">TODO</span><div><b>曲线 ↔ 报文时间同步</b><span>UI 与数据结构已预留</span></div></div>
-      <div class="road-item rv"><span class="chip hold">HOLD</span><div><b>停靠拖拽布局</b><span>面板自由组合</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>CAN / CAN FD 多厂商接入</b><span>设备扫描、通道参数与连接状态统一管理</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>DBC 四类数值与物理量</b><span>字节序、符号、Float / Double、factor / offset</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>工程化资产管理</b><span>DBC、发送、仿真与最近工程集中保存</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>运行状态可观测</b><span>队列水位、收发错误、FPS、总线负载与时间同步</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>跨工具统一体验</b><span>中英文、浅色 / 深色、置顶和更新入口保持一致</span></div></div>
+      <div class="road-item rv"><span class="chip next">READY</span><div><b>版本与授权管理</b><span>Gitee → GitHub 更新检测、双下载地址与机器码授权</span></div></div>
     </div>
   </div>
 </section>
