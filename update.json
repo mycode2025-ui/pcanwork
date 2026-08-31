@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.3.25",
-  "published_at": "2026-08-31T07:18:57Z",
-  "notes": "改进 PCAN-USB FD 经典 CAN 初始化兼容性；PCAN 与 ZLG 在 125K/250K/500K/1M 完成双向实机验证。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.3.25.html",
-  "sha256": "7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA",
+  "version": "0.3.26",
+  "published_at": "2026-08-31T08:26:51Z",
+  "notes": "升级时依次正常关闭三个程序，失败时才强制结束。\n三个程序退出码均为 0，Slint 编译、更新单元测试及界面渲染通过。\n更新说明按 UTF-8 保留中文并改为三行清晰摘要。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.3.26.html",
+  "sha256": "3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe"
   }
 }

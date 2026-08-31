@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.3.25 (released 2026-08-31)
+Current version: 0.3.26 (released 2026-08-31)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,16 +15,17 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.3.25 verification:
-- PCAN-USB FD classic-CAN initialization compatibility was improved.
-- PCAN and ZLG were verified bidirectionally at 125 kbit/s, 250 kbit/s, 500 kbit/s and 1 Mbit/s.
-- 10 frames per direction at each bitrate; payloads matched and channel error count was zero.
+Version 0.3.26 verification:
+- The updater closes PcanWork, Serial Tool and Modbus Tools in sequence; forced termination is only used when normal shutdown fails.
+- All three programs exited normally with code 0.
+- Chinese update notes remain UTF-8 and are presented as a clear three-line summary without Markdown headings or installer metadata.
+- Slint compilation, updater unit tests and UI rendering passed.
 
-Installer: PcanWork-Setup-0.3.25.exe
-SHA-256: 7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA
+Installer: PcanWork-Setup-0.3.26.exe
+SHA-256: 3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.3.25.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.3.26.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork

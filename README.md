@@ -1,19 +1,19 @@
-# PcanWork v0.3.25
+# PcanWork v0.3.26
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.3.25](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe) · [Gitee 下载 v0.3.25](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.3.25.html)
+[GitHub 下载 v0.3.26](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe) · [Gitee 下载 v0.3.26](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.3.26.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.3.25 更新
+## v0.3.26 更新
 
-- 完善 PCAN-USB FD 在经典 CAN 模式下的初始化兼容路径。
-- 完成 PCAN ↔ ZLG 125 kbit/s、250 kbit/s、500 kbit/s、1 Mbit/s 双向实机验证。
-- 每档波特率、每个方向 10 帧，接收载荷一致，通道错误计数为 0。
-- 更新设备扫描、双通道工程和 CAN FD 波特率配置真实截图。
+- 升级时依次关闭 PcanWork、Serial Tool、Modbus Tools；正常关闭失败才强制结束。
+- 三个程序实测均能正常关闭，退出码为 0。
+- 更新说明按 UTF-8 保留中文，移除 Markdown 标题与安装包元数据，改为三行清晰摘要。
+- Slint 编译、更新单元测试及界面渲染均通过。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
 
@@ -33,10 +33,10 @@
 
 ## 下载与校验
 
-- 版本：`0.3.25`
-- 安装包：`PcanWork-Setup-0.3.25.exe`
-- 大小：`35,299,489` 字节
-- SHA-256：`7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA`
+- 版本：`0.3.26`
+- 安装包：`PcanWork-Setup-0.3.26.exe`
+- 大小：`35,284,690` 字节
+- SHA-256：`3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行代码签名
 
