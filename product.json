@@ -1,19 +1,19 @@
 {
   "name": "PcanWork",
-  "version": "0.3.26",
-  "released_at": "2026-08-31T08:26:51Z",
+  "version": "0.3.29",
+  "released_at": "2026-08-31T12:06:58Z",
   "website": "https://www.hexbyte.cn/",
   "platform": "Windows 10/11 64-bit",
   "installer": {
-    "name": "PcanWork-Setup-0.3.26.exe",
-    "size_bytes": 35284690,
-    "sha256": "3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA",
+    "name": "PcanWork-Setup-0.3.29.exe",
+    "size_bytes": 35645955,
+    "sha256": "EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C",
     "signed": false,
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe"
   },
   "hardware": ["PCAN (PEAK)", "ZLG", "ZHCX", "GCAN"],
   "dbc_value_types": ["Unsigned", "Signed", "IEEE Float", "IEEE Double"],
   "dbc_byte_orders": ["Intel", "Motorola"],
-  "verification": "PcanWork, Serial Tool and Modbus Tools all exited normally with code 0; Slint compilation, updater unit tests and UI rendering passed."
+  "verification": "The unified hexadecimal byte editor supports continuous or separated input, per-byte validation, CAN FD payloads and long UDS/XCP diagnostic data; installer version, size and SHA-256 were verified."
 }

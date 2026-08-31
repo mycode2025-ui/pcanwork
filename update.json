@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.3.26",
-  "published_at": "2026-08-31T08:26:51Z",
-  "notes": "升级时依次正常关闭三个程序，失败时才强制结束。\n三个程序退出码均为 0，Slint 编译、更新单元测试及界面渲染通过。\n更新说明按 UTF-8 保留中文并改为三行清晰摘要。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.3.26.html",
-  "sha256": "3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA",
+  "version": "0.3.29",
+  "published_at": "2026-08-31T12:06:58Z",
+  "notes": "发送列表、触发动作以及 UDS/XCP 字段统一使用十六进制字节编辑器。\n支持连续或分隔格式粘贴、逐字节校验及 CAN FD/诊断长载荷编辑。\nRelease 安装包已完成版本、大小与 SHA-256 校验。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.3.29.html",
+  "sha256": "EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe"
   }
 }

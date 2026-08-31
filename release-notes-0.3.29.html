@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PcanWork v0.3.29 版本说明与安装包校验</title>
+<meta name="description" content="PcanWork v0.3.29 版本说明：发送、触发器、UDS 与 XCP 共用十六进制字节编辑器，并提供长载荷和逐字节校验。">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://www.hexbyte.cn/release-notes-0.3.29.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PcanWork v0.3.29 版本说明">
+<meta property="og:description" content="统一十六进制字节编辑体验，覆盖 CAN/CAN FD 发送和 UDS/XCP 诊断数据。">
+<meta property="og:url" content="https://www.hexbyte.cn/release-notes-0.3.29.html">
+<meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"TechArticle",
+  "headline":"PcanWork v0.3.29 版本说明",
+  "datePublished":"2026-08-31",
+  "dateModified":"2026-08-31",
+  "inLanguage":"zh-CN",
+  "mainEntityOfPage":"https://www.hexbyte.cn/release-notes-0.3.29.html",
+  "image":"https://www.hexbyte.cn/site-assets/product/v0325-main.jpg",
+  "author":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},
+  "publisher":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},
+  "about":{"@type":"SoftwareApplication","name":"PcanWork","softwareVersion":"0.3.29","operatingSystem":"Windows 10/11 64-bit","applicationCategory":"DeveloperApplication"}
+}
+</script>
+<style>
+:root{color-scheme:dark;--bg:#0a0f18;--panel:#111a2b;--line:#2b3d60;--text:#d9e4f4;--dim:#91a3be;--cyan:#3ec7e8;--green:#41e08d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;line-height:1.75}.wrap{max-width:960px;margin:auto;padding:48px 24px 80px}a{color:var(--cyan)}.tag{color:var(--cyan);font:600 13px ui-monospace,Consolas,monospace;letter-spacing:1.5px}h1{font-size:clamp(34px,6vw,58px);line-height:1.12;margin:12px 0}.lead{color:var(--dim);font-size:18px}.card{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}h2{margin-top:36px}li{margin:8px 0}.ok{color:var(--green)}code{overflow-wrap:anywhere;color:#c9d8ee}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin:30px 0}.buttons a{text-decoration:none;padding:11px 18px;border:1px solid var(--line);border-radius:8px}.buttons a:first-child{background:var(--green);color:#04120a;border-color:var(--green);font-weight:700}img{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}
+</style>
+</head>
+<body><main class="wrap">
+<a href="https://www.hexbyte.cn/">← 返回 PcanWork 官网</a>
+<p class="tag">RELEASE NOTES · 2026-08-31</p>
+<h1>PcanWork v0.3.29</h1>
+<p class="lead">本版本统一了发送和诊断场景中的十六进制数据编辑方式，让 CAN/CAN FD 载荷与 UDS/XCP 长数据更容易输入、检查和修改。</p>
+<div class="buttons"><a href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe">GitHub 下载安装包</a><a href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe">Gitee 下载安装包</a></div>
+<img src="site-assets/product/v0325-main.jpg" alt="PcanWork 工程中心真实运行截图" width="1323" height="757">
+<h2>更新内容</h2>
+<ul><li>发送列表载荷、触发器发送动作、UDS 和 XCP 数据字段采用统一的十六进制字节编辑器。</li><li>支持连续十六进制以及空格、逗号分隔格式粘贴，输入会规范化为两位大写字节。</li><li>逐字节检查有效性并准确提示错误偏移，减少手工输入报文时的隐蔽错误。</li><li>支持 CAN FD 载荷和 UDS 长数据，字节网格可按实际长度扩展。</li></ul>
+<h2>验证结果</h2>
+<div class="card"><p class="ok"><strong>Release 安装包已生成并完成完整性核验</strong></p><ul><li>产品版本：0.3.29</li><li>安装包版本：0.3.29</li><li>十六进制字节网格测试覆盖 80 字节长载荷和无效字节定位</li><li>重试构建耗时：546.20 秒（约 9 分 6 秒）</li></ul></div>
+<h2>安装包完整性</h2>
+<ul><li>文件：<code>PcanWork-Setup-0.3.29.exe</code></li><li>大小：35,645,955 字节</li><li>SHA-256：<code>EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C</code></li><li>签名状态：未进行代码签名</li><li>构建源提交：<code>ea924f64db10280a87de85e7a01622638a1ea0d2</code></li></ul>
+<p class="card">构建报告记录工作树包含未提交改动，因此安装包应以版本号、文件大小和 SHA-256 共同识别。</p>
+</main></body></html>

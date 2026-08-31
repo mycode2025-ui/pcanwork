@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.3.26 (released 2026-08-31)
+Current version: 0.3.29 (released 2026-08-31)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,17 +15,17 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.3.26 verification:
-- The updater closes PcanWork, Serial Tool and Modbus Tools in sequence; forced termination is only used when normal shutdown fails.
-- All three programs exited normally with code 0.
-- Chinese update notes remain UTF-8 and are presented as a clear three-line summary without Markdown headings or installer metadata.
-- Slint compilation, updater unit tests and UI rendering passed.
+Version 0.3.29 changes and verification:
+- A unified hexadecimal byte editor is used by send-list payloads, trigger actions, UDS and XCP data fields.
+- It accepts continuous, whitespace-separated or comma-separated hexadecimal input and validates every byte.
+- It supports CAN FD payloads and long diagnostic data; the feature-grid test covers an 80-byte payload and invalid-byte reporting.
+- Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.3.26.exe
-SHA-256: 3ADE1753CC3BB0CB3A5282BEF591E4337BC8E2CC7204163E4F768A1924EAF3AA
+Installer: PcanWork-Setup-0.3.29.exe
+SHA-256: EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.26/PcanWork-Setup-0.3.26.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.3.26.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.3.29.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork
