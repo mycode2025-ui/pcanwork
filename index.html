@@ -3,8 +3,77 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PcanWork — CAN/CAN FD 报文分析工具</title>
-<meta name="description" content="PcanWork v0.3.11：Rust + Slint 工程化总线分析平台，支持 PCAN、ZLG、ZHCX、GCAN，集成 CAN/CAN FD、DBC、仿真、Modbus 与串口工具。">
+<title>PcanWork v0.3.25 — CAN/CAN FD 总线分析、DBC、Modbus 与串口工具</title>
+<meta name="description" content="PcanWork v0.3.25 是 Windows 桌面 CAN/CAN FD 工程分析平台，支持 PCAN、ZLG、ZHCX、GCAN，集成 DBC 解码、曲线、发送、记录回放、仿真、Modbus 与串口工具。">
+<meta name="keywords" content="PcanWork,CAN分析工具,CAN FD,DBC解析,PCAN,ZLG,ZHCX,GCAN,Modbus Poll,Modbus Slave,串口助手,Rust,Slint">
+<meta name="author" content="PcanWork">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+<meta name="theme-color" content="#0a0f18">
+<link rel="canonical" href="https://www.hexbyte.cn/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:site_name" content="PcanWork">
+<meta property="og:title" content="PcanWork v0.3.25 — CAN/CAN FD 工程分析平台">
+<meta property="og:description" content="多厂商 CAN/CAN FD 接入、DBC 解码、曲线、发送、记录回放、仿真、Modbus 与串口工具。">
+<meta property="og:url" content="https://www.hexbyte.cn/">
+<meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
+<meta property="og:image:width" content="1323">
+<meta property="og:image:height" content="757">
+<meta property="og:image:alt" content="PcanWork v0.3.25 工程中心真实运行界面">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="PcanWork v0.3.25 — CAN/CAN FD 工程分析平台">
+<meta name="twitter:description" content="Windows 桌面 CAN/CAN FD、DBC、仿真、Modbus 与串口工程工具。">
+<meta name="twitter:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://www.hexbyte.cn/#website",
+      "url": "https://www.hexbyte.cn/",
+      "name": "PcanWork",
+      "alternateName": "PcanWork CAN/CAN FD 工程分析平台",
+      "inLanguage": "zh-CN"
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://www.hexbyte.cn/#organization",
+      "name": "PcanWork",
+      "url": "https://www.hexbyte.cn/",
+      "sameAs": [
+        "https://github.com/mycode2025-ui/pcanwork",
+        "https://gitee.com/mycode2025-ui/pcanwork"
+      ]
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://www.hexbyte.cn/#software",
+      "name": "PcanWork",
+      "softwareVersion": "0.3.25",
+      "applicationCategory": "DeveloperApplication",
+      "applicationSubCategory": "CAN/CAN FD Bus Analysis Tool",
+      "operatingSystem": "Windows 10/11 64-bit",
+      "url": "https://www.hexbyte.cn/",
+      "downloadUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe",
+      "installUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe",
+      "releaseNotes": "https://www.hexbyte.cn/release-notes-0.3.25.html",
+      "screenshot": "https://www.hexbyte.cn/site-assets/product/v0325-main.jpg",
+      "dateModified": "2026-08-31",
+      "description": "Rust 与 Slint 构建的 Windows CAN/CAN FD 工程分析平台，支持多厂商硬件、DBC 解码、实时曲线、发送、记录回放、仿真、Modbus 和串口调试。",
+      "featureList": [
+        "PCAN、ZLG、ZHCX、GCAN 多厂商 CAN/CAN FD 接入",
+        "DBC Unsigned、Signed、IEEE Float、IEEE Double 解码",
+        "Intel 与 Motorola 字节序及 factor、offset 物理值换算",
+        "实时曲线、发送、记录回放与可视化仿真",
+        "Modbus TCP/RTU 主站与从站工具",
+        "串口调试与 ANSI 交互终端"
+      ],
+      "publisher": {"@id": "https://www.hexbyte.cn/#organization"}
+    }
+  ]
+}
+</script>
 <link rel="icon" href="app.ico">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -307,6 +376,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 }
 .shot-meta strong{font-size:15px;letter-spacing:.02em}.shot-meta span{font:11px var(--mono);color:var(--sig);white-space:nowrap}
 .showcase-note{margin-top:18px;color:var(--dim);font-size:13px;line-height:1.75}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.fact{border:1px solid var(--line);border-radius:9px;padding:18px;background:rgba(17,26,43,.56)}
+.fact b{display:block;color:var(--sig);font-family:var(--mono);font-size:12px;margin-bottom:8px}
+.fact p{color:var(--dim);font-size:14px;line-height:1.7}
+.faq{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.faq details{border:1px solid var(--line);border-radius:9px;background:rgba(17,26,43,.56);padding:16px 18px}
+.faq summary{cursor:pointer;font-weight:650;color:var(--txt)}
+.faq p{color:var(--dim);font-size:14px;line-height:1.75;margin-top:10px}
+@media(max-width:760px){.facts,.faq{grid-template-columns:1fr}}
 
 @media(max-width:760px){
   .odo-panel{grid-template-columns:1fr;min-height:0}
@@ -387,15 +465,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div>
       <div class="eyebrow">Rust + Slint · 多厂商 CAN / CAN FD 支持</div>
-      <h1>PcanWork<span class="ver">v0.3.11</span></h1>
+      <h1>PcanWork<span class="ver">v0.3.25</span></h1>
       <p class="tagline">CAN / CAN FD <em>总线报文分析工具</em></p>
       <p class="lead">
         桌面级总线分析器。支持 PCAN、ZLG、ZHCX、GCAN，提供 DBC 四类数值解析、
         实时曲线、周期发送、记录回放、UDS / XCP、OTA 与工程化仿真工具链。
       </p>
       <div class="btns">
-        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.11/PcanWork-Setup-0.3.11.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.3.11</a>
-        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.11/PcanWork-Setup-0.3.11.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.3.11</a>
+        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.3.25</a>
+        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.3.25</a>
         <a class="btn btn-s" href="https://github.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">GitHub 仓库</a>
         <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">Gitee 仓库</a>
       </div>
@@ -433,16 +511,16 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 <section id="release-notes" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">WHAT'S NEW · v0.3.11</div>
-      <h2>更完整的工程能力与<span class="hl">发布可靠性</span></h2>
-      <p class="sub">本版本聚焦多厂商硬件、仿真面板、后台任务、授权更新与安装交付。</p>
+      <div class="eyebrow">WHAT'S NEW · v0.3.25</div>
+      <h2>经典 CAN 多适配器链路的<span class="hl">可靠性验证</span></h2>
+      <p class="sub">本版本重点完善 PCAN-USB FD 在经典 CAN 模式下的兼容路径，并完成 PCAN 与 ZLG 双向多波特率实机矩阵验证。</p>
     </div>
     <div class="bento">
-      <div class="card rv"><div class="ico i-rx">⇄</div><h3>多厂商 CAN 稳定性</h3><p>完善 PCAN、ZLG、ZHCX、GCAN 设备扫描、通道配置与连接流程，降低重复点击设备和硬件枚举异常造成的崩溃风险。</p><span class="tag">HARDWARE</span></div>
-      <div class="card rv"><div class="ico i-sig">▦</div><h3>仿真面板扩展</h3><p>新增开关、实时趋势、液位、旋钮、数值输入、柱状图、状态灯组、报警卡片和设备图片等工程控件。</p><span class="tag">SIMULATION</span></div>
-      <div class="card rv"><div class="ico i-v">◉</div><h3>响应与后台任务</h3><p>DBC、工程文件、回放、格式转换及硬件扫描采用后台处理和受控事件批量刷新，减少大文件或高报文负载下的界面阻塞。</p><span class="tag">PERFORMANCE</span></div>
-      <div class="card rv"><div class="ico i-tx">✓</div><h3>更新与授权</h3><p>启动时自动检查新版本，关于窗口支持手动检测；Gitee 优先、GitHub 回退，并提供双下载地址。主程序与 Modbus 支持机器授权。</p><span class="tag">UPDATE · LICENSE</span></div>
-      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>安装与安全交付</h3><p>安装包统一三个独立工具及所需驱动资源，清理历史测试证书，增加完整性校验与版本元数据；0.3.11 安装包 SHA-256：<span class="mono">AED05EF02BA41D8A54723EDA3BD8342D651418A69AD2F5FD546E6A155B0FB787</span></p><span class="tag">WINDOWS INSTALLER</span></div>
+      <div class="card rv"><div class="ico i-rx">⇄</div><h3>PCAN-USB FD 经典 CAN 兼容</h3><p>经典 CAN 配置在现代 PCAN-USB FD 适配器上改用 FD 定时 API 兼容路径，避免设备能力与初始化接口不匹配。</p><span class="tag">PCAN · CLASSIC CAN</span></div>
+      <div class="card rv"><div class="ico i-sig">▦</div><h3>四档波特率实机验证</h3><p>125 kbit/s、250 kbit/s、500 kbit/s、1 Mbit/s 均完成 PCAN ↔ ZLG 双向验证。</p><span class="tag">125K · 250K · 500K · 1M</span></div>
+      <div class="card rv"><div class="ico i-v">◉</div><h3>双向载荷一致</h3><p>每档波特率、每个方向发送 10 帧，接收数量和载荷校验通过，通道错误计数为 0。</p><span class="tag">HARDWARE MATRIX</span></div>
+      <div class="card rv"><div class="ico i-tx">✓</div><h3>配置与观测入口</h3><p>设备扫描、经典 CAN 与 CAN FD 波特率配置、通道状态及错误计数在同一工程工作流中可见。</p><span class="tag">DEVICE · BITRATE</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>安装包与完整性</h3><p>Windows 安装包大小 35,299,489 字节；SHA-256：<span class="mono">7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA</span>。当前安装包未进行代码签名，下载后可据此校验文件完整性。</p><span class="tag">WINDOWS INSTALLER · UNSIGNED</span></div>
     </div>
   </div>
 </section>
@@ -453,7 +531,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">FEATURES · 已实现</div>
       <h2>从硬件接入到仿真诊断的<span class="hl">完整工程链路</span></h2>
-      <p class="sub">当前介绍以 v0.3.11 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
+      <p class="sub">当前介绍以 v0.3.25 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
     </div>
     <div class="bento">
       <div class="card card-big rv">
@@ -469,7 +547,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       </div>
       <div class="card rv"><div class="ico i-rx">∿</div><h3>DBC 完整数值语义</h3><p>Intel / Motorola 字节序，Unsigned、Signed、IEEE Float、IEEE Double 四类数值，factor、offset、单位与范围均参与物理值解析。</p><span class="tag">DBC SIGNAL TYPES</span></div>
       <div class="card rv"><div class="ico i-sig">◔</div><h3>工程与可视化仿真</h3><p>.pcprj 保存通道、DBC、发送任务和仿真布局；指示灯、仪表盘、趋势图、开关、数值输入等控件可绑定 DBC 信号。</p><span class="tag">PROJECT · SIMULATION</span></div>
-      <div class="card rv"><div class="ico i-v">⇄</div><h3>多厂商 CAN 接入</h3><p>统一设备与通道配置入口，支持 PCAN（PEAK）、ZLG、ZHCX、GCAN，并保留虚拟通道用于无硬件验证。</p><span class="tag">PCAN · ZLG · ZHCX · GCAN</span></div>
+      <div class="card rv"><div class="ico i-v">⇄</div><h3>多厂商 CAN 接入</h3><p>统一设备与通道配置入口，支持 PCAN（PEAK）、ZLG、ZHCX 与 GCAN；真实报文采集和发送需要兼容硬件及对应驱动。</p><span class="tag">PCAN · ZLG · ZHCX · GCAN</span></div>
       <div class="card rv"><div class="ico i-tx">⚡</div><h3>发送、记录与回放</h3><p>单次和周期发送、发送列表、CSV / ASC / BLF 记录与回放、CAN 文本日志及 printf-over-CAN 调试入口。</p><span class="tag">TX · RECORD · REPLAY</span></div>
       <div class="card card-w rv"><div class="ico i-e">⌀</div><h3>Modbus 主站 / 从站</h3><p>覆盖 Modbus TCP / RTU 常用调试流程，提供主站轮询、写入、从站寄存器仿真、多工作区、事件日志、通信流量和曲线窗口。</p><span class="tag">MASTER · SLAVE · TCP · RTU</span></div>
       <div class="card card-w rv"><div class="ico i-rx">◉</div><h3>串口调试与交互终端</h3><p>普通调试和交互终端双模式，支持多种编码、ANSI、本地回显、历史、长日志缓存、文件收发；粘贴多行时保留内部 CR/LF，整块一次写入串口。</p><span class="tag">SERIAL · TERMINAL · ANSI</span></div>
@@ -484,23 +562,27 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">PRODUCT SHOWCASE · 产品实景</div>
       <h2>真实软件界面，覆盖<span class="hl">完整研发工作流</span></h2>
-      <p class="sub">以下均为 v0.3.11 实际运行或同版本 UI 验证截图，不使用概念图；点击可查看原始分辨率。</p>
+      <p class="sub">前三张为 v0.3.25 实机运行截图，其余为当前功能的真实 UI 验证截图；不使用概念图，点击可查看原始分辨率。</p>
     </div>
     <div class="shot-grid">
-      <a class="shot rv" href="site-assets/product/v0311-main.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-main.png" alt="PcanWork v0.3.11 CAN/CAN FD 主工作台真实截图" loading="eager">
-        <div class="shot-meta"><strong>主界面、工程中心与 CAN 工作台</strong><span>v0.3.11 REAL UI ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0325-main.jpg" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0325-main.jpg" alt="PcanWork v0.3.25 工程中心真实运行截图" loading="eager" width="1323" height="757">
+        <div class="shot-meta"><strong>工程中心与最近工程</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/v0311-device-config.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-device-config.png" alt="PcanWork CAN 设备与通道配置真实截图" loading="lazy">
-        <div class="shot-meta"><strong>CAN 设备扫描与通道参数</strong><span>HARDWARE CONFIG ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0325-workspace.jpg" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0325-workspace.jpg" alt="PcanWork v0.3.25 双通道双 DBC 工程工作台真实运行截图" loading="lazy" width="1323" height="757">
+        <div class="shot-meta"><strong>双硬件通道与多 DBC 工程</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
       </a>
-      <a class="shot rv" href="site-assets/product/v0311-columns.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-columns.png" alt="PcanWork 报文列设置真实截图" loading="lazy">
-        <div class="shot-meta"><strong>报文列显示、排序与格式配置</strong><span>TRACE COLUMNS ↗</span></div>
+      <a class="shot rv" href="site-assets/product/v0325-device.jpg" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0325-device.jpg" alt="PcanWork v0.3.25 PCAN 与 ZLG 设备扫描及通道配置真实运行截图" loading="lazy" width="947" height="671">
+        <div class="shot-meta"><strong>PCAN 与 ZLG 设备扫描、通道参数</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
+      </a>
+      <a class="shot rv" href="site-assets/product/v0325-fd-bitrate.png" target="_blank" rel="noopener">
+        <img src="site-assets/product/v0325-fd-bitrate.png" alt="PcanWork CAN FD 仲裁与数据波特率配置界面" loading="lazy">
+        <div class="shot-meta"><strong>CAN FD 仲裁与数据波特率</strong><span>BITRATE CONFIG ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-simulation.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-simulation.png" alt="PcanWork v0.3.11 DBC 可视化仿真面板真实截图" loading="lazy">
+        <img src="site-assets/product/v0311-simulation.png" alt="PcanWork DBC 可视化仿真面板真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>DBC 可视化仿真面板</strong><span>SIMULATION ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-simulation-library.png" target="_blank" rel="noopener">
@@ -508,11 +590,11 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
         <div class="shot-meta"><strong>DBC 信号库与控件绑定</strong><span>SIGNAL LIBRARY ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-modbus.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-modbus.png" alt="PcanWork v0.3.11 Modbus Tools 真实截图" loading="lazy">
+        <img src="site-assets/product/v0311-modbus.png" alt="PcanWork Modbus Tools 主站从站真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>Modbus 主站、从站与数据视图</strong><span>MODBUS TOOLS ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-serial.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-serial.png" alt="PcanWork v0.3.11 Serial Tool 真实截图" loading="lazy">
+        <img src="site-assets/product/v0311-serial.png" alt="PcanWork Serial Tool 串口助手真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>串口调试与交互终端</strong><span>SERIAL TOOL ↗</span></div>
       </a>
     </div>
@@ -530,7 +612,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       <p class="sub">硬件适配、控制命令、报文队列、记录落盘与 UI 批量刷新分层处理，避免慢界面和磁盘 I/O 阻塞实时收发。</p>
     </div>
     <div class="flow rv">
-      <div class="node"><div class="n-ico" style="color:var(--rx)">[ ADAPTER ]</div><h4>硬件适配层</h4><p>PCAN、ZLG、ZHCX、GCAN 与 Virtual 通道统一抽象</p></div>
+      <div class="node"><div class="n-ico" style="color:var(--rx)">[ ADAPTER ]</div><h4>硬件适配层</h4><p>PCAN、ZLG、ZHCX 与 GCAN 通道统一抽象</p></div>
       <div class="arrow">▸</div>
       <div class="node"><div class="n-ico" style="color:var(--tx)">[ THREAD ]</div><h4>控制线程</h4><p>独立线程收 / 发，命令与事件走 channel 传递</p></div>
       <div class="arrow">▸</div>
@@ -578,6 +660,58 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   </div>
 </section>
 
+<!-- ═══════════ 产品事实 ═══════════ -->
+<section id="facts">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">PRODUCT FACTS · 产品事实</div>
+      <h2>可核验的<span class="hl">版本与能力边界</span></h2>
+      <p class="sub">以下信息供用户、搜索引擎和 AI 检索系统准确理解 PcanWork，版本以发布页及校验值为准。</p>
+    </div>
+    <div class="facts">
+      <div class="fact rv"><b>CURRENT VERSION</b><p>PcanWork 0.3.25，Windows 10/11 64 位桌面软件，安装包 35,299,489 字节。</p></div>
+      <div class="fact rv"><b>CAN HARDWARE</b><p>支持 PCAN（PEAK）、ZLG、ZHCX、GCAN。实际报文收发需要兼容适配器与厂商驱动。</p></div>
+      <div class="fact rv"><b>DBC SEMANTICS</b><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，Intel / Motorola 字节序及 factor、offset。</p></div>
+      <div class="fact rv"><b>TOOLS</b><p>同一产品集成 CAN/CAN FD 工作台、可视化仿真、Modbus TCP/RTU 主从站和串口终端。</p></div>
+      <div class="fact rv"><b>v0.3.25 VERIFICATION</b><p>PCAN ↔ ZLG 在 125K、250K、500K、1M 完成双向实机测试；每方向 10 帧，载荷正确，通道错误为 0。</p></div>
+      <div class="fact rv"><b>SHA-256</b><p class="mono">7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 常见问题 ═══════════ -->
+<section id="faq" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">FAQ · 常见问题</div>
+      <h2>关于 PcanWork 的<span class="hl">直接答案</span></h2>
+    </div>
+    <div class="faq">
+      <details class="rv"><summary>PcanWork 是什么？</summary><p>PcanWork 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。</p></details>
+      <details class="rv"><summary>支持哪些 CAN 硬件？</summary><p>当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。使用真实 CAN/CAN FD 报文收发前，需要安装相应厂商驱动并连接兼容硬件。</p></details>
+      <details class="rv"><summary>DBC 是否支持四种数值类型和 factor、offset？</summary><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算，并保留单位和范围语义。</p></details>
+      <details class="rv"><summary>没有 CAN 硬件可以使用吗？</summary><p>工程、DBC、界面和配置等不依赖总线的功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。</p></details>
+      <details class="rv"><summary>v0.3.25 更新了什么？</summary><p>重点完善 PCAN-USB FD 的经典 CAN 初始化兼容性，并完成 PCAN 与 ZLG 在 125K、250K、500K、1M 四档波特率下的双向实机验证。</p></details>
+      <details class="rv"><summary>如何验证安装包没有损坏？</summary><p>对 PcanWork-Setup-0.3.25.exe 计算 SHA-256，应为 7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA。当前安装包未进行代码签名。</p></details>
+    </div>
+  </div>
+</section>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {"@type":"Question","name":"PcanWork 是什么？","acceptedAnswer":{"@type":"Answer","text":"PcanWork 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。"}},
+    {"@type":"Question","name":"支持哪些 CAN 硬件？","acceptedAnswer":{"@type":"Answer","text":"当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。真实 CAN/CAN FD 报文收发需要对应厂商驱动和兼容硬件。"}},
+    {"@type":"Question","name":"DBC 是否支持四种数值类型和 factor、offset？","acceptedAnswer":{"@type":"Answer","text":"支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算。"}},
+    {"@type":"Question","name":"没有 CAN 硬件可以使用吗？","acceptedAnswer":{"@type":"Answer","text":"工程、DBC、界面和配置等功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。"}},
+    {"@type":"Question","name":"v0.3.25 更新了什么？","acceptedAnswer":{"@type":"Answer","text":"重点完善 PCAN-USB FD 的经典 CAN 初始化兼容性，并完成 PCAN 与 ZLG 在 125K、250K、500K、1M 四档波特率下的双向实机验证。"}},
+    {"@type":"Question","name":"如何验证安装包没有损坏？","acceptedAnswer":{"@type":"Answer","text":"PcanWork-Setup-0.3.25.exe 的 SHA-256 为 7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA。当前安装包未进行代码签名。"}}
+  ]
+}
+</script>
+
 </main>
 
 <!-- ═══════════ Footer ═══════════ -->
@@ -593,15 +727,16 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
         <div class="f-links">
           <a href="https://github.com/mycode2025-ui/pcanwork" target="_blank">GitHub 仓库</a>
           <a href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank">Gitee 镜像</a>
-          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.3.11" target="_blank">GitHub Release</a>
-          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.3.11" target="_blank">Gitee Release</a>
+          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.3.25" target="_blank">GitHub Release</a>
+          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.3.25" target="_blank">Gitee Release</a>
+          <a href="release-notes-0.3.25.html">v0.3.25 版本说明</a>
           <a href="https://github.com/mycode2025-ui/pcanwork/issues" target="_blank">问题反馈</a>
         </div>
       </div>
       <div>
         <div class="f-h">技术栈</div>
         <div class="f-links">
-          <a href="https://slint.dev" target="_blank">Slint 1.16</a>
+          <a href="https://slint.dev" target="_blank">Slint 1.17.1</a>
           <a href="https://www.rust-lang.org" target="_blank">Rust</a>
           <a href="https://www.peak-system.com" target="_blank">PCANBasic FFI</a>
         </div>
@@ -609,7 +744,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     </div>
     <div class="copy">
       <span>© 2026 PcanWork · mycode2025-ui</span>
-      <span>cargo run --release ▸ 流畅版</span>
+      <span>Windows 10/11 x64 · v0.3.25</span>
     </div>
   </div>
 </footer>

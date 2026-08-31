@@ -1,0 +1,19 @@
+{
+  "name": "PcanWork",
+  "version": "0.3.25",
+  "released_at": "2026-08-31T07:18:57Z",
+  "website": "https://www.hexbyte.cn/",
+  "platform": "Windows 10/11 64-bit",
+  "installer": {
+    "name": "PcanWork-Setup-0.3.25.exe",
+    "size_bytes": 35299489,
+    "sha256": "7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA",
+    "signed": false,
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe"
+  },
+  "hardware": ["PCAN (PEAK)", "ZLG", "ZHCX", "GCAN"],
+  "dbc_value_types": ["Unsigned", "Signed", "IEEE Float", "IEEE Double"],
+  "dbc_byte_orders": ["Intel", "Motorola"],
+  "verification": "PCAN and ZLG bidirectional hardware matrix passed at 125K, 250K, 500K and 1M; 10 frames per direction, payload correct, zero channel errors."
+}

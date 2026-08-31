@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PcanWork v0.3.25 版本说明与安装包校验</title>
+<meta name="description" content="PcanWork v0.3.25 版本说明：PCAN-USB FD 经典 CAN 兼容性改进，PCAN 与 ZLG 四档波特率双向实机验证及安装包 SHA-256。">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://www.hexbyte.cn/release-notes-0.3.25.html">
+<meta property="og:type" content="article">
+<meta property="og:title" content="PcanWork v0.3.25 版本说明">
+<meta property="og:description" content="PCAN-USB FD 经典 CAN 兼容性与 PCAN ↔ ZLG 四档波特率实机验证。">
+<meta property="og:url" content="https://www.hexbyte.cn/release-notes-0.3.25.html">
+<meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-device.jpg">
+<script type="application/ld+json">
+{
+  "@context":"https://schema.org",
+  "@type":"TechArticle",
+  "headline":"PcanWork v0.3.25 版本说明",
+  "datePublished":"2026-08-31",
+  "dateModified":"2026-08-31",
+  "inLanguage":"zh-CN",
+  "mainEntityOfPage":"https://www.hexbyte.cn/release-notes-0.3.25.html",
+  "image":"https://www.hexbyte.cn/site-assets/product/v0325-device.jpg",
+  "author":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},
+  "publisher":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},
+  "about":{"@type":"SoftwareApplication","name":"PcanWork","softwareVersion":"0.3.25","operatingSystem":"Windows 10/11 64-bit","applicationCategory":"DeveloperApplication"}
+}
+</script>
+<style>
+:root{color-scheme:dark;--bg:#0a0f18;--panel:#111a2b;--line:#2b3d60;--text:#d9e4f4;--dim:#91a3be;--cyan:#3ec7e8;--green:#41e08d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;line-height:1.75}.wrap{max-width:960px;margin:auto;padding:48px 24px 80px}a{color:var(--cyan)}.tag{color:var(--cyan);font:600 13px ui-monospace,Consolas,monospace;letter-spacing:1.5px}h1{font-size:clamp(34px,6vw,58px);line-height:1.12;margin:12px 0}.lead{color:var(--dim);font-size:18px}.card{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}h2{margin-top:36px}li{margin:8px 0}.ok{color:var(--green)}code{overflow-wrap:anywhere;color:#c9d8ee}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin:30px 0}.buttons a{text-decoration:none;padding:11px 18px;border:1px solid var(--line);border-radius:8px}.buttons a:first-child{background:var(--green);color:#04120a;border-color:var(--green);font-weight:700}img{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}
+</style>
+</head>
+<body><main class="wrap">
+<a href="https://www.hexbyte.cn/">← 返回 PcanWork 官网</a>
+<p class="tag">RELEASE NOTES · 2026-08-31</p>
+<h1>PcanWork v0.3.25</h1>
+<p class="lead">本版本重点提升现代 PCAN-USB FD 适配器运行经典 CAN 时的初始化兼容性，并通过 PCAN 与 ZLG 双硬件、多波特率双向实测。</p>
+<div class="buttons"><a href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe">GitHub 下载安装包</a><a href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe">Gitee 下载安装包</a></div>
+<img src="site-assets/product/v0325-device.jpg" alt="PcanWork v0.3.25 PCAN 与 ZLG 设备配置真实截图" width="947" height="671">
+<h2>更新内容</h2>
+<ul><li>PCAN-USB FD 在经典 CAN 配置下使用 FD 定时 API 兼容路径，匹配现代适配器能力。</li><li>设备扫描与通道配置界面明确呈现 PCAN、ZLG 设备及经典 CAN/CAN FD 波特率参数。</li><li>保留多厂商统一通道抽象和错误计数观测。</li></ul>
+<h2>实机验证</h2>
+<div class="card"><p class="ok"><strong>PCAN ↔ ZLG 双向矩阵通过</strong></p><ul><li>波特率：125 kbit/s、250 kbit/s、500 kbit/s、1 Mbit/s</li><li>每档波特率、每个方向发送 10 帧</li><li>接收数量与载荷校验正确</li><li>通道错误计数：0</li></ul></div>
+<h2>安装包完整性</h2>
+<ul><li>文件：<code>PcanWork-Setup-0.3.25.exe</code></li><li>大小：35,299,489 字节</li><li>SHA-256：<code>7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA</code></li><li>签名状态：未进行代码签名</li><li>构建源提交：<code>ea924f64db10280a87de85e7a01622638a1ea0d2</code></li></ul>
+<p class="card">验证边界：上述硬件矩阵针对 PCAN 与 ZLG 经典 CAN 链路。构建报告记录工作树包含未提交改动，因此此安装包应以版本号、文件大小和 SHA-256 共同识别。</p>
+</main></body></html>

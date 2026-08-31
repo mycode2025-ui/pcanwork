@@ -1,62 +1,43 @@
-# PcanWork
+# PcanWork v0.3.25
 
-**CAN / CAN FD 工程分析平台**
+**Windows CAN / CAN FD 工程分析平台**
 
-面向汽车电子、储能、充电设备与工业通信研发测试，覆盖报文采集、DBC 解析、记录回放、可视化仿真、嵌入式日志、Modbus 与串口调试。
+面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[下载最新 Windows 安装包](https://github.com/mycode2025-ui/pcanwork/releases/latest) · [查看 v0.1.24 Release](https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.1.24) · [官方网站](https://www.hexbyte.cn)
+[GitHub 下载 v0.3.25](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe) · [Gitee 下载 v0.3.25](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.3.25.html)
 
-<img width="100%" alt="PcanWork 产品封面" src="https://github.com/user-attachments/assets/369fb78e-b2e9-43f4-a06a-2873bc4e7980" />
+![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
+
+## v0.3.25 更新
+
+- 完善 PCAN-USB FD 在经典 CAN 模式下的初始化兼容路径。
+- 完成 PCAN ↔ ZLG 125 kbit/s、250 kbit/s、500 kbit/s、1 Mbit/s 双向实机验证。
+- 每档波特率、每个方向 10 帧，接收载荷一致，通道错误计数为 0。
+- 更新设备扫描、双通道工程和 CAN FD 波特率配置真实截图。
+
+![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
+
+![PcanWork v0.3.25 PCAN 与 ZLG 设备配置](site-assets/product/v0325-device.jpg)
 
 ## 核心能力
 
-- **CAN / CAN FD**：报文采集、过滤、分组、发送、统计、曲线、CSV / ASC / BLF 记录与回放
-- **DBC 与仿真**：信号解码、工程管理、可视化仿真工作区、控件与 DBC 信号联动
-- **嵌入式调试**：printf-over-CAN 文本日志、UDS / XCP 工具入口
-- **Modbus Tools**：Modbus TCP / RTU 主站、从站仿真、寄存器视图、事件与流量监控
-- **Serial Tool**：普通串口调试、交互终端、多行粘贴、ANSI、文件与定时发送
-- **统一体验**：中文 / English、浅色 / 深色主题、工程保存与最近项目
+- **多厂商 CAN / CAN FD**：PCAN（PEAK）、ZLG、ZHCX、GCAN 的设备扫描、通道配置和报文收发。
+- **DBC 完整数值语义**：Unsigned、Signed、IEEE Float、IEEE Double，Intel / Motorola 字节序，factor、offset、单位和范围。
+- **分析与记录**：16 列报文表、过滤、分组、变化高亮、实时曲线、CSV / ASC / BLF 记录与回放。
+- **发送与仿真**：单次/周期发送、发送列表、可视化仿真工作区和 DBC 信号联动。
+- **嵌入式调试**：printf-over-CAN 文本日志、UDS / XCP 工具入口。
+- **Modbus Tools**：Modbus TCP / RTU 主站、从站仿真、寄存器视图、事件和流量监控。
+- **Serial Tool**：普通串口调试、ANSI 交互终端、多行粘贴、文件和定时发送。
 
-## 产品界面
-
-以下均为软件真实运行截图，不使用虚构界面。
-
-### 工程化研发测试工作流
-
-<img width="100%" alt="PcanWork 工程工作流" src="https://github.com/user-attachments/assets/7b911acb-0223-4401-a3e9-47ecebf60f00" />
-
-### CAN 报文分析
-
-<img width="100%" alt="PcanWork CAN 报文分析" src="https://github.com/user-attachments/assets/8820f19c-1811-4bf9-b84b-c79cf7e29bd4" />
-
-### DBC 可视化仿真面板
-
-<img width="100%" alt="PcanWork DBC 可视化仿真面板" src="https://github.com/user-attachments/assets/f7c06c8c-6197-4591-8349-1372f6d64d13" />
-
-### printf-over-CAN 嵌入式日志
-
-<img width="100%" alt="PcanWork printf-over-CAN" src="https://github.com/user-attachments/assets/c8b6f755-bc9d-46f2-98b4-a2e9bbd0d524" />
-
-### Modbus Tools
-
-<img width="100%" alt="Modbus Tools" src="https://github.com/user-attachments/assets/bdf6aa37-02f4-4ac6-9aab-2b17773db480" />
-
-### Serial Tool
-
-<img width="100%" alt="Serial Tool" src="https://github.com/user-attachments/assets/1ad57346-8412-436f-bbac-708ca5ddab86" />
-
-### 工程质量与可靠性
-
-<img width="100%" alt="PcanWork 工程质量" src="https://github.com/user-attachments/assets/87b4b794-0daa-4699-b06d-a54c671ad2b6" />
-
-### 获取产品与支持
-
-<img width="100%" alt="PcanWork 获取产品与支持" src="https://github.com/user-attachments/assets/b0d24f75-7174-4e2a-9859-f17e41c7e226" />
+![PcanWork CAN FD 波特率配置](site-assets/product/v0325-fd-bitrate.png)
 
 ## 下载与校验
 
-当前 Release：[PcanWork 0.1.24](https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.1.24)
+- 版本：`0.3.25`
+- 安装包：`PcanWork-Setup-0.3.25.exe`
+- 大小：`35,299,489` 字节
+- SHA-256：`7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA`
+- 系统：Windows 10/11 64 位
+- 签名状态：当前安装包未进行代码签名
 
-安装包：`PcanWork-Setup-0.1.24.exe`
-
-SHA-256：`0198EA5800B65DA0D01DA515D18F997B7A75A9D8FD26D6E772F7A449A3C28BD9`
+真实 CAN/CAN FD 报文采集和发送需要兼容硬件及相应厂商驱动。工程、DBC、界面与配置等非总线功能可独立打开使用；当前版本不提供虚拟 CAN 总线。

@@ -1,0 +1,30 @@
+# PcanWork
+
+Canonical website: https://www.hexbyte.cn/
+Current version: 0.3.25 (released 2026-08-31)
+Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
+Technology: Rust + Slint.
+
+PcanWork supports PCAN (PEAK), ZLG, ZHCX and GCAN adapters. Real CAN/CAN FD acquisition and transmission require compatible hardware and the vendor driver. The current release does not provide a virtual CAN bus.
+
+Core capabilities:
+- CAN/CAN FD trace, filtering, grouping, statistics, curves, single/periodic transmission, CSV/ASC/BLF recording and replay.
+- DBC decoding: Unsigned, Signed, IEEE Float and IEEE Double; Intel/Motorola byte order; factor, offset, unit and range.
+- Project files and visual simulation panels with DBC-bound controls.
+- printf-over-CAN embedded text logs, plus UDS and XCP entry points.
+- Modbus TCP/RTU master and slave tools.
+- Serial debugging and ANSI interactive terminal.
+
+Version 0.3.25 verification:
+- PCAN-USB FD classic-CAN initialization compatibility was improved.
+- PCAN and ZLG were verified bidirectionally at 125 kbit/s, 250 kbit/s, 500 kbit/s and 1 Mbit/s.
+- 10 frames per direction at each bitrate; payloads matched and channel error count was zero.
+
+Installer: PcanWork-Setup-0.3.25.exe
+SHA-256: 7925AE3F0C4D648D6681A087287C7A5EDA1B2DC4E15B56AC57EB379F2542F4EA
+Signing status: unsigned.
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.25/PcanWork-Setup-0.3.25.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.3.25.html
+GitHub repository: https://github.com/mycode2025-ui/pcanwork
+Gitee repository: https://gitee.com/mycode2025-ui/pcanwork
