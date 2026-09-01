@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.3.29 (released 2026-08-31)
+Current version: 0.4.0 (released 2026-09-01)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,17 +15,17 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.3.29 changes and verification:
-- A unified hexadecimal byte editor is used by send-list payloads, trigger actions, UDS and XCP data fields.
-- It accepts continuous, whitespace-separated or comma-separated hexadecimal input and validates every byte.
-- It supports CAN FD payloads and long diagnostic data; the feature-grid test covers an 80-byte payload and invalid-byte reporting.
+Version 0.4.0 changes and verification:
+- The product now uses the standard three-part semantic version 0.4.0.
+- PcanWork, Serial Tool, Modbus Tools and the installer all report version 0.4.0.
+- The v0.3.29 unified hexadecimal byte editor, flexible paste formats, per-byte validation and long diagnostic payload support remain available.
 - Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.3.29.exe
-SHA-256: EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C
+Installer: PcanWork-Setup-0.4.0.exe
+SHA-256: 14C7396912FE27F244C6093792C0D3D45872743D50A74C273DEDDDF72B23D46A
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.3.29.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.4.0.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork

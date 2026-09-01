@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.3.29",
-  "published_at": "2026-08-31T12:06:58Z",
-  "notes": "发送列表、触发动作以及 UDS/XCP 字段统一使用十六进制字节编辑器。\n支持连续或分隔格式粘贴、逐字节校验及 CAN FD/诊断长载荷编辑。\nRelease 安装包已完成版本、大小与 SHA-256 校验。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.3.29.html",
-  "sha256": "EFF45A96D5C0AE52EA47C7C721F3E8AC35CB658FC2E30AD953E9DCD318E1963C",
+  "version": "0.4.0",
+  "published_at": "2026-09-01T09:58:53Z",
+  "notes": "版本号切换为标准三段语义化版本 0.4.0。\nPcanWork、Serial Tool 与 Modbus Tools 的文件版本统一为 0.4.0。\nRelease 安装包已完成版本、大小与 SHA-256 校验。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.0.html",
+  "sha256": "14C7396912FE27F244C6093792C0D3D45872743D50A74C273DEDDDF72B23D46A",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.3.29/PcanWork-Setup-0.3.29.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe"
   }
 }
