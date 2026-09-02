@@ -5,27 +5,12 @@ fn wire_ota_windows(
     uds_window: &UdsWindow,
     xcp_window: &XcpWindow,
 ) {
-    {
-        let uw = uds_window.as_weak();
-        ui.on_open_uds_window(move || {
-            if let Some(w) = uw.upgrade() {
-                show_child_window(&w);
-            }
-        });
-    }
-    {
-        let xw = xcp_window.as_weak();
-        ui.on_open_xcp_window(move || {
-            if let Some(w) = xw.upgrade() {
-                show_child_window(&w);
-            }
-        });
-    }
     wire_uds_window(app.clone(), uds_window);
     wire_xcp_window(app, xcp_window);
 }
 
 fn wire_uds_window(app: Rc<std::cell::RefCell<App>>, uds_window: &UdsWindow) {
+    wire_uds_hex_editor(uds_window);
     {
         let uw = uds_window.as_weak();
         uds_window.on_diag_log_clear(move || {
@@ -209,6 +194,7 @@ fn wire_uds_window(app: Rc<std::cell::RefCell<App>>, uds_window: &UdsWindow) {
 }
 
 fn wire_xcp_window(app: Rc<std::cell::RefCell<App>>, xcp_window: &XcpWindow) {
+    wire_xcp_hex_editor(xcp_window);
     {
         let xw = xcp_window.as_weak();
         xcp_window.on_diag_log_clear(move || {
@@ -293,6 +279,140 @@ fn wire_xcp_window(app: Rc<std::cell::RefCell<App>>, xcp_window: &XcpWindow) {
     }
 }
 
+fn wire_uds_hex_editor(window: &UdsWindow) {
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_show(move |field, value, max_len| {
+            let Some(w) = weak.upgrade() else { return };
+            let max_len = max_len.max(1) as usize;
+            let bytes = parse_tx_bytes(&value, max_len);
+            let len = if bytes.is_empty() { max_len.min(8) } else { bytes.len() };
+            let label = match field.as_str() {
+                "security-key" => "UDS 27 安全密钥",
+                "write-data" => "UDS 2E DID 写入数据",
+                "memory-data" => "UDS 3D 内存写入数据",
+                _ => "UDS 自定义报文",
+            };
+            w.set_hex_editor_field(field);
+            w.set_hex_editor_title(format!("{label} · {len}/{max_len} 字节").into());
+            w.set_hex_editor_length(len as i32);
+            w.set_hex_editor_max_length(max_len as i32);
+            w.set_hex_editor_rows(build_feature_hex_rows(&bytes, len));
+            w.set_hex_editor_paste("".into());
+            w.set_hex_editor_error("".into());
+            w.set_hex_editor_open(true);
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_byte_edited(move |index, value| {
+            let Some(w) = weak.upgrade() else { return };
+            edit_feature_hex_byte(&w.get_hex_editor_rows(), index as usize, &value);
+            w.set_hex_editor_error("".into());
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_fill(move |value| {
+            let Some(w) = weak.upgrade() else { return };
+            let max_len = w.get_hex_editor_max_length().max(1) as usize;
+            if let Some((rows, len)) = fill_feature_hex_rows(&value, max_len) {
+                w.set_hex_editor_rows(rows);
+                w.set_hex_editor_length(len as i32);
+                w.set_hex_editor_error("".into());
+            } else {
+                w.set_hex_editor_error("没有识别到有效的十六进制字节".into());
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_apply(move || {
+            let Some(w) = weak.upgrade() else { return false };
+            let data = match collect_feature_hex_rows(
+                &w.get_hex_editor_rows(),
+                w.get_hex_editor_length().max(0) as usize,
+            ) {
+                Ok(data) => data,
+                Err(index) => {
+                    w.set_hex_editor_error(format!("字节 {index:02X} 必须是两位十六进制数").into());
+                    return false;
+                }
+            };
+            let value = data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+            match w.get_hex_editor_field().as_str() {
+                "security-key" => w.set_uds_security_key(value.into()),
+                "write-data" => w.set_uds_write_data(value.into()),
+                "memory-data" => w.set_uds_mem_data(value.into()),
+                _ => w.set_uds_custom(value.into()),
+            }
+            true
+        });
+    }
+}
+
+fn wire_xcp_hex_editor(window: &XcpWindow) {
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_show(move |field, value, max_len| {
+            let Some(w) = weak.upgrade() else { return };
+            let max_len = max_len.max(1) as usize;
+            let bytes = parse_tx_bytes(&value, max_len);
+            let len = if bytes.is_empty() { max_len.min(8) } else { bytes.len() };
+            let label = if field == "download" { "XCP DOWNLOAD 数据" } else { "XCP 自定义报文" };
+            w.set_hex_editor_field(field);
+            w.set_hex_editor_title(format!("{label} · {len}/{max_len} 字节").into());
+            w.set_hex_editor_length(len as i32);
+            w.set_hex_editor_max_length(max_len as i32);
+            w.set_hex_editor_rows(build_feature_hex_rows(&bytes, len));
+            w.set_hex_editor_paste("".into());
+            w.set_hex_editor_error("".into());
+            w.set_hex_editor_open(true);
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_byte_edited(move |index, value| {
+            let Some(w) = weak.upgrade() else { return };
+            edit_feature_hex_byte(&w.get_hex_editor_rows(), index as usize, &value);
+            w.set_hex_editor_error("".into());
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_fill(move |value| {
+            let Some(w) = weak.upgrade() else { return };
+            if let Some((rows, len)) = fill_feature_hex_rows(&value, w.get_hex_editor_max_length().max(1) as usize) {
+                w.set_hex_editor_rows(rows);
+                w.set_hex_editor_length(len as i32);
+                w.set_hex_editor_error("".into());
+            } else {
+                w.set_hex_editor_error("没有识别到有效的十六进制字节".into());
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.on_hex_editor_apply(move || {
+            let Some(w) = weak.upgrade() else { return false };
+            let data = match collect_feature_hex_rows(&w.get_hex_editor_rows(), w.get_hex_editor_length().max(0) as usize) {
+                Ok(data) => data,
+                Err(index) => {
+                    w.set_hex_editor_error(format!("字节 {index:02X} 必须是两位十六进制数").into());
+                    return false;
+                }
+            };
+            let value = data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+            if w.get_hex_editor_field() == "download" {
+                w.set_xcp_download_data(value.into());
+            } else {
+                w.set_xcp_custom(value.into());
+            }
+            true
+        });
+    }
+}
+
 #[allow(unused_variables, dead_code)]
 fn wire_ota_window(
     app: Rc<std::cell::RefCell<App>>,
@@ -323,7 +443,13 @@ fn wire_ota_window(
         let ow = ota_window.as_weak();
         ota_window.on_ota_start(move || {
             let Some(w) = ow.upgrade() else { return };
-            let en = app.borrow().lang_en;
+            let (en, channel) = {
+                let a = app.borrow();
+                (
+                    a.lang_en,
+                    a.channels.first().map(|cfg| cfg.sw_channel).unwrap_or(1),
+                )
+            };
             let path = w.get_ota_file_path().to_string();
             if path.trim().is_empty() {
                 w.set_ota_status(if en { "Select a firmware file first".into() } else { "请先选择升级文件".into() });
@@ -335,11 +461,11 @@ fn wire_ota_window(
             };
             let mode = w.get_ota_mode();
             let job = if mode == 0 {
-                build_xcp_ota_job(&path, id, en)
+                build_xcp_ota_job(&path, channel, id, en)
             } else {
                 let addr = parse_u32(&w.get_ota_addr()).unwrap_or(0);
                 let crc = parse_u32(&w.get_ota_crc()).unwrap_or(0) as u16;
-                build_uds_ota_job(&path, id, addr, crc, en)
+                build_uds_ota_job(&path, channel, id, addr, crc, en)
             };
             let job = match job {
                 Ok(job) => job,
@@ -350,6 +476,10 @@ fn wire_ota_window(
             };
             let steps = job.steps.len();
             let mut a = app.borrow_mut();
+            if !a.license_allows("firmware-update") {
+                w.set_ota_status(if en { "License required".into() } else { "需要有效授权".into() });
+                return;
+            }
             let _ = a.cmd.send(Cmd::OtaRun(job));
             a.log(format!("OTA started from standalone window: {path}, {steps} steps"));
             w.set_ota_progress(0.0);

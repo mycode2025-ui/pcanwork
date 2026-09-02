@@ -30,26 +30,32 @@ fn wire_playback(
                 dlg = dlg.set_parent(&w.window().window_handle());
                 let Some(files) = dlg.pick_files().await else { return };
                 let paths: Vec<std::path::PathBuf> = files.iter().map(|f| f.path().to_path_buf()).collect();
-                let mut a = app.borrow_mut();
-                a.pb_files.clear(); // 「打开」=替换；追加用「添加」
-                let mut total = 0usize;
-                for path in &paths {
-                    let p = path.to_string_lossy().to_string();
-                    match convert::parse_playback_file(&p) {
-                        Ok(frames) => {
-                            total += frames.len();
-                            let name = path
-                                .file_name()
-                                .map(|s| s.to_string_lossy().into_owned())
-                                .unwrap_or(p);
-                            a.pb_files.push((name, frames));
+                let worker = app.borrow().worker_tx.clone();
+                std::thread::spawn(move || {
+                    let mut parsed = Vec::new();
+                    let mut errors = Vec::new();
+                    for path in paths {
+                        let path_text = path.to_string_lossy().to_string();
+                        match convert::parse_playback_file(&path_text) {
+                            Ok(frames) => {
+                                let name = path
+                                    .file_name()
+                                    .map(|s| s.to_string_lossy().into_owned())
+                                    .unwrap_or(path_text);
+                                parsed.push((name, frames));
+                            }
+                            Err(error) => errors.push(format!(
+                                "载入回放文件失败 {}: {error}",
+                                path.display()
+                            )),
                         }
-                        Err(e) => a.log(format!("载入回放文件失败 {}: {e}", path.display())),
                     }
-                }
-                let nf = a.pb_files.len();
-                a.log(format!("已载入 {nf} 个回放文件（共 {total} 帧）"));
-                pb_apply_files(&mut a, &w);
+                    let _ = worker.send(WorkerEvent::PlaybackParsed {
+                        replace: true,
+                        files: parsed,
+                        errors,
+                    });
+                });
             });
         });
     }
@@ -67,21 +73,32 @@ fn wire_playback(
                 dlg = dlg.set_parent(&w.window().window_handle());
                 let Some(files) = dlg.pick_files().await else { return };
                 let paths: Vec<std::path::PathBuf> = files.iter().map(|f| f.path().to_path_buf()).collect();
-                let mut a = app.borrow_mut();
-                for path in &paths {
-                    let p = path.to_string_lossy().to_string();
-                    match convert::parse_playback_file(&p) {
-                        Ok(frames) => {
-                            let name = path
-                                .file_name()
-                                .map(|s| s.to_string_lossy().into_owned())
-                                .unwrap_or(p);
-                            a.pb_files.push((name, frames));
+                let worker = app.borrow().worker_tx.clone();
+                std::thread::spawn(move || {
+                    let mut parsed = Vec::new();
+                    let mut errors = Vec::new();
+                    for path in paths {
+                        let path_text = path.to_string_lossy().to_string();
+                        match convert::parse_playback_file(&path_text) {
+                            Ok(frames) => {
+                                let name = path
+                                    .file_name()
+                                    .map(|s| s.to_string_lossy().into_owned())
+                                    .unwrap_or(path_text);
+                                parsed.push((name, frames));
+                            }
+                            Err(error) => errors.push(format!(
+                                "添加回放文件失败 {}: {error}",
+                                path.display()
+                            )),
                         }
-                        Err(e) => a.log(format!("添加回放文件失败 {}: {e}", path.display())),
                     }
-                }
-                pb_apply_files(&mut a, &w);
+                    let _ = worker.send(WorkerEvent::PlaybackParsed {
+                        replace: false,
+                        files: parsed,
+                        errors,
+                    });
+                });
             });
         });
     }
@@ -90,7 +107,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_remerge(move || {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let mut a = app.borrow_mut();
             pb_apply_files(&mut a, &w);
         });
@@ -100,7 +117,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_clear_files(move || {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let mut a = app.borrow_mut();
             a.pb_files.clear();
             pb_apply_files(&mut a, &w);
@@ -111,7 +128,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_remove_file(move |i| {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let mut a = app.borrow_mut();
             let i = i as usize;
             if i < a.pb_files.len() {
@@ -125,7 +142,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_move_file_up(move |i| {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let mut a = app.borrow_mut();
             let i = i as usize;
             if i > 0 && i < a.pb_files.len() {
@@ -139,7 +156,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_move_file_down(move |i| {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let mut a = app.borrow_mut();
             let i = i as usize;
             if i + 1 < a.pb_files.len() {
@@ -152,7 +169,7 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_apply_settings(move || {
-            let w = pw.unwrap();
+            let Some(w) = pw.upgrade() else { return };
             let a = app.borrow();
             pb_build_and_load(&a, &w);
         });
@@ -161,8 +178,9 @@ fn wire_playback(
         let app = app.clone();
         let pw = playback_window.as_weak();
         playback_window.on_play(move || {
-            let w = pw.unwrap();
-            let a = app.borrow();
+            let Some(w) = pw.upgrade() else { return };
+            let mut a = app.borrow_mut();
+            if !a.license_allows("playback") { return; }
             let online = w.get_online();
             let speed = if w.get_speed_fast() {
                 0.0

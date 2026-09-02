@@ -8,17 +8,18 @@
 //!   - 状态变更操作（connect/send/set_periodic/...）封成 `UiReq` 投递给主线程 tick 处理。
 
 use crate::can::{CanFrame, DeviceConfig};
-use crate::dbc::{DbcDb, Decoded};
+use crate::dbc::{DbcDb, DbcDiagnosticSeverity, Decoded};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 const EVT_QUEUE: usize = 4096; // 每客户端输出队列上限（事件满则丢最新并计数）
+const UI_REQ_QUEUE: usize = 64; // 单客户端请求/响应协议，留出突发余量且绝不无界增长
 const MAX_LINE: usize = 1 << 20; // 单行 1 MiB 上限，超长仅断开该客户端
 
 // ---------------- 线协议信封（仅请求需要反序列化；响应/事件用 json! 构造）----------------
@@ -35,6 +36,10 @@ struct ReqEnvelope {
 
 // ---------------- 状态变更操作（投递到 UI tick 处理）----------------
 pub enum IpcReq {
+    Invalid {
+        code: String,
+        msg: String,
+    },
     SendOnce {
         ch: u8,
         id: u32,
@@ -43,6 +48,10 @@ pub enum IpcReq {
         fd: bool,
         brs: bool,
         remote: bool,
+    },
+    SendBatch {
+        frames: Vec<IpcTxFrame>,
+        repeat: u32,
     },
     SetPeriodic {
         client_handle: u64,
@@ -88,6 +97,38 @@ pub enum IpcReq {
     ClientGone,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct IpcTxFrame {
+    #[serde(default = "default_channel")]
+    pub ch: u8,
+    #[serde(default)]
+    pub id: u32,
+    pub data: Vec<u8>,
+    #[serde(default)]
+    pub ext: bool,
+    #[serde(default)]
+    pub fd: bool,
+    #[serde(default)]
+    pub brs: bool,
+    #[serde(default)]
+    pub remote: bool,
+}
+
+fn default_channel() -> u8 {
+    1
+}
+
+#[derive(Deserialize)]
+struct IpcSendBatchArgs {
+    frames: Vec<IpcTxFrame>,
+    #[serde(default = "default_repeat")]
+    repeat: u32,
+}
+
+fn default_repeat() -> u32 {
+    1
+}
+
 pub enum IpcResp {
     Ok(serde_json::Value),
     Err { code: String, msg: String },
@@ -97,7 +138,7 @@ pub enum IpcResp {
 pub struct UiReq {
     pub client_id: u64,
     pub req: IpcReq,
-    pub reply: Sender<IpcResp>,
+    pub reply: SyncSender<IpcResp>,
 }
 
 // ---------------- 客户端订阅注册表 ----------------
@@ -154,7 +195,25 @@ pub struct Snapshot {
     pub no_counter: u64,
     pub bus_load: f64,
     pub fps: f64,
+    pub dropped_frames: u64,
+    pub dropped_events: u64,
+    pub hardware_overruns: u64,
+    pub hardware_errors: u64,
+    pub event_queue_depth: usize,
+    pub event_queue_capacity: usize,
+    pub event_queue_high_watermark: usize,
+    pub command_rejected: u64,
+    pub command_queue_depth: usize,
+    pub command_queue_capacity: usize,
+    pub command_queue_high_watermark: usize,
+    pub timestamp_samples: u64,
+    pub timestamp_latest_jitter_us: f64,
+    pub timestamp_max_jitter_us: f64,
+    pub timestamp_drift_ppm: f64,
+    pub timestamp_monotonic_violations: u64,
     pub channels: Vec<ChanStatSnap>,
+    pub last_log: String,
+    pub recent_logs: Vec<String>,
     pub console_text: String, // CAN 报文日志(printf-over-CAN)当前文本
     pub console_enabled: bool,
     pub last: HashMap<u64, LastSnap>,
@@ -172,7 +231,25 @@ impl Snapshot {
             no_counter: 0,
             bus_load: 0.0,
             fps: 0.0,
+            dropped_frames: 0,
+            dropped_events: 0,
+            hardware_overruns: 0,
+            hardware_errors: 0,
+            event_queue_depth: 0,
+            event_queue_capacity: 0,
+            event_queue_high_watermark: 0,
+            command_rejected: 0,
+            command_queue_depth: 0,
+            command_queue_capacity: 0,
+            command_queue_high_watermark: 0,
+            timestamp_samples: 0,
+            timestamp_latest_jitter_us: 0.0,
+            timestamp_max_jitter_us: 0.0,
+            timestamp_drift_ppm: 0.0,
+            timestamp_monotonic_violations: 0,
             channels: Vec::new(),
+            last_log: String::new(),
+            recent_logs: Vec::new(),
             console_text: String::new(),
             console_enabled: false,
             last: HashMap::new(),
@@ -195,23 +272,19 @@ impl DbcSnapshot {
             dbcs: dbcs.to_vec(),
         }
     }
-    /// 合并全部 DBC（先加载者优先）：返回首个非空解码。
-    pub fn decode(&self, id: u32, data: &[u8]) -> Vec<Decoded> {
+    pub fn decode_ext(&self, id: u32, ext: bool, data: &[u8]) -> Vec<Decoded> {
         for d in &self.dbcs {
-            let dec = d.decode(id, data);
-            if !dec.is_empty() {
-                return dec;
+            let decoded = d.decode_ext(id, ext, data);
+            if !decoded.is_empty() {
+                return decoded;
             }
         }
         Vec::new()
     }
-    pub fn encode(&self, id: u32, vals: &HashMap<String, f64>) -> Option<Vec<u8>> {
-        for d in &self.dbcs {
-            if let Some(b) = d.encode(id, vals) {
-                return Some(b);
-            }
-        }
-        None
+    pub fn encode_ext(&self, id: u32, ext: bool, vals: &HashMap<String, f64>) -> Option<Vec<u8>> {
+        self.dbcs
+            .iter()
+            .find_map(|database| database.encode_ext(id, ext, vals))
     }
     /// 列出全部已加载 DBC 的报文与信号（供脚本发现真实信号名）。
     pub fn info(&self) -> serde_json::Value {
@@ -226,17 +299,81 @@ impl DbcSnapshot {
                             "name": s.name, "unit": s.unit, "min": s.min, "max": s.max,
                             "start_bit": s.start_bit, "size": s.size,
                             "little_endian": s.little_endian, "signed": s.signed,
-                            "factor": s.factor, "offset": s.offset
+                            "factor": s.factor, "offset": s.offset,
+                            "layout_valid": s.fits_in_bytes(m.size)
                         })
                     })
                     .collect();
                 msgs.push(serde_json::json!({
-                    "id": m.id, "name": m.name, "dlc": m.size,
+                    "id": m.id, "extended": m.extended, "name": m.name, "dlc": m.size,
                     "file": d.file_name, "signals": signals
                 }));
             }
         }
         serde_json::json!({ "messages": msgs })
+    }
+
+    /// Machine-readable diagnostics for automation and release gates.
+    pub fn diagnostics(&self) -> serde_json::Value {
+        let mut findings = Vec::new();
+        let mut errors = 0u64;
+        let mut warnings = 0u64;
+        let mut infos = 0u64;
+        for database in &self.dbcs {
+            for diagnostic in database.diagnostics() {
+                let severity = match diagnostic.severity {
+                    DbcDiagnosticSeverity::Error => {
+                        errors += 1;
+                        "error"
+                    }
+                    DbcDiagnosticSeverity::Warning => {
+                        warnings += 1;
+                        "warning"
+                    }
+                    DbcDiagnosticSeverity::Info => {
+                        infos += 1;
+                        "info"
+                    }
+                };
+                findings.push(serde_json::json!({
+                    "file": database.file_name,
+                    "severity": severity,
+                    "code": diagnostic.code,
+                    "id": diagnostic.message_id,
+                    "extended": diagnostic.extended,
+                    "message": diagnostic.message_name,
+                    "signal": diagnostic.signal_name,
+                    "title_zh": diagnostic.title_zh,
+                    "title_en": diagnostic.title_en,
+                    "detail_zh": diagnostic.detail_zh,
+                    "detail_en": diagnostic.detail_en,
+                }));
+            }
+        }
+        findings.sort_by(|left, right| {
+            let rank = |value: &serde_json::Value| match value["severity"].as_str() {
+                Some("error") => 0,
+                Some("warning") => 1,
+                _ => 2,
+            };
+            rank(left)
+                .cmp(&rank(right))
+                .then_with(|| left["file"].as_str().cmp(&right["file"].as_str()))
+                .then_with(|| left["id"].as_u64().cmp(&right["id"].as_u64()))
+                .then_with(|| left["signal"].as_str().cmp(&right["signal"].as_str()))
+                .then_with(|| left["code"].as_str().cmp(&right["code"].as_str()))
+        });
+        serde_json::json!({
+            "files": self.dbcs.len(),
+            "summary": {
+                "errors": errors,
+                "warnings": warnings,
+                "infos": infos,
+                "total": errors + warnings + infos,
+                "blocking": errors > 0,
+            },
+            "findings": findings,
+        })
     }
 }
 
@@ -287,11 +424,16 @@ pub fn frame_event_json(f: &CanFrame) -> String {
 /// accept 循环线程 + 每客户端一个 handler 线程 + 一个 writer 线程。
 pub fn spawn_ipc_server(
     snapshot: Arc<Mutex<Snapshot>>,
-) -> (u16, String, Receiver<UiReq>, Arc<SubRegistry>) {
+) -> (
+    u16,
+    String,
+    crossbeam_channel::Receiver<UiReq>,
+    Arc<SubRegistry>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("绑定 127.0.0.1:0 失败");
     let port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
     let token = gen_token();
-    let (ui_tx, ui_rx) = std::sync::mpsc::channel::<UiReq>();
+    let (ui_tx, ui_rx) = crossbeam_channel::bounded::<UiReq>(UI_REQ_QUEUE);
     let registry = Arc::new(SubRegistry::new());
     {
         let token = token.clone();
@@ -321,21 +463,40 @@ pub fn spawn_ipc_server(
 
 fn read_line_capped(reader: &mut impl BufRead, line: &mut String) -> std::io::Result<usize> {
     line.clear();
-    let n = reader.read_line(line)?;
-    if line.len() > MAX_LINE {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "行超长",
-        ));
+    let mut total = 0;
+    loop {
+        let (consumed, complete) = {
+            let available = reader.fill_buf()?;
+            if available.is_empty() {
+                return Ok(total);
+            }
+            let newline = available.iter().position(|byte| *byte == b'\n');
+            let consumed = newline.map_or(available.len(), |index| index + 1);
+            if total.saturating_add(consumed) > MAX_LINE {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "line exceeds 1 MiB limit",
+                ));
+            }
+            let text = std::str::from_utf8(&available[..consumed]).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "line is not valid UTF-8")
+            })?;
+            line.push_str(text);
+            (consumed, newline.is_some())
+        };
+        reader.consume(consumed);
+        total += consumed;
+        if complete {
+            return Ok(total);
+        }
     }
-    Ok(n)
 }
 
 fn handle_client(
     stream: TcpStream,
     client_id: u64,
     token: &str,
-    ui_tx: Sender<UiReq>,
+    ui_tx: crossbeam_channel::Sender<UiReq>,
     snapshot: Arc<Mutex<Snapshot>>,
     registry: Arc<SubRegistry>,
 ) {
@@ -390,7 +551,7 @@ fn handle_client(
         out: out_tx.clone(),
         dropped: Arc::new(AtomicU64::new(0)),
     });
-    let _ = out_tx.send(resp_ok(hid, serde_json::json!({"app_version": env!("CARGO_PKG_VERSION"), "proto": 1, "caps": ["frame_sub", "dbc"]})));
+    let _ = out_tx.send(resp_ok(hid, serde_json::json!({"app_version": crate::product_version::current(), "proto": 1, "caps": ["frame_sub", "dbc"]})));
 
     // 主循环。
     loop {
@@ -442,17 +603,25 @@ fn handle_client(
         // 状态变更操作 → 投递 tick，等回复（8s，超时合成 TIMEOUT，确保每请求恰好一条响应）。
         match parse_mutating(&req.op, &req.args) {
             Some(ipc_req) => {
-                let (reply_tx, reply_rx) = std::sync::mpsc::channel::<IpcResp>();
-                if ui_tx
-                    .send(UiReq {
-                        client_id,
-                        req: ipc_req,
-                        reply: reply_tx,
-                    })
-                    .is_err()
-                {
-                    let _ = out_tx.send(resp_err(id, "TIMEOUT", "应用已退出"));
-                    continue;
+                let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel::<IpcResp>(1);
+                match ui_tx.try_send(UiReq {
+                    client_id,
+                    req: ipc_req,
+                    reply: reply_tx,
+                }) {
+                    Ok(()) => {}
+                    Err(crossbeam_channel::TrySendError::Full(_)) => {
+                        let _ = out_tx.send(resp_err(
+                            id,
+                            "BUSY",
+                            "UI 请求队列已满，操作未执行，请稍后重试",
+                        ));
+                        continue;
+                    }
+                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => {
+                        let _ = out_tx.send(resp_err(id, "TIMEOUT", "应用已退出"));
+                        continue;
+                    }
                 }
                 match reply_rx.recv_timeout(Duration::from_secs(8)) {
                     Ok(resp) => {
@@ -470,12 +639,15 @@ fn handle_client(
     }
 
     // 断开清理：通知 tick 停掉该客户端的周期任务；移除订阅；释放单运行闸门。
-    let (cg_tx, cg_rx) = std::sync::mpsc::channel::<IpcResp>();
-    let _ = ui_tx.send(UiReq {
-        client_id,
-        req: IpcReq::ClientGone,
-        reply: cg_tx,
-    });
+    let (cg_tx, cg_rx) = std::sync::mpsc::sync_channel::<IpcResp>(1);
+    let _ = ui_tx.send_timeout(
+        UiReq {
+            client_id,
+            req: IpcReq::ClientGone,
+            reply: cg_tx,
+        },
+        Duration::from_millis(250),
+    );
     registry
         .subs
         .lock()
@@ -519,6 +691,27 @@ fn serve_readonly(
                 "connected": s.connected, "running": s.running,
                 "rx": s.rx, "tx": s.tx, "err": s.err, "no_counter": s.no_counter,
                 "bus_load": s.bus_load, "fps": s.fps,
+                "last_log": s.last_log,
+                "capture_health": {
+                    "dropped_frames": s.dropped_frames,
+                    "dropped_events": s.dropped_events,
+                    "hardware_overruns": s.hardware_overruns,
+                    "hardware_errors": s.hardware_errors,
+                    "event_queue_depth": s.event_queue_depth,
+                    "event_queue_capacity": s.event_queue_capacity,
+                    "event_queue_high_watermark": s.event_queue_high_watermark,
+                    "command_rejected": s.command_rejected,
+                    "command_queue_depth": s.command_queue_depth,
+                    "command_queue_capacity": s.command_queue_capacity,
+                    "command_queue_high_watermark": s.command_queue_high_watermark,
+                },
+                "timestamp_quality": {
+                    "samples": s.timestamp_samples,
+                    "latest_jitter_us": s.timestamp_latest_jitter_us,
+                    "max_jitter_us": s.timestamp_max_jitter_us,
+                    "drift_ppm": s.timestamp_drift_ppm,
+                    "monotonic_violations": s.timestamp_monotonic_violations,
+                },
                 "channels": s.channels.iter().map(|c| serde_json::json!({
                     "ch": c.ch, "rx": c.rx, "tx": c.tx, "err": c.err,
                     "bus_load": c.bus_load, "fps": c.fps
@@ -536,7 +729,8 @@ fn serve_readonly(
             let ch = arg_u64(args, "ch", 1) as u8;
             let id = arg_u64(args, "id", 0) as u32;
             let dir = args.get("dir").and_then(|v| v.as_str()).unwrap_or("rx");
-            let key = crate::key_of(ch, dir == "tx", id);
+            let ext = arg_bool(args, "ext");
+            let key = crate::key_of(ch, dir == "tx", ext, id);
             let s = snapshot.lock().unwrap();
             Some(match s.last.get(&key) {
                 Some(l) => IpcResp::Ok(
@@ -550,11 +744,12 @@ fn serve_readonly(
             let id = arg_u64(args, "id", 0) as u32;
             let dir = args.get("dir").and_then(|v| v.as_str()).unwrap_or("rx");
             let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let key = crate::key_of(ch, dir == "tx", id);
+            let ext = arg_bool(args, "ext");
+            let key = crate::key_of(ch, dir == "tx", ext, id);
             let s = snapshot.lock().unwrap();
             let phys = s.last.get(&key).and_then(|l| {
                 s.dbc
-                    .decode(id, &l.data)
+                    .decode_ext(id, l.ext, &l.data)
                     .into_iter()
                     .find(|d| d.name == name)
                     .map(|d| d.physical)
@@ -565,18 +760,26 @@ fn serve_readonly(
         }
         "decode" => {
             let id = arg_u64(args, "id", 0) as u32;
+            let ext = arg_bool(args, "ext");
             let data = arg_bytes(args);
             let s = snapshot.lock().unwrap();
             let sigs: Vec<serde_json::Value> = s
                 .dbc
-                .decode(id, &data)
+                .decode_ext(id, ext, &data)
                 .into_iter()
-                .map(|d| serde_json::json!({"name": d.name, "physical": d.physical, "unit": d.unit, "raw": d.raw, "min": d.min, "max": d.max, "out_of_range": d.out_of_range}))
+                .map(|d| {
+                    let raw = d
+                        .raw_unsigned
+                        .map(serde_json::Value::from)
+                        .unwrap_or_else(|| serde_json::Value::from(d.raw));
+                    serde_json::json!({"name": d.name, "physical": d.physical, "unit": d.unit, "raw": raw, "raw_text": d.raw_text, "min": d.min, "max": d.max, "out_of_range": d.out_of_range})
+                })
                 .collect();
             Some(IpcResp::Ok(serde_json::json!({"signals": sigs})))
         }
         "encode" => {
             let id = arg_u64(args, "id", 0) as u32;
+            let ext = arg_bool(args, "ext");
             let signals: HashMap<String, f64> = args
                 .get("signals")
                 .and_then(|v| v.as_object())
@@ -587,7 +790,7 @@ fn serve_readonly(
                 })
                 .unwrap_or_default();
             let s = snapshot.lock().unwrap();
-            Some(match s.dbc.encode(id, &signals) {
+            Some(match s.dbc.encode_ext(id, ext, &signals) {
                 Some(b) => IpcResp::Ok(serde_json::json!({"present": true, "data": b})),
                 None => IpcResp::Ok(serde_json::json!({"present": false})),
             })
@@ -596,21 +799,47 @@ fn serve_readonly(
             let s = snapshot.lock().unwrap();
             Some(IpcResp::Ok(s.dbc.info()))
         }
+        "dbc_diagnostics" => {
+            let s = snapshot.lock().unwrap();
+            Some(IpcResp::Ok(s.dbc.diagnostics()))
+        }
+        "logs" => {
+            let s = snapshot.lock().unwrap();
+            Some(IpcResp::Ok(serde_json::json!({"lines": s.recent_logs})))
+        }
         _ => None,
     }
 }
 
 fn parse_mutating(op: &str, args: &serde_json::Value) -> Option<IpcReq> {
     match op {
-        "send_once" => Some(IpcReq::SendOnce {
-            ch: arg_u64(args, "ch", 1) as u8,
-            id: arg_u64(args, "id", 0) as u32,
-            data: arg_bytes(args),
-            ext: arg_bool(args, "ext"),
-            fd: arg_bool(args, "fd"),
-            brs: arg_bool(args, "brs"),
-            remote: arg_bool(args, "remote"),
+        "send_once" => Some(match serde_json::from_value::<IpcTxFrame>(args.clone()) {
+            Ok(frame) => IpcReq::SendOnce {
+                ch: frame.ch,
+                id: frame.id,
+                data: frame.data,
+                ext: frame.ext,
+                fd: frame.fd,
+                brs: frame.brs,
+                remote: frame.remote,
+            },
+            Err(error) => IpcReq::Invalid {
+                code: "BAD_ARG".into(),
+                msg: format!("send_once 参数无效: {error}"),
+            },
         }),
+        "send_batch" => Some(
+            match serde_json::from_value::<IpcSendBatchArgs>(args.clone()) {
+                Ok(batch) => IpcReq::SendBatch {
+                    frames: batch.frames,
+                    repeat: batch.repeat,
+                },
+                Err(error) => IpcReq::Invalid {
+                    code: "BAD_ARG".into(),
+                    msg: format!("send_batch 参数无效: {error}"),
+                },
+            },
+        ),
         "set_periodic" => Some(IpcReq::SetPeriodic {
             client_handle: arg_u64(args, "handle", 0),
             ch: arg_u64(args, "ch", 1) as u8,
@@ -687,5 +916,58 @@ fn resp_from(id: u64, r: IpcResp) -> String {
     match r {
         IpcResp::Ok(result) => resp_ok(id, result),
         IpcResp::Err { code, msg } => resp_err(id, &code, &msg),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufReader, Cursor};
+
+    #[test]
+    fn overlong_line_without_newline_is_rejected_before_growth() {
+        let input = vec![b'x'; MAX_LINE + 4096];
+        let mut reader = BufReader::with_capacity(64, Cursor::new(input));
+        let mut line = String::new();
+        let error = read_line_capped(&mut reader, &mut line).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(line.len() <= MAX_LINE);
+    }
+
+    #[test]
+    fn capped_reader_preserves_complete_ndjson_line() {
+        let mut reader = BufReader::with_capacity(3, Cursor::new(b"{\"op\":\"hello\"}\n"));
+        let mut line = String::new();
+        let count = read_line_capped(&mut reader, &mut line).unwrap();
+        assert_eq!(count, line.len());
+        assert_eq!(line, "{\"op\":\"hello\"}\n");
+    }
+
+    #[test]
+    fn batch_parser_preserves_every_frame_field() {
+        let args = serde_json::json!({
+            "repeat": 3,
+            "frames": [
+                {"ch": 2, "id": 0x123, "data": [1, 2, 3]},
+                {"ch": 4, "id": 0x18FF50E5u32, "data": vec![4; 12], "ext": true, "fd": true, "brs": true}
+            ]
+        });
+        let Some(IpcReq::SendBatch { frames, repeat }) = parse_mutating("send_batch", &args) else {
+            panic!("batch should parse");
+        };
+        assert_eq!(repeat, 3);
+        assert_eq!(frames.len(), 2);
+        assert_eq!((frames[1].ch, frames[1].id), (4, 0x18FF50E5));
+        assert!(frames[1].ext && frames[1].fd && frames[1].brs);
+        assert_eq!(frames[1].data.len(), 12);
+    }
+
+    #[test]
+    fn send_parser_rejects_out_of_byte_range_without_truncation() {
+        let args = serde_json::json!({"ch": 1, "id": 1, "data": [256]});
+        assert!(matches!(
+            parse_mutating("send_once", &args),
+            Some(IpcReq::Invalid { .. })
+        ));
     }
 }

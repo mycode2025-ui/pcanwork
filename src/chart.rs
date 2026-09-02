@@ -3,10 +3,9 @@
 //! turns the live/frozen series into the `ChartSeries` model and axis labels.
 //! Extracted from main.rs. Chinese text below lives only in string literals (UI data).
 
-use crate::{App, AppWindow, ChartSeries, ChartWindow, Series, fmt_wall};
-use slint::{Model, ModelRc, SharedString, VecModel};
+use crate::{App, AppWindow, ChartSeries, ChartWindow, Series, fmt_wall, sync_vec_model};
+use slint::{Model, SharedString};
 use std::collections::VecDeque;
-use std::rc::Rc;
 
 /// Parse the leading numeric part of a string (e.g. "239.00A" -> 239.0).
 pub(crate) fn parse_lead(s: &str) -> Option<f64> {
@@ -352,15 +351,13 @@ pub(crate) fn refresh_chart(a: &App, ui: &AppWindow, chart_window: &ChartWindow)
         let xlabels: Vec<SharedString> = (0..5)
             .map(|k| chart_time_label(a, tmin + (tmax - tmin) * (k as f64) / 4.0, dmin).into())
             .collect();
-        chart_window.set_chart_xlabels(ModelRc::from(Rc::new(VecModel::from(xlabels))));
+        sync_vec_model(&a.chart_xlabel_model, xlabels);
     } else {
         ui.set_chart_xstart_label("".into());
         ui.set_chart_xend_label("".into());
         chart_window.set_chart_xstart_label("".into());
         chart_window.set_chart_xend_label("".into());
-        chart_window.set_chart_xlabels(ModelRc::from(Rc::new(VecModel::from(
-            Vec::<SharedString>::new(),
-        ))));
+        sync_vec_model(&a.chart_xlabel_model, Vec::<SharedString>::new());
     }
 
     // Cursor readout.

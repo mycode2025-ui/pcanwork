@@ -1,24 +1,34 @@
 import { Button, CheckBox, ComboBox, LineEdit, ScrollView, SpinBox, TextEdit, Palette } from "std-widgets.slint";
+import { ProductDesign, ProductHeaderButton, ProductHeaderCheck, ProductI18n, ProductLanguageSwitch, ProductThemeSwitch } from "../../ui/design-system.slint";
 
 export global I18n {
-    in-out property <bool> en: false;
+    in-out property <bool> en: ProductI18n.en;
+    changed en => { ProductI18n.en = en; }
     public pure function t(zh: string, eng: string) -> string {
-        return en ? eng : zh;
+        return ProductI18n.t(zh, eng);
     }
 }
 
 // 与 PcanWork 统一: 学术蓝(Academic Blue) 浅色配色
 global Theme {
-    in-out property <bool> dark: false;
-    out property <color> bg: dark ? #0f1826 : #eef3f9;
-    out property <color> surface: dark ? #1a2536 : #ffffff;
-    out property <color> surface-2: dark ? #243349 : #e3ecf6;
-    out property <color> border: dark ? #2c3e57 : #cdd9e8;
-    out property <color> text: dark ? #e6edf6 : #16243a;
-    out property <color> muted: dark ? #8b9bb4 : #5a6b85;
-    out property <color> accent: dark ? #4a90d9 : #1c5aa6;
-    out property <color> success: dark ? #34d058 : #16a34a;
-    out property <color> danger: dark ? #f06c6c : #dc2626;
+    in-out property <bool> dark: ProductDesign.dark;
+    changed dark => { ProductDesign.dark = dark; }
+    out property <color> bg: ProductDesign.window;
+    out property <color> surface: ProductDesign.surface;
+    out property <color> surface-2: ProductDesign.surface-raised;
+    out property <color> border: ProductDesign.border;
+    out property <color> text: ProductDesign.text;
+    out property <color> muted: ProductDesign.text-muted;
+    out property <color> accent: ProductDesign.brand;
+    out property <color> accent-fg: ProductDesign.on-brand;
+    out property <color> success: ProductDesign.success;
+    out property <color> success-soft: ProductDesign.success-soft;
+    out property <color> danger: ProductDesign.danger;
+    out property <color> danger-soft: ProductDesign.danger-soft;
+    out property <color> terminal-surface: ProductDesign.terminal-surface;
+    out property <color> terminal-border: ProductDesign.terminal-border;
+    out property <color> terminal-text: ProductDesign.terminal-text;
+    out property <color> terminal-selection: ProductDesign.terminal-selection;
 }
 
 export struct QuickCommand {
@@ -72,17 +82,24 @@ component NumEdit inherits LineEdit {
     in-out property <int> value;
     in property <int> minimum: 0;
     in property <int> maximum: 1000000;
+    in property <bool> allow-empty: false;
     callback committed();
 
     horizontal-alignment: right;
     font-size: 12px;
-    text: "" + root.value;
+    text: root.allow-empty && root.value == 0 ? "" : "" + root.value;
 
     function commit() {
+        if (root.allow-empty && root.text == "") {
+            root.value = 0;
+            root.text = "";
+            root.committed();
+            return;
+        }
         if (root.text.is-float()) {
             root.value = Math.max(root.minimum, Math.min(root.maximum, Math.round(root.text.to-float())));
         }
-        root.text = "" + root.value;
+        root.text = root.allow-empty && root.value == 0 ? "" : "" + root.value;
         root.committed();
     }
 
@@ -120,9 +137,9 @@ component QuickCommandRow inherits Rectangle {
         Text { text: "" + root.idx; width: 22px; color: Theme.muted; font-size: 11px; vertical-alignment: center; horizontal-alignment: center; }
         en-box := CheckBox { checked: root.cmd-enabled; width: 22px; toggled => { root.notify(); } }
         hex-box := CheckBox { checked: root.cmd-hex; width: 22px; toggled => { root.notify(); } }
-        payload-edit := LineEdit { text: root.payload; font-family: "Consolas"; font-size: 12px; width: 210px; edited => { root.notify(); } }
+        payload-edit := LineEdit { text: root.payload; font-family: ProductDesign.font-mono; font-size: ProductDesign.font-sm; width: 210px; edited => { root.notify(); } }
         remark-edit := LineEdit { text: root.remark; font-size: 12px; width: 96px; edited => { root.notify(); } }
-        delay-box := NumEdit { value: root.delay-ms; minimum: 0; maximum: 600000; width: 60px; committed => { root.notify(); } }
+        delay-box := NumEdit { value: root.delay-ms; minimum: 0; maximum: 600000; allow-empty: true; width: 60px; committed => { root.notify(); } }
         Button {
             text: I18n.t("发送", "Send");
             width: 48px;
@@ -139,16 +156,23 @@ component AccentBtn inherits Rectangle {
     in property <bool> btn-enabled: true;
     callback clicked;
     min-width: txt.preferred-width + 24px;
-    height: 30px;
+    height: ProductDesign.control-height;
     border-radius: 6px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    accessible-enabled: root.btn-enabled;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
     background: !root.btn-enabled ? Theme.surface-2
         : root.filled ? (ta.has-hover ? Theme.accent.brighter(0.12) : Theme.accent)
         : (ta.has-hover ? Theme.surface-2 : Theme.surface);
-    border-width: 1px;
-    border-color: !root.btn-enabled ? Theme.border : (root.filled ? Theme.accent : Theme.border);
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? ProductDesign.warning
+        : !root.btn-enabled ? Theme.border
+        : (root.filled ? Theme.accent : Theme.border);
     txt := Text {
         text: root.text;
-        color: root.filled ? #ffffff : Theme.text;
+        color: root.filled ? Theme.accent-fg : Theme.text;
         horizontal-alignment: center;
         vertical-alignment: center;
         width: 100%;
@@ -160,39 +184,63 @@ component AccentBtn inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.btn-enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 component ToolCheck inherits CheckBox {
-    height: 30px;
+    height: ProductDesign.toolbar-control-height;
 }
 
 component ToolButton inherits Button {
-    height: 30px;
+    height: ProductDesign.toolbar-control-height;
     min-width: 72px;
 }
 
 component ToolStrip inherits ScrollView {
-    height: 38px;
+    height: ProductDesign.toolbar-control-height + ProductDesign.space-1;
     horizontal-stretch: 1;
     vertical-scrollbar-policy: ScrollBarPolicy.always-off;
     horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
-    viewport-height: 32px;
+    viewport-height: ProductDesign.toolbar-control-height;
 }
 
 export component AppWindow inherits Window {
     title: "Serial Tool";
     icon: @image-url("../assets/app.png");
     default-font-size: 12px;
+    default-font-family: ProductDesign.font-sans;
     preferred-width: 940px;
     preferred-height: 580px;
     min-width: 920px;
     min-height: 540px;
     background: Theme.bg;
     always-on-top: root.topmost-enabled;
+    in-out property <bool> dark: ProductDesign.dark;
+    in-out property <bool> lang-en: I18n.en;
+    changed lang-en => {
+        I18n.en = root.lang-en;
+        ProductI18n.en = root.lang-en;
+    }
+    changed dark => {
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
 
     // std-widgets 跟随本工具的 Dark/Light(而非系统), 初始按 Theme.dark。
     init => {
-        Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light;
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
     }
 
     in-out property <int> transport: 0; // 0=Serial 1=TCP Client 2=TCP Server 3=UDP 4=SSH Serial
@@ -228,6 +276,8 @@ export component AppWindow inherits Window {
     in-out property <string> send-text;
     in-out property <string> selected-file;
     in-out property <string> status-message: "就绪";
+    in property <string> io-health: "Q 0/4096 H0 D0";
+    in property <bool> io-loss: false;
     in-out property <bool> connected;
     in-out property <bool> receive-hex;
     in-out property <bool> send-hex;
@@ -246,6 +296,26 @@ export component AppWindow inherits Window {
     in-out property <bool> quick-panel-visible: false;
     in-out property <int> rx-count;
     in-out property <int> tx-count;
+    // 0=普通调试，1=交互终端。两种模式只切换右侧视图，共用当前连接与统计。
+    in-out property <int> work-mode: 0;
+    in-out property <string> terminal-text;
+    in-out property <string> terminal-command;
+    in-out property <bool> terminal-autoscroll: true;
+    in-out property <bool> terminal-following: true;
+    in-out property <bool> terminal-local-echo: true;
+    in-out property <bool> terminal-ansi: true;
+    in-out property <int> terminal-encoding: 0; // UTF-8, GBK, GB18030, Latin-1, ASCII
+    in-out property <int> terminal-line-ending: 3; // None, CR, LF, CRLF
+    in-out property <int> terminal-timestamp-mode: 0; // Off, HMS, milliseconds, full date
+    in-out property <int> terminal-max-lines: 2; // 10k, 50k, 100k, 500k, unlimited
+    in-out property <int> terminal-font-size: 14;
+    in-out property <bool> terminal-save-history: true;
+    in-out property <int> terminal-history-capacity: 500;
+    in-out property <int> terminal-tab-width: 4;
+    private property <int> rx-scroll-request;
+    private property <int> terminal-focus-request;
+    private property <int> terminal-blur-request;
+    private property <int> terminal-scroll-request;
 
     callback refresh-ports();
     callback toggle-port();
@@ -261,11 +331,29 @@ export component AppWindow inherits Window {
     callback toggle-receive-file();
     callback toggle-quick-panel();
     callback english-changed();
+    callback send-terminal-command(string);
+    callback terminal-history(int, string) -> string;
+    callback clear-terminal();
+    callback save-terminal();
+    callback switch-work-mode(int);
 
 
     // 把光标移到末尾，TextEdit 会自动把光标滚进视野 => 滚动条贴底
     public function scroll-rx-to-end() {
-        rx-edit.set-selection-offsets(rx-edit.text.character-count, rx-edit.text.character-count);
+        root.rx-scroll-request += 1;
+    }
+
+    public function focus-terminal-input() {
+        root.terminal-focus-request += 1;
+    }
+
+    public function blur-terminal-input() {
+        root.terminal-blur-request += 1;
+    }
+
+    public function scroll-terminal-to-end() {
+        root.terminal-following = true;
+        root.terminal-scroll-request += 1;
     }
 
     VerticalLayout {
@@ -274,59 +362,76 @@ export component AppWindow inherits Window {
 
         // ── 顶栏 ─────────────────────────────────────────────
         Rectangle {
-            height: 40px;
-            background: Theme.surface;
-            Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+            height: ProductDesign.product-header-height;
+            background: ProductDesign.brand-header;
+            Rectangle { y: parent.height - 1px; height: 1px; background: ProductDesign.on-brand-border; }
             HorizontalLayout {
                 padding-left: 12px;
                 padding-right: 8px;
+                padding-top: 6px;
+                padding-bottom: 6px;
                 spacing: 8px;
 
-                Rectangle {
-                    width: 8px;
-                    height: 8px;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: 4px;
-                    background: connected ? Theme.success : Theme.muted;
-                }
                 Text {
                     text: I18n.t("串口调试工具", "Serial Tool");
-                    color: Theme.text;
-                    font-size: 14px;
+                    color: ProductDesign.on-brand;
+                    font-size: ProductDesign.product-title-font-size;
                     font-weight: 700;
+                    height: ProductDesign.toolbar-control-height;
+                    horizontal-stretch: 0;
                     vertical-alignment: center;
                 }
                 Rectangle {
-                    width: 64px;
-                    height: 20px;
-                    y: (parent.height - self.height) / 2;
-                    border-radius: 10px;
-                    background: connected ? #e3f4ea : #fdecec;
-                    border-width: 1px;
-                    border-color: connected ? Theme.success : Theme.danger;
-                    Text {
-                        text: connected ? I18n.t("已连接", "Online") : I18n.t("未连接", "Offline");
-                        color: connected ? Theme.success : Theme.danger;
-                        font-size: 11px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: 100%;
-                        height: 100%;
+                    min-width: 72px;
+                    preferred-width: 72px;
+                    max-width: 72px;
+                    height: ProductDesign.toolbar-control-height;
+                    horizontal-stretch: 0;
+                    Rectangle {
+                        width: 72px;
+                        height: ProductDesign.status-chip-height;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 10px;
+                        background: connected ? Theme.success-soft : Theme.danger-soft;
+                        border-width: 1px;
+                        border-color: connected ? Theme.success : Theme.danger;
+                        Text {
+                            text: connected ? I18n.t("已连接", "Online") : I18n.t("未连接", "Offline");
+                            color: connected ? Theme.success : Theme.danger;
+                            font-size: ProductDesign.font-xs;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: 100%;
+                            height: 100%;
+                        }
                     }
                 }
 
                 Rectangle { horizontal-stretch: 1; }
 
-                CheckBox { text: I18n.t("置顶", "Pin"); checked <=> root.topmost-enabled; }
-                Button {
-                    text: Theme.dark ? I18n.t("浅色", "Light") : I18n.t("深色", "Dark");
-                    clicked => { Theme.dark = !Theme.dark; Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; }
+                Rectangle {
+                    min-width: 62px; preferred-width: 62px; max-width: 62px;
+                    ProductHeaderCheck { fixed-width: 62px; text: I18n.t("置顶", "Pin"); checked <=> root.topmost-enabled; }
                 }
-                CheckBox { text: "English"; checked <=> I18n.en; toggled => { root.english-changed(); } }
-                Button { text: I18n.t("保存参数", "Save Cfg"); clicked => { root.save-settings(); } }
-                Button {
-                    text: quick-panel-visible ? I18n.t("收起命令", "Hide Cmds") : I18n.t("多条命令", "Commands");
-                    clicked => { root.toggle-quick-panel(); }
+                Rectangle {
+                    min-width: 62px; preferred-width: 62px; max-width: 62px;
+                    ProductLanguageSwitch { fixed-width: 62px; en <=> root.lang-en; changed(value) => { root.english-changed(); } }
+                }
+                Rectangle {
+                    min-width: 88px; preferred-width: 88px; max-width: 88px;
+                    ProductThemeSwitch { fixed-width: 88px; dark <=> root.dark; }
+                }
+                Rectangle {
+                    min-width: 76px; preferred-width: 76px; max-width: 76px;
+                    ProductHeaderButton { fixed-width: 76px; text: I18n.t("保存", "Save"); clicked => { root.save-settings(); } }
+                }
+                Rectangle {
+                    min-width: 76px; preferred-width: 76px; max-width: 76px;
+                    ProductHeaderButton {
+                        fixed-width: 76px;
+                        text: quick-panel-visible ? I18n.t("收起", "Hide") : I18n.t("命令", "Cmds");
+                        clicked => { root.toggle-quick-panel(); }
+                    }
                 }
             }
         }
@@ -346,15 +451,23 @@ export component AppWindow inherits Window {
                         padding: 10px;
                         spacing: 6px;
 
-                        CardTitle { text: I18n.t("连接", "Connection"); }
-                        SectionLabel { text: I18n.t("传输方式", "Transport"); }
+                        CardTitle { text: I18n.t("连接", "Connection"); height: 18px; vertical-stretch: 0; }
                         ComboBox {
                             model: [I18n.t("串口", "Serial"), I18n.t("TCP 客户端", "TCP Client"), I18n.t("TCP 服务器", "TCP Server"), "UDP", I18n.t("SSH 串口", "SSH Serial")];
                             current-index <=> root.transport;
+                            height: 30px;
+                            vertical-stretch: 0;
                         }
-                        if root.transport == 0: ComboBox { model: root.ports; current-value <=> root.selected-port; }
+                        if root.transport == 0: ComboBox {
+                            model: root.ports;
+                            current-value <=> root.selected-port;
+                            height: 30px;
+                            vertical-stretch: 0;
+                        }
                         HorizontalLayout {
                             spacing: 6px;
+                            height: 30px;
+                            vertical-stretch: 0;
                             if root.transport == 0: Button { text: I18n.t("刷新", "Refresh"); clicked => { root.refresh-ports(); } }
                             AccentBtn {
                                 text: connected ? I18n.t("断开", "Disconnect") : I18n.t("连接", "Connect");
@@ -364,24 +477,56 @@ export component AppWindow inherits Window {
                             }
                         }
 
+                        SectionLabel { text: I18n.t("工作模式", "Work Mode"); height: 18px; vertical-stretch: 0; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            height: 30px;
+                            vertical-stretch: 0;
+                            AccentBtn {
+                                text: I18n.t("普通调试", "Debug");
+                                filled: root.work-mode == 0;
+                                width: 112px;
+                                clicked => { root.switch-work-mode(0); }
+                            }
+                            AccentBtn {
+                                text: I18n.t("交互终端", "Terminal");
+                                filled: root.work-mode == 1;
+                                width: 112px;
+                                clicked => { root.switch-work-mode(1); }
+                            }
+                        }
+
                         // ---- Serial 参数 ----
                         if root.transport == 0: VerticalLayout {
                             spacing: 6px;
-                            Rectangle { height: 1px; background: Theme.border; }
-                            CardTitle { text: I18n.t("串口参数", "Serial Params"); }
-                            SectionLabel { text: I18n.t("波特率", "Baud Rate"); }
-                            ComboBox { model: root.baud-rates; current-value <=> root.selected-baud; }
-                            HorizontalLayout {
-                                spacing: 6px;
-                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("数据位", "Data"); } ComboBox { width: 112px; model: root.data-bits; current-value <=> root.selected-data-bits; } }
-                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("停止位", "Stop"); } ComboBox { width: 112px; model: root.stop-bits; current-value <=> root.selected-stop-bits; } }
+                            height: 239px;
+                            vertical-stretch: 0;
+                            Rectangle { height: 1px; vertical-stretch: 0; background: Theme.border; }
+                            CardTitle { text: I18n.t("串口参数", "Serial Params"); height: 18px; vertical-stretch: 0; }
+                            SectionLabel { text: I18n.t("波特率", "Baud Rate"); height: 18px; vertical-stretch: 0; }
+                            ComboBox {
+                                model: root.baud-rates;
+                                current-value <=> root.selected-baud;
+                                height: 30px;
+                                vertical-stretch: 0;
                             }
                             HorizontalLayout {
                                 spacing: 6px;
-                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("校验位", "Parity"); } ComboBox { width: 112px; model: root.parities; current-value <=> root.selected-parity; } }
-                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("流控", "Flow"); } ComboBox { width: 112px; model: root.flow-controls; current-value <=> root.selected-flow-control; } }
+                                height: 50px;
+                                vertical-stretch: 0;
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("数据位", "Data"); height: 18px; vertical-stretch: 0; } ComboBox { width: 112px; height: 30px; vertical-stretch: 0; model: root.data-bits; current-value <=> root.selected-data-bits; } }
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("停止位", "Stop"); height: 18px; vertical-stretch: 0; } ComboBox { width: 112px; height: 30px; vertical-stretch: 0; model: root.stop-bits; current-value <=> root.selected-stop-bits; } }
                             }
                             HorizontalLayout {
+                                spacing: 6px;
+                                height: 50px;
+                                vertical-stretch: 0;
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("校验位", "Parity"); height: 18px; vertical-stretch: 0; } ComboBox { width: 112px; height: 30px; vertical-stretch: 0; model: root.parities; current-value <=> root.selected-parity; } }
+                                VerticalLayout { spacing: 2px; width: 112px; SectionLabel { text: I18n.t("流控", "Flow"); height: 18px; vertical-stretch: 0; } ComboBox { width: 112px; height: 30px; vertical-stretch: 0; model: root.flow-controls; current-value <=> root.selected-flow-control; } }
+                            }
+                            HorizontalLayout {
+                                height: 30px;
+                                vertical-stretch: 0;
                                 CheckBox { text: "RTS"; checked <=> root.rts-enabled; }
                                 CheckBox { text: "DTR"; checked <=> root.dtr-enabled; }
                             }
@@ -423,14 +568,26 @@ export component AppWindow inherits Window {
                             LineEdit { text <=> root.ssh-cmd-template; font-size: 11px; }
                         }
 
+                        Rectangle { vertical-stretch: 1; }
                     }
                 }
             }
 
             // 工作区
             VerticalLayout {
-                spacing: 8px;
                 horizontal-stretch: 1;
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    clip: true;
+
+                    VerticalLayout {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
+                        visible: root.work-mode == 0;
+                        spacing: 8px;
 
                 // 接收卡片
                 Card {
@@ -462,11 +619,15 @@ export component AppWindow inherits Window {
                         }
 
                         rx-edit := TextEdit {
+                            private property <int> scroll-request: root.rx-scroll-request;
                             text <=> root.receive-text;
-                            font-family: "Cascadia Mono, Consolas, DejaVu Sans Mono";
+                            font-family: ProductDesign.font-mono;
                             font-size: 12px;
                             wrap: word-wrap;
                             vertical-stretch: 1;
+                            changed scroll-request => {
+                                self.set-selection-offsets(self.text.character-count, self.text.character-count);
+                            }
                         }
                     }
                 }
@@ -497,7 +658,7 @@ export component AppWindow inherits Window {
 
                         TextEdit {
                             text <=> root.send-text;
-                            font-family: "Cascadia Mono, Consolas, DejaVu Sans Mono";
+                            font-family: ProductDesign.font-mono;
                             font-size: 12px;
                             vertical-stretch: 1;
                         }
@@ -531,6 +692,242 @@ export component AppWindow inherits Window {
                         }
                     }
                 }
+
+                }
+
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    visible: root.work-mode == 1;
+                    background: Theme.terminal-surface;
+                    border-color: Theme.terminal-border;
+                    border-width: 1px;
+                    border-radius: 6px;
+                    clip: true;
+
+                    VerticalLayout {
+                        spacing: 0px;
+
+                        Rectangle {
+                            height: 84px;
+                            vertical-stretch: 0;
+                            background: Theme.surface;
+                            VerticalLayout {
+                                padding-left: 8px;
+                                padding-right: 8px;
+                                padding-top: 4px;
+                                padding-bottom: 8px;
+                                spacing: 4px;
+
+                                ToolStrip { HorizontalLayout { spacing: 8px; height: 30px;
+                                    CardTitle { text: I18n.t("交互终端", "Terminal"); vertical-alignment: center; }
+                                    CountBadge { label: "RX"; value: root.rx-count; }
+                                    CountBadge { label: "TX"; value: root.tx-count; tint: Theme.success; }
+                                    ToolCheck {
+                                        text: I18n.t("自动滚动", "Follow");
+                                        checked <=> root.terminal-autoscroll;
+                                        toggled => {
+                                            if self.checked {
+                                                root.scroll-terminal-to-end();
+                                            }
+                                        }
+                                    }
+                                    ToolCheck { text: I18n.t("本地回显", "Local Echo"); checked <=> root.terminal-local-echo; }
+                                    SectionLabel { text: I18n.t("时间戳", "Timestamp"); vertical-alignment: center; height: 30px; }
+                                    ComboBox {
+                                        model: [I18n.t("关闭", "Off"), I18n.t("时分秒", "HMS"), I18n.t("毫秒", "Millis"), I18n.t("完整日期", "Full")];
+                                        current-index <=> root.terminal-timestamp-mode;
+                                        width: 112px;
+                                        height: 30px;
+                                    }
+                                    ToolCheck { text: "ANSI"; checked <=> root.terminal-ansi; }
+                                } }
+
+                                ToolStrip { HorizontalLayout { spacing: 7px; height: 30px;
+                                    SectionLabel { text: I18n.t("编码", "Encoding"); vertical-alignment: center; height: 30px; }
+                                    ComboBox {
+                                        model: ["UTF-8", "GBK", "GB18030", "Latin-1", "ASCII"];
+                                        current-index <=> root.terminal-encoding;
+                                        width: 116px;
+                                        height: 30px;
+                                    }
+                                    SectionLabel { text: I18n.t("换行", "EOL"); vertical-alignment: center; height: 30px; }
+                                    ComboBox {
+                                        model: ["None", "CR", "LF", "CRLF"];
+                                        current-index <=> root.terminal-line-ending;
+                                        width: 104px;
+                                        height: 30px;
+                                    }
+                                    ToolCheck {
+                                        text: I18n.t("记录到文件", "Log to file");
+                                        checked <=> root.receive-to-file;
+                                        toggled => { root.toggle-receive-file(); }
+                                    }
+                                    SectionLabel { text: I18n.t("字号", "Font"); vertical-alignment: center; height: 30px; }
+                                    Button { text: "-"; width: 32px; height: 30px; clicked => { root.terminal-font-size = max(10, root.terminal-font-size - 1); } }
+                                    Text { text: "" + root.terminal-font-size; width: 24px; color: Theme.text; horizontal-alignment: center; vertical-alignment: center; }
+                                    Button { text: "+"; width: 32px; height: 30px; clicked => { root.terminal-font-size = min(28, root.terminal-font-size + 1); } }
+                                    SectionLabel { text: I18n.t("缓存", "Buffer"); vertical-alignment: center; height: 30px; }
+                                    ComboBox {
+                                        model: ["10,000", "50,000", "100,000", "500,000", I18n.t("不限制", "Unlimited")];
+                                        current-index <=> root.terminal-max-lines;
+                                        width: 120px;
+                                        height: 30px;
+                                    }
+                                    ToolButton { text: I18n.t("跳至最新", "Jump to Latest"); clicked => { root.scroll-terminal-to-end(); root.focus-terminal-input(); } }
+                                    ToolButton { text: I18n.t("保存", "Save"); clicked => { root.save-terminal(); root.focus-terminal-input(); } }
+                                    ToolButton { text: I18n.t("清空", "Clear"); clicked => { root.clear-terminal(); root.focus-terminal-input(); } }
+                                } }
+                            }
+                        }
+
+                        Rectangle {
+                            vertical-stretch: 1;
+                            background: Theme.terminal-surface;
+                            terminal-scroll := ScrollView {
+                                private property <int> scroll-request: root.terminal-scroll-request;
+                                x: 0px;
+                                y: 0px;
+                                width: parent.width;
+                                height: parent.height;
+                                horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                                viewport-height: terminal-output.height + 16px;
+                                scrolled => {
+                                    root.terminal-following = self.viewport-y <= min(0px, self.visible-height - self.viewport-height) + 2px;
+                                }
+                                changed scroll-request => {
+                                    self.viewport-y = min(0px, self.visible-height - self.viewport-height);
+                                }
+
+                                terminal-output := TextInput {
+                                    x: 10px;
+                                    y: 8px;
+                                    width: max(100px, terminal-scroll.visible-width - 26px);
+                                    height: max(terminal-scroll.visible-height - 16px, self.preferred-height + 4px);
+                                    text: root.terminal-text;
+                                    read-only: true;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                    font-family: ProductDesign.font-mono;
+                                    font-size: root.terminal-font-size * 1px;
+                                    color: Theme.terminal-text;
+                                    selection-background-color: Theme.terminal-selection;
+                                    selection-foreground-color: Theme.accent-fg;
+                                    key-pressed(event) => {
+                                        if event.text == Key.Return {
+                                            root.focus-terminal-input();
+                                            return accept;
+                                        } else if event.text == Key.UpArrow {
+                                            root.terminal-command = root.terminal-history(-1, root.terminal-command);
+                                            root.focus-terminal-input();
+                                            return accept;
+                                        } else if event.text == Key.DownArrow {
+                                            root.terminal-command = root.terminal-history(1, root.terminal-command);
+                                            root.focus-terminal-input();
+                                            return accept;
+                                        } else if !event.modifiers.control && !event.modifiers.alt && event.text.character-count == 1 {
+                                            root.terminal-command += event.text;
+                                            root.focus-terminal-input();
+                                            return accept;
+                                        }
+                                        return reject;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 64px;
+                            vertical-stretch: 0;
+                            background: Theme.terminal-surface;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    background: Theme.terminal-surface;
+                                    clip: true;
+                                    terminal-input-scroll := ScrollView {
+                                        x: 0px;
+                                        y: 0px;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        horizontal-scrollbar-policy: ScrollBarPolicy.always-off;
+                                        viewport-width: self.visible-width;
+                                        viewport-height: max(self.visible-height, terminal-input.preferred-height);
+
+                                    terminal-input := TextInput {
+                                        private property <int> focus-request: root.terminal-focus-request;
+                                        private property <int> blur-request: root.terminal-blur-request;
+                                        x: 0px;
+                                        y: 0px;
+                                        width: terminal-input-scroll.visible-width;
+                                        height: max(terminal-input-scroll.visible-height, self.preferred-height);
+                                        text <=> root.terminal-command;
+                                        single-line: false;
+                                        wrap: word-wrap;
+                                        color: Theme.terminal-text;
+                                        selection-background-color: Theme.terminal-selection;
+                                        selection-foreground-color: Theme.accent-fg;
+                                        font-family: ProductDesign.font-mono;
+                                        font-size: root.terminal-font-size * 1px;
+                                        vertical-alignment: top;
+                                        text-cursor-width: 1px;
+                                        accessible-label: I18n.t("支持多行粘贴的终端命令", "Terminal command with multiline paste");
+                                        changed focus-request => {
+                                            self.focus();
+                                            self.set-selection-offsets(self.text.character-count, self.text.character-count);
+                                        }
+                                        changed blur-request => { self.clear-focus(); }
+                                        cursor-position-changed(cursor-position) => {
+                                            if cursor-position.y + terminal-input-scroll.viewport-y < 4px {
+                                                terminal-input-scroll.viewport-y = min(0px, -cursor-position.y + 4px);
+                                            } else if cursor-position.y + terminal-input-scroll.viewport-y > terminal-input-scroll.visible-height - 22px {
+                                                terminal-input-scroll.viewport-y = min(0px, terminal-input-scroll.visible-height - cursor-position.y - 22px);
+                                            }
+                                        }
+                                        key-pressed(event) => {
+                                            if event.text == Key.Return {
+                                                root.send-terminal-command(root.terminal-command);
+                                                return accept;
+                                            } else if event.text == Key.UpArrow {
+                                                root.terminal-command = root.terminal-history(-1, root.terminal-command);
+                                                self.set-selection-offsets(root.terminal-command.character-count, root.terminal-command.character-count);
+                                                return accept;
+                                            } else if event.text == Key.DownArrow {
+                                                root.terminal-command = root.terminal-history(1, root.terminal-command);
+                                                self.set-selection-offsets(root.terminal-command.character-count, root.terminal-command.character-count);
+                                                return accept;
+                                            } else if event.text == Key.Escape || (event.modifiers.control && (event.text == "u" || event.text == "U")) {
+                                                root.terminal-command = "";
+                                                return accept;
+                                            } else if event.modifiers.control && (event.text == "l" || event.text == "L") {
+                                                root.clear-terminal();
+                                                return accept;
+                                            } else if event.modifiers.control && (event.text == "+" || event.text == "=") {
+                                                root.terminal-font-size = min(28, root.terminal-font-size + 1);
+                                                return accept;
+                                            } else if event.modifiers.control && event.text == "-" {
+                                                root.terminal-font-size = max(10, root.terminal-font-size - 1);
+                                                return accept;
+                                            } else if event.modifiers.control && event.text == "0" {
+                                                root.terminal-font-size = 14;
+                                                return accept;
+                                            }
+                                            return reject;
+                                        }
+                                    }
+                                }
+                                }
+                            }
+                        }
+                    }
+                }
+                }
             }
         }
 
@@ -543,8 +940,17 @@ export component AppWindow inherits Window {
                 padding-right: 10px;
                 spacing: 10px;
                 Text { text: status-message; color: Theme.muted; font-size: 11px; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; }
-                Text { text: "S " + tx-count; color: Theme.success; font-size: 11px; vertical-alignment: center; }
-                Text { text: "R " + rx-count; color: Theme.accent; font-size: 11px; vertical-alignment: center; }
+                Text { text: root.io-health; color: root.io-loss ? Theme.danger : Theme.muted; font-size: 11px; font-family: ProductDesign.font-mono; vertical-alignment: center; }
+                Text { text: "TX " + tx-count; color: Theme.success; font-size: 11px; vertical-alignment: center; }
+                Text { text: "RX " + rx-count; color: Theme.accent; font-size: 11px; vertical-alignment: center; }
+                if root.work-mode == 1: Text {
+                    text: (root.terminal-encoding == 0 ? "UTF-8" : root.terminal-encoding == 1 ? "GBK" : root.terminal-encoding == 2 ? "GB18030" : root.terminal-encoding == 3 ? "Latin-1" : "ASCII")
+                        + " · "
+                        + (root.terminal-line-ending == 0 ? "None" : root.terminal-line-ending == 1 ? "CR" : root.terminal-line-ending == 2 ? "LF" : "CRLF");
+                    color: Theme.muted;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
                 Text {
                     text: selected-baud + " · " + selected-data-bits + "-" + selected-parity + "-" + selected-stop-bits;
                     color: Theme.muted;

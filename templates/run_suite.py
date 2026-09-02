@@ -29,7 +29,7 @@ def main() -> int:
     me = os.path.basename(__file__).lower()
     tests = sorted(
         f for f in glob.glob(os.path.join(folder, "*.py"))
-        if os.path.basename(f).lower() not in (me, "pcanwork.py")
+        if os.path.basename(f).lower() not in (me, "help.py", "pcanwork.py")
         and not os.path.basename(f).startswith("_"))
 
     if not tests:

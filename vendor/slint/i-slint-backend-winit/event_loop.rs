@@ -234,8 +234,18 @@ impl winit::application::ApplicationHandler<SlintEvent> for EventLoopState {
                 {
                     if size.width == 0 || size.height == 0 {
                         window.renderer.occluded(true);
+                    } else {
+                        window.renderer.occluded(false);
+                        window.request_redraw();
                     }
                 }
+            }
+            #[cfg(target_os = "windows")]
+            WindowEvent::Moved(_) => {
+                // DWM may replace the software surface while a window is partly off-screen or
+                // moved between monitors. Invalidate cached pixels and schedule a complete frame.
+                window.renderer.occluded(false);
+                window.request_redraw();
             }
             WindowEvent::CloseRequested => {
                 self.loop_error = window
@@ -251,6 +261,11 @@ impl winit::application::ApplicationHandler<SlintEvent> for EventLoopState {
                     have_focus
                 };
                 self.loop_error = window.activation_changed(have_focus).err();
+                #[cfg(target_os = "windows")]
+                if have_focus {
+                    window.renderer.occluded(false);
+                    window.request_redraw();
+                }
             }
 
             WindowEvent::KeyboardInput { event, is_synthetic, .. } => {
@@ -508,6 +523,10 @@ impl winit::application::ApplicationHandler<SlintEvent> for EventLoopState {
             }
             WindowEvent::Occluded(x) => {
                 window.renderer.occluded(x);
+
+                if !x {
+                    window.request_redraw();
+                }
 
                 // In addition to the hack done for WindowEvent::Resize, also do it for Occluded so we handle Minimized change
                 window.window_state_event();

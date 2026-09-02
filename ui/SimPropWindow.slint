@@ -1,20 +1,82 @@
-// One-window Slint page split from the original monolithic file.
-import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ListView, ScrollView } from "std-widgets.slint";
+import { I18n, Theme, Icon, TBtn, SignalPickRow, ThemedWindow } from "common.slint";
+import { ProductDesign } from "design-system.slint";
 
-export component SimPropWindow inherits Window {
-    title: I18n.en ? "Control Properties" : "控件属性";
+component SectionHeader inherits Rectangle {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> subtitle;
+
+    height: 42px;
+    background: Theme.panel2.with-alpha(0.82);
+    border-top-left-radius: ProductDesign.radius-sm;
+    border-top-right-radius: ProductDesign.radius-sm;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 9px;
+        Rectangle {
+            width: 17px;
+            vertical-stretch: 1;
+            Icon {
+                name: root.icon; clr: Theme.accent; width: 17px; height: 17px;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+        VerticalLayout {
+            spacing: 0px;
+            Text { text: root.title; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; }
+            Text { text: root.subtitle; color: Theme.text-dim; font-size: Theme.fs-sm; overflow: elide; vertical-alignment: center; }
+        }
+    }
+}
+
+component FieldLabel inherits Text {
+    in property <string> label;
+    text: label;
+    width: 76px;
+    color: Theme.text-dim;
+    font-size: Theme.fs;
+    vertical-alignment: center;
+}
+
+component CompactEdit inherits LineEdit {
+    width: 112px;
+    horizontal-stretch: 0;
+    height: Theme.ctrl-h;
+}
+
+export component SimPropWindow inherits ThemedWindow {
+    title: I18n.en ? "PcanWork - Simulation Control Properties" : "PcanWork - 仿真控件属性";
     icon: @image-url("logo.svg");
-    preferred-width: 320px;
-    preferred-height: 600px;
+    preferred-width: 680px;
+    preferred-height: 720px;
+    min-width: 560px;
+    min-height: 560px;
     background: Theme.bg;
+    default-font-family: Theme.sans;
 
+    in property <[string]> dbc-files;
     in property <[string]> dbc-signals;
+    in property <[SignalPickRow]> binding-tree-rows;
+    in-out property <bool> binding-tree-open: false;
+    in-out property <string> binding-tree-filter: "";
+    in-out property <int> binding-tree-cursor: -1;
+    in property <[string]> frame-signals;
     in property <bool> has-sel: false;
     in-out property <string> p-name: "";
+    in-out property <string> p-dbc: "";
+    in-out property <int> p-dbc-index: 0;
     in-out property <string> p-frame: "100";
+    in-out property <bool> p-extended: false;
+    in-out property <bool> p-fd: false;
+    in-out property <bool> p-brs: false;
+    in-out property <string> p-dlc: "8";
     in-out property <string> p-signal: "";
+    in-out property <int> p-signal-index: -1;
     in-out property <string> p-bind: "";
+    in-out property <bool> p-binding-ok: true;
+    in-out property <string> p-binding-error: "";
     in-out property <int> p-kind: 0;
     in-out property <string> p-min: "0";
     in-out property <string> p-max: "100";
@@ -30,36 +92,637 @@ export component SimPropWindow inherits Window {
     in-out property <string> p-chan: "1";
     in-out property <string> p-pressval: "1";
     in-out property <string> p-releaseval: "0";
+    in-out property <string> p-trace-signals: "";
+    in-out property <int> p-extra-signal-1: 0;
+    in-out property <int> p-extra-signal-2: 0;
+    in-out property <int> p-extra-signal-3: 0;
+    in-out property <string> p-trace-window: "30";
+    in-out property <bool> p-trace-auto: true;
+    in-out property <string> p-alarm-message: "";
+    in-out property <string> p-image-path: "";
     callback prop-apply();
+    callback prop-dbc(int);
     callback prop-signal(int);
+    callback prop-extra-signal(int, int);
     callback prop-remove();
+    callback prop-image();
+    callback binding-tree-opened();
+    callback binding-tree-filter-changed(string);
+    callback binding-tree-row-clicked(int);
+    callback binding-tree-choose(int);
+
+    private property <bool> has-can-binding: root.p-kind != 4 && root.p-kind != 16;
+    private property <bool> has-range: root.p-kind == 1 || root.p-kind == 2 || root.p-kind == 6
+        || root.p-kind == 7 || root.p-kind == 9 || root.p-kind == 10 || root.p-kind == 11
+        || root.p-kind == 12 || root.p-kind == 13 || root.p-kind == 15;
+    private property <bool> has-threshold: root.p-kind == 0 || root.p-kind == 14;
+    private property <bool> has-text-align: root.p-kind == 3 || root.p-kind == 4;
 
     VerticalLayout {
-        padding: 10px; spacing: 6px;
-        Text { text: I18n.en ? "Control Properties" : "控件属性"; font-weight: 700; font-size: Theme.fs; color: Theme.text; }
-        if !root.has-sel: Text { text: I18n.en ? "Double-click a control on the canvas to edit. All controls share this window." : "双击画布上的控件以编辑其属性。所有控件共用此窗口。"; color: Theme.text-dim; font-size: Theme.fs-sm; wrap: word-wrap; }
+        spacing: 0px;
+
+        Rectangle {
+            height: 68px;
+            background: ProductDesign.brand-header;
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                spacing: 11px;
+                Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: ProductDesign.radius-md;
+                    background: ProductDesign.on-brand-faint;
+                    border-width: 1px;
+                    border-color: ProductDesign.on-brand-border;
+                    Icon {
+                        name: "layout";
+                        clr: ProductDesign.on-brand;
+                        width: 21px;
+                        height: 21px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+                VerticalLayout {
+                    spacing: 2px;
+                    Text {
+                        text: root.has-sel && root.p-name != ""
+                            ? root.p-name
+                            : (I18n.en ? "Control properties" : "控件属性");
+                        color: ProductDesign.on-brand;
+                        font-size: ProductDesign.font-lg;
+                        font-weight: 700;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.has-sel
+                            ? (I18n.en ? "Changes are stored with the main .pcprj project"
+                                : "属性修改随主工程 .pcprj 一并保存")
+                            : (I18n.en ? "Select a control from the simulation canvas"
+                                : "请从仿真画布选择控件");
+                        color: ProductDesign.on-brand-muted;
+                        font-size: ProductDesign.font-xs;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        if !root.has-sel: Rectangle {
+            background: Theme.bg;
+            Rectangle {
+                width: parent.width - 32px;
+                height: 190px;
+                x: 16px;
+                y: 20px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: ProductDesign.radius-md;
+                VerticalLayout {
+                    padding: 22px;
+                    spacing: 10px;
+                    Rectangle {
+                        height: 34px;
+                        Icon {
+                            name: "layout";
+                            clr: Theme.accent;
+                            width: 34px;
+                            height: 34px;
+                            x: (parent.width - self.width) / 2;
+                        }
+                    }
+                    Text {
+                        text: I18n.en ? "No control selected" : "尚未选择控件";
+                        color: Theme.text;
+                        font-size: ProductDesign.font-lg;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: I18n.en
+                            ? "Double-click a control on the canvas to edit its binding, range, geometry, and behavior."
+                            : "双击画布控件，可编辑信号绑定、量程、几何位置和交互行为。";
+                        color: Theme.text-dim;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
         if root.has-sel: ScrollView {
             VerticalLayout {
-                spacing: 6px;
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Name" : "名称"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-name; edited(v) => { root.p-name = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Signal" : "信号"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: root.dbc-signals; selected(v) => { root.prop-signal(self.current-index); } } }
-                Text { text: (I18n.en ? "Bound: " : "当前绑定: ") + root.p-bind; font-size: Theme.fs-sm; color: Theme.accent; wrap: word-wrap; }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Channel" : "通道"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; placeholder-text: I18n.en ? "CAN ch (from 1)" : "CAN 通道(1起)"; text: root.p-chan; edited(v) => { root.p-chan = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "ID:0x" : "帧ID:0x"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-frame; edited(v) => { root.p-frame = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Sig name" : "信号名"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; placeholder-text: I18n.en ? "empty=byte0" : "空=byte0"; text: root.p-signal; edited(v) => { root.p-signal = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Pos X/Y" : "位置 X/Y"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-x; edited(v) => { root.p-x = v; } } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-y; edited(v) => { root.p-y = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Size W/H" : "大小 W/H"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-w; edited(v) => { root.p-w = v; } } LineEdit { width: 92px; height: Theme.ctrl-h; text: root.p-h; edited(v) => { root.p-h = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Min" : "最小值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-min; edited(v) => { root.p-min = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Max" : "最大值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-max; edited(v) => { root.p-max = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Thresh" : "阈值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-threshold; edited(v) => { root.p-threshold = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Wave" : "波形"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: I18n.en ? ["Const", "Ramp", "Sine"] : ["恒定", "斜坡", "正弦"]; current-index <=> root.p-genmode; } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Step" : "步长"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-step; edited(v) => { root.p-step = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Period" : "周期ms"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-period; edited(v) => { root.p-period = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Press" : "按下值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-pressval; edited(v) => { root.p-pressval = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Release" : "释放值"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } LineEdit { height: Theme.ctrl-h; text: root.p-releaseval; edited(v) => { root.p-releaseval = v; } } }
-                HorizontalLayout { spacing: 6px; Text { text: I18n.en ? "Align" : "对齐"; width: 56px; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; } ComboBox { height: Theme.ctrl-h; model: I18n.en ? ["Left", "Center", "Right"] : ["左", "中", "右"]; current-index <=> root.p-align; } }
-                HorizontalLayout { spacing: 6px; Button { text: I18n.en ? "Apply" : "应用"; clicked => { root.prop-apply(); } } Button { text: I18n.en ? "Delete" : "删除控件"; clicked => { root.prop-remove(); } } }
+                padding: 12px;
+                spacing: 10px;
+
+                Rectangle {
+                    height: root.has-can-binding ? 180px : 102px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "file";
+                            title: I18n.en ? "Identity & DBC signal" : "标识与 DBC 信号";
+                            subtitle: I18n.en ? "Explicit file and signal binding" : "逐控件明确指定文件与信号";
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Name" : "名称"; }
+                                LineEdit { horizontal-stretch: 1; height: Theme.ctrl-h; text: root.p-name; edited(value) => { root.p-name = value; } }
+                            }
+                            if root.has-can-binding: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "DBC file" : "DBC 文件"; }
+                                ComboBox {
+                                    horizontal-stretch: 1;
+                                    height: Theme.ctrl-h;
+                                    model: root.dbc-files;
+                                    current-index <=> root.p-dbc-index;
+                                    selected => { root.prop-dbc(self.current-index); }
+                                }
+                            }
+                            if root.has-can-binding: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "DBC signal" : "DBC 信号"; }
+                                LineEdit {
+                                    horizontal-stretch: 1;
+                                    height: Theme.ctrl-h;
+                                    text: root.p-signal;
+                                    read-only: true;
+                                    placeholder-text: I18n.en ? "Select from the DBC tree" : "从 DBC 树选择信号";
+                                }
+                                TBtn {
+                                    text: I18n.en ? "Browse tree" : "树状选择";
+                                    clicked => {
+                                        root.binding-tree-open = true;
+                                        root.binding-tree-opened();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if root.has-can-binding: Rectangle {
+                    height: 194px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "channel";
+                            title: I18n.en ? "CAN binding" : "CAN 绑定";
+                            subtitle: root.p-bind;
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Channel" : "通道"; }
+                                CompactEdit { width: 64px; placeholder-text: "1"; text: root.p-chan; edited(value) => { root.p-chan = value; } }
+                                FieldLabel { label: I18n.en ? "Frame ID" : "帧 ID"; width: 52px; }
+                                CompactEdit { width: 96px; placeholder-text: "100"; text: root.p-frame; edited(value) => { root.p-frame = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 12px;
+                                FieldLabel { label: I18n.en ? "Frame" : "帧属性"; }
+                                CheckBox { text: "EXT"; checked <=> root.p-extended; }
+                                CheckBox { text: "CAN FD"; checked <=> root.p-fd; toggled => { if (!self.checked) { root.p-brs = false; } } }
+                                CheckBox { text: "BRS"; enabled: root.p-fd; checked <=> root.p-brs; }
+                                Text { text: "DLC"; color: Theme.text-dim; font-size: ProductDesign.font-sm; vertical-alignment: center; }
+                                CompactEdit { width: 58px; placeholder-text: "8"; text: root.p-dlc; edited(value) => { root.p-dlc = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            Text {
+                                text: root.p-binding-ok
+                                    ? ((I18n.en ? "Current: " : "当前：") + root.p-bind)
+                                    : ((I18n.en ? "Invalid configuration: " : "配置无效：") + root.p-binding-error);
+                                color: root.p-binding-ok ? Theme.accent : Theme.warn;
+                                font-size: ProductDesign.font-xs;
+                                height: 34px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    height: root.has-text-align ? 180px : 140px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "layout";
+                            title: I18n.en ? "Geometry & typography" : "几何与排版";
+                            subtitle: I18n.en ? "Canvas position, size, and alignment" : "画布位置、尺寸和文字对齐";
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Position" : "位置 X / Y"; }
+                                CompactEdit { placeholder-text: "X"; text: root.p-x; edited(value) => { root.p-x = value; } }
+                                CompactEdit { placeholder-text: "Y"; text: root.p-y; edited(value) => { root.p-y = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Size" : "尺寸 W / H"; }
+                                CompactEdit { placeholder-text: "W"; text: root.p-w; edited(value) => { root.p-w = value; } }
+                                CompactEdit { placeholder-text: "H"; text: root.p-h; edited(value) => { root.p-h = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            if root.has-text-align: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Text align" : "文字对齐"; }
+                                ComboBox {
+                                    width: 180px;
+                                    horizontal-stretch: 0;
+                                    height: Theme.ctrl-h;
+                                    model: I18n.en ? ["Left", "Center", "Right"] : ["左对齐", "居中", "右对齐"];
+                                    current-index <=> root.p-align;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+
+                if root.has-range || root.has-threshold: Rectangle {
+                    height: root.has-range && root.has-threshold ? 164px : 104px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "curve";
+                            title: I18n.en ? "Value range" : "数值范围";
+                            subtitle: I18n.en ? "Scaling and indicator threshold" : "量程缩放与指示灯阈值";
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            if root.has-range: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Min / Max" : "最小 / 最大"; }
+                                CompactEdit { text: root.p-min; edited(value) => { root.p-min = value; } }
+                                CompactEdit { text: root.p-max; edited(value) => { root.p-max = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            if root.has-threshold: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Threshold" : "指示阈值"; }
+                                CompactEdit { text: root.p-threshold; edited(value) => { root.p-threshold = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+
+                if root.p-kind == 7: Rectangle {
+                    height: 164px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "curve";
+                            title: I18n.en ? "Signal generator" : "信号发生器";
+                            subtitle: I18n.en ? "Waveform, increment, and period" : "波形、步长与发送周期";
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Waveform" : "波形"; }
+                                ComboBox {
+                                    width: 180px;
+                                    horizontal-stretch: 0;
+                                    height: Theme.ctrl-h;
+                                    model: I18n.en ? ["Constant", "Ramp", "Sine"] : ["恒定", "斜坡", "正弦"];
+                                    current-index <=> root.p-genmode;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Step / ms" : "步长 / 周期"; }
+                                CompactEdit { text: root.p-step; edited(value) => { root.p-step = value; } }
+                                CompactEdit { text: root.p-period; edited(value) => { root.p-period = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+
+                if root.p-kind == 9 || root.p-kind == 13 || root.p-kind == 14: Rectangle {
+                    height: root.p-kind == 9 ? 260px : 180px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "curve";
+                            title: root.p-kind == 9
+                                ? (I18n.en ? "Real-time trend" : "实时趋势图")
+                                : root.p-kind == 13
+                                    ? (I18n.en ? "Bar chart series" : "柱状图信号")
+                                    : (I18n.en ? "Status group signals" : "状态灯组信号");
+                            subtitle: I18n.en ? "CAN channel, DBC file and frame are inherited from the primary binding" : "继承主绑定的 CAN 通道、DBC 文件和报文 ID";
+                        }
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 7px;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Signal 2" : "信号 2"; }
+                                ComboBox { horizontal-stretch: 1; height: Theme.ctrl-h; model: root.frame-signals; current-index <=> root.p-extra-signal-1; selected => { root.prop-extra-signal(0, self.current-index); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Signal 3" : "信号 3"; }
+                                ComboBox { horizontal-stretch: 1; height: Theme.ctrl-h; model: root.frame-signals; current-index <=> root.p-extra-signal-2; selected => { root.prop-extra-signal(1, self.current-index); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Signal 4" : "信号 4"; }
+                                ComboBox { horizontal-stretch: 1; height: Theme.ctrl-h; model: root.frame-signals; current-index <=> root.p-extra-signal-3; selected => { root.prop-extra-signal(2, self.current-index); } }
+                            }
+                            if root.p-kind == 9: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Window (s)" : "时间窗(s)"; }
+                                CompactEdit { text: root.p-trace-window; edited(value) => { root.p-trace-window = value; } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            if root.p-kind == 9: HorizontalLayout {
+                                spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Y range" : "纵轴量程"; }
+                                CheckBox { text: I18n.en ? "Auto range (off uses Min / Max)" : "自动量程（关闭时使用最小/最大值）"; checked <=> root.p-trace-auto; }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                        }
+                    }
+                }
+
+                if root.p-kind == 15: Rectangle {
+                    height: 128px;
+                    background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: ProductDesign.radius-sm;
+                    VerticalLayout { spacing: 0px;
+                        SectionHeader { icon: "record"; title: I18n.en ? "Alarm card" : "报警卡片"; subtitle: I18n.en ? "Min / Max define the allowed range" : "最小/最大值定义正常范围"; }
+                        HorizontalLayout { padding: 10px; spacing: 8px;
+                            FieldLabel { label: I18n.en ? "Message" : "报警信息"; }
+                            LineEdit { width: 230px; horizontal-stretch: 0; height: Theme.ctrl-h; text: root.p-alarm-message; edited(value) => { root.p-alarm-message = value; } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+
+                if root.p-kind == 16: Rectangle {
+                    height: 142px;
+                    background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: ProductDesign.radius-sm;
+                    VerticalLayout { spacing: 0px;
+                        SectionHeader { icon: "file"; title: I18n.en ? "Device image / background" : "设备图片 / 背景"; subtitle: I18n.en ? "PNG, JPG, BMP, SVG" : "支持 PNG、JPG、BMP、SVG"; }
+                        VerticalLayout { padding: 10px; spacing: 7px;
+                            HorizontalLayout { spacing: 8px;
+                                FieldLabel { label: I18n.en ? "Image" : "图片文件"; }
+                                Button { width: 96px; horizontal-stretch: 0; text: I18n.en ? "Browse…" : "浏览…"; clicked => { root.prop-image(); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            Text { text: root.p-image-path == "" ? (I18n.en ? "No image selected" : "尚未选择图片") : root.p-image-path; color: Theme.text-dim; font-size: ProductDesign.font-xs; overflow: elide; }
+                        }
+                    }
+                }
+
+                if root.p-kind == 5 || root.p-kind == 8: Rectangle {
+                    height: 128px;
+                    background: Theme.panel;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-sm;
+                    VerticalLayout {
+                        spacing: 0px;
+                        SectionHeader {
+                            icon: "start";
+                            title: root.p-kind == 8
+                                ? (I18n.en ? "Switch behavior" : "开关行为")
+                                : (I18n.en ? "Button behavior" : "按钮行为");
+                            subtitle: root.p-kind == 8
+                                ? (I18n.en ? "Values sent for on and off states" : "开启和关闭状态发送的数值")
+                                : (I18n.en ? "Values sent on press and release" : "按下和释放时发送的数值");
+                        }
+                        HorizontalLayout {
+                            padding: 10px;
+                            spacing: 8px;
+                            FieldLabel {
+                                label: root.p-kind == 8
+                                    ? (I18n.en ? "On / off" : "开启 / 关闭")
+                                    : (I18n.en ? "Press / release" : "按下 / 释放");
+                            }
+                            CompactEdit { text: root.p-pressval; edited(value) => { root.p-pressval = value; } }
+                            CompactEdit { text: root.p-releaseval; edited(value) => { root.p-releaseval = value; } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+
+            }
+        }
+        if root.has-sel: Rectangle {
+            height: 58px;
+            background: Theme.panel;
+            Rectangle { y: 0px; width: 100%; height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 8px;
+                Button { text: I18n.en ? "Delete control" : "删除控件"; clicked => { root.prop-remove(); } }
+                Rectangle { horizontal-stretch: 1; }
+                TBtn { primary: true; text: I18n.en ? "Apply changes" : "应用修改"; clicked => { root.prop-apply(); } }
             }
         }
     }
-}
+
+    if root.binding-tree-open: Rectangle {
+            z: 100;
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            background: Theme.scrim;
+            TouchArea { clicked => { } }
+
+            Rectangle {
+                width: Math.min(parent.width - 28px, 760px);
+                height: parent.height - 48px;
+                x: (parent.width - self.width) / 2;
+                y: 24px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: ProductDesign.radius-md;
+                drop-shadow-color: Theme.shadow;
+                drop-shadow-blur: 18px;
+                drop-shadow-offset-y: 5px;
+
+                VerticalLayout {
+                    spacing: 0px;
+                    Rectangle {
+                        height: 54px;
+                        background: Theme.panel2;
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Icon { name: "database"; clr: Theme.accent; width: 18px; height: 18px; }
+                            VerticalLayout {
+                                spacing: 0px;
+                                Text { text: I18n.en ? "DBC signal tree" : "DBC 信号树"; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; }
+                                Text { text: I18n.en ? "DBC file / message / signal" : "DBC 文件 / 报文 / 信号"; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            TBtn { text: "×"; clicked => { root.binding-tree-open = false; } }
+                        }
+                    }
+                    Rectangle {
+                        height: 44px;
+                        background: Theme.panel;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            LineEdit {
+                                horizontal-stretch: 1;
+                                height: Theme.ctrl-h;
+                                text: root.binding-tree-filter;
+                                placeholder-text: I18n.en ? "Search DBC, message, ID or signal" : "搜索 DBC、报文、ID 或信号";
+                                edited(value) => {
+                                    root.binding-tree-filter = value;
+                                    root.binding-tree-filter-changed(value);
+                                }
+                            }
+                            TBtn {
+                                text: I18n.en ? "Clear" : "清空";
+                                clicked => {
+                                    root.binding-tree-filter = "";
+                                    root.binding-tree-filter-changed("");
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 26px;
+                        background: Theme.header;
+                        HorizontalLayout {
+                            Rectangle { width: 430px; Text { text: I18n.en ? "DBC / Message / Signal" : "DBC / 报文 / 信号"; x: 10px; color: Theme.text; font-size: Theme.fs-sm; font-weight: 700; vertical-alignment: center; } }
+                            Rectangle { width: 1px; background: Theme.border; }
+                            Rectangle { horizontal-stretch: 1; Text { text: I18n.en ? "Details" : "详细信息"; x: 10px; color: Theme.text; font-size: Theme.fs-sm; font-weight: 700; vertical-alignment: center; } }
+                        }
+                    }
+                    ListView {
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        for row[i] in root.binding-tree-rows: Rectangle {
+                            height: Theme.big ? 31px : 27px;
+                            background: root.binding-tree-cursor == i
+                                ? Theme.sel
+                                : (row.selected ? Theme.accent-soft : (pick-ta.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra)));
+                            pick-ta := TouchArea {
+                                clicked => {
+                                    root.binding-tree-cursor = i;
+                                    root.binding-tree-row-clicked(i);
+                                }
+                                double-clicked => {
+                                    root.binding-tree-cursor = i;
+                                    root.binding-tree-choose(i);
+                                }
+                            }
+                            HorizontalLayout {
+                                spacing: 0px;
+                                Rectangle {
+                                    width: 430px;
+                                    clip: true;
+                                    HorizontalLayout {
+                                        padding-left: 10px + row.level * 18px;
+                                        padding-right: 6px;
+                                        spacing: 6px;
+                                        Text {
+                                            width: 14px;
+                                            text: row.expandable ? (row.expanded ? "−" : "+") : "";
+                                            color: Theme.text-dim;
+                                            font-family: Theme.mono;
+                                            font-size: Theme.fs;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                        Icon {
+                                            name: row.kind == "dbc" ? "database" : (row.kind == "message" ? "send" : "curve");
+                                            clr: row.kind == "signal" ? Theme.accent : Theme.text-dim;
+                                            width: 15px;
+                                            height: 15px;
+                                        }
+                                        Text { text: row.name; color: Theme.text; font-size: Theme.fs; vertical-alignment: center; overflow: elide; }
+                                    }
+                                }
+                                Rectangle { width: 1px; background: Theme.border; }
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    clip: true;
+                                    Text { text: row.desc; x: 9px; width: parent.width - 14px; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; }
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        height: 48px;
+                        background: Theme.panel2;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Text {
+                                text: I18n.en ? "Double-click a signal to bind it" : "双击信号即可绑定";
+                                color: Theme.text-dim;
+                                font-size: Theme.fs-sm;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
+                            TBtn { text: I18n.en ? "Cancel" : "取消"; clicked => { root.binding-tree-open = false; } }
+                            TBtn {
+                                text: I18n.en ? "Bind selected" : "绑定所选";
+                                primary: true;
+                                clicked => { root.binding-tree-choose(root.binding-tree-cursor); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }

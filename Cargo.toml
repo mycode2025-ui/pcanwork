@@ -1,41 +1,66 @@
 [package]
 name = "pcanwork"
-version = "0.1.11"
+version = "0.3.2"
 edition = "2024"
+rust-version = "1.88"
 
-# 工作区: pcanwork(本包) + serial(串口工具) + modbus(Modbus 工具)。
-# 一次构建产出多个独立 exe, 不打包进同一个。
+# 工作区：pcanwork（本包）+ serial（串口工具）+ modbus（Modbus 工具）。
+# 一次构建产出多个独立 exe，不打包进同一个程序。
 [workspace]
-members = ["serial", "modbus"]
+members = ["serial", "modbus", "crates/pcanwork-core", "crates/pcanwork-ui-features"]
+exclude = ["vendor/slint/i-slint-core", "vendor/slint/i-slint-backend-winit"]
 
-# devmcp: 仅本地验证用 —— 启用 Slint 内置 MCP server(SLINT_MCP_PORT 运行时开启)。
-# 绝不进发布包(会内嵌可驱动 UI 的本机服务 + 切到软件渲染)。用法: cargo run --features devmcp
+# devmcp：仅本地验证使用，启用 Slint 内置 MCP server。
+# 不进入发布包。用法：cargo run --features devmcp
 [features]
 devmcp = ["slint/mcp"]
 
 [dependencies]
-can-dbc = "9.1.0"
+pcanwork-core = { path = "crates/pcanwork-core" }
+pcanwork-ui-features = { path = "crates/pcanwork-ui-features" }
 chrono = "0.4"
-flate2 = "1.1.9"
+crossbeam-channel = "0.5"
+arboard = "3.4"
+ed25519-dalek = "2.2"
 libloading = "0.9.0"
 rfd = "0.17.2"
-raw-window-handle = "0.6"  # 取窗口 HWND 做置顶(SetWindowPos HWND_TOPMOST)
+raw-window-handle = "0.6"  # 获取窗口 HWND，用于置顶
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "renderer-femtovg", "accessibility", "raw-window-handle-06"] }
+semver = "1"
+sha2 = "0.10"
+slint = { version = "1.17.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "renderer-femtovg", "accessibility", "raw-window-handle-06"] }
+ureq = { version = "3.1", default-features = false, features = ["json", "native-tls", "gzip", "win-system-proxy"] }
 
 [build-dependencies]
 embed-manifest = "1.5.0"
-slint-build = "1.17.0"
+slint-build = "1.17.1"
 winresource = "0.1"
 
-# 体积优化(工作区根 profile, 对 pcanwork 与 serial 同时生效)
+# 工作区统一使用包含产品补丁的 vendored Slint。
 [patch.crates-io]
+i-slint-core = { path = "vendor/slint/i-slint-core" }
 i-slint-backend-winit = { path = "vendor/slint/i-slint-backend-winit" }
 
 [profile.release]
-opt-level = "z"
-lto = true
+opt-level = 3
+lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+# Daily distributable builds. This profile deliberately has its own cache so
+# switching between fast packages and archival ThinLTO releases does not
+# invalidate every compiled crate.
+[profile.release-fast]
+inherits = "release"
+opt-level = 1
+lto = false
+codegen-units = 64
+incremental = true
+
+# Generated Slint code dominates UI-only packages. The fast profile trades
+# runtime optimization for iteration speed; archival releases stay optimized.
+[profile.release-fast.package.pcanwork]
+opt-level = 0
+codegen-units = 64

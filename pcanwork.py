@@ -234,8 +234,8 @@ class Session:
         (data_baud only matters when fd=True). channel_index selects the channel
         within the device (PCAN: 0->USBBUS1 ... 3->USBBUS4).
 
-        Returns True if the bus came up (when wait=True). A missing card or
-        driver DLL yields False — check the app's log pane for the exact reason."""
+        Returns True if the requested software channel came up. A missing card
+        or driver raises ConnectError with the backend's latest diagnostic."""
         cfg = {
             "sw_channel": sw_channel, "is_fd": fd, "device_type": device_type,
             "device_index": device_index, "channel_index": channel_index,
@@ -244,7 +244,7 @@ class Session:
         }
         self.connect_channels([cfg])
         if wait:
-            return self.wait_connected(timeout=timeout)
+            return self.wait_connected_channels([sw_channel], timeout=timeout)
         return True
 
     def connect_devices(self, devices, wait: bool = True, timeout: float = 5.0) -> bool:
@@ -261,9 +261,11 @@ class Session:
             pcan.set_periodic(handle=1, ch=2, id=0x280, data=..., period_ms=100)
         and read back per card with last(ch=N, ...) / wait_for(ch=N, ...).
         Returns True if the bus(es) came up (when wait=True)."""
-        self.connect_channels(list(devices))
+        devices = list(devices)
+        self.connect_channels(devices)
         if wait:
-            return self.wait_connected(timeout=timeout)
+            expected = [int(device.get("sw_channel", 1)) for device in devices]
+            return self.wait_connected_channels(expected, timeout=timeout)
         return True
 
     def connect_configured(self, wait: bool = True, timeout: float = 5.0) -> int:
@@ -274,7 +276,7 @@ class Session:
         number of configured channels (0 means none configured in the GUI)."""
         r = self._call("connect_configured")
         if wait:
-            self.wait_connected(timeout=timeout)
+            self.wait_connected_channels(r.get("expected_channels", []), timeout=timeout)
         return int(r.get("channels", 0))
 
     def disconnect(self):
@@ -288,6 +290,10 @@ class Session:
 
     def status(self) -> dict:
         return self._call("status")
+
+    def logs(self) -> List[str]:
+        """Recent application/CAN backend log lines, oldest first."""
+        return list(self._call("logs").get("lines", []))
 
     def console_text(self) -> str:
         """Current CAN message-log (printf-over-CAN) text — the reassembled lines
@@ -318,6 +324,29 @@ class Session:
             time.sleep(0.05)
         return False
 
+    def wait_connected_channels(self, expected, timeout: float = 5.0) -> bool:
+        """Wait until the backend reports exactly the requested software channels.
+
+        A partial connection is an error: configured rows are not counted as
+        connected hardware. The exception includes the backend's last useful
+        diagnostic so automation cannot silently continue on fewer channels.
+        """
+        expected_set = {int(ch) for ch in expected}
+        deadline = time.monotonic() + timeout
+        last = {}
+        while time.monotonic() < deadline:
+            last = self.status()
+            actual = {int(item.get("ch", 0)) for item in last.get("channels", [])}
+            if last.get("connected") and actual == expected_set:
+                return True
+            time.sleep(0.05)
+        actual = {int(item.get("ch", 0)) for item in last.get("channels", [])}
+        recent = self.logs()
+        detail = recent[-1] if recent else last.get("last_log", "")
+        raise ConnectError(
+            f"CAN channel connection incomplete: expected={sorted(expected_set)}, "
+            f"actual={sorted(actual)}; {detail}")
+
     # ---- send ----
     def send(self, ch: int, id: int, data, ext=False, fd=False, brs=False, remote=False):
         _check_ch(ch)
@@ -325,12 +354,50 @@ class Session:
             "ch": ch, "id": id, "data": list(bytes(data)),
             "ext": ext, "fd": fd, "brs": brs, "remote": remote})
 
+    def send_batch(self, frames: List[dict], repeat: int = 1) -> int:
+        """Submit many CAN frames in one IPC request.
+
+        Each item accepts ch/id/data and optional ext/fd/brs/remote. The app
+        validates the complete batch before queuing it, so invalid input never
+        causes a partially submitted batch. Returns the number of queued frame
+        transmissions, including repeats.
+        """
+        if not isinstance(frames, list):
+            raise TypeError("frames must be a list of dictionaries")
+        if repeat < 1:
+            raise ValueError("repeat must be >= 1")
+        normalized = []
+        for index, frame in enumerate(frames):
+            if not isinstance(frame, dict):
+                raise TypeError(f"frames[{index}] must be a dictionary")
+            ch = int(frame.get("ch", 1))
+            _check_ch(ch)
+            normalized.append({
+                "ch": ch,
+                "id": int(frame.get("id", 0)),
+                "data": list(bytes(frame.get("data", b""))),
+                "ext": bool(frame.get("ext", False)),
+                "fd": bool(frame.get("fd", False)),
+                "brs": bool(frame.get("brs", False)),
+                "remote": bool(frame.get("remote", False)),
+            })
+        result = self._call("send_batch", {"frames": normalized, "repeat": int(repeat)})
+        return int(result.get("queued", 0))
+
     def send_signals(self, id: int, signals: Dict[str, float], ch: int = 1,
                      ext=False, fd=False):
-        r = self._call("encode", {"id": id, "signals": signals})
+        self.send(ch, id, self.encode(id, signals, ext=ext), ext=ext, fd=fd)
+
+    def encode(self, id: int, signals: Dict[str, float], ext=False) -> bytes:
+        """Encode named DBC signals and return the complete payload.
+
+        Useful with send_batch() when several channels must transmit DBC-based
+        frames atomically through one IPC request.
+        """
+        r = self._call("encode", {"id": id, "signals": signals, "ext": ext})
         if not r.get("present"):
-            raise RemoteError("NO_ENCODE", f"cannot encode 0x{id:X}")
-        self.send(ch, id, bytes(r["data"]), ext=ext, fd=fd)
+            raise RemoteError("NO_ENCODE", f"cannot encode 0x{id:X} ext={bool(ext)}")
+        return bytes(r["data"])
 
     def set_periodic(self, handle: int, ch: int, id: int, data, period_ms: int,
                      repeat: int = -1, ext=False, fd=False, brs=False, remote=False):
@@ -344,23 +411,27 @@ class Session:
         self._call("stop_periodic", {"handle": handle})
 
     # ---- read / decode (served from app snapshot, no UI-tick wait) ----
-    def last(self, ch: int, id: int, dir: str = "rx") -> Optional[Frame]:
+    def last(self, ch: int, id: int, dir: str = "rx", ext=False) -> Optional[Frame]:
         _check_ch(ch)
-        r = self._call("get_last", {"ch": ch, "id": id, "dir": dir})
+        r = self._call("get_last", {
+            "ch": ch, "id": id, "dir": dir, "ext": ext})
         if not r.get("present"):
             return None
         return Frame(ch=ch, id=id, data=bytes(r.get("data", [])),
                      t=r.get("t", 0.0), count=r.get("count", 0),
                      ext=r.get("ext", False), tx=(dir == "tx"))
 
-    def decode(self, id: int, data) -> Dict[str, float]:
-        r = self._call("decode", {"id": id, "data": list(bytes(data))})
+    def decode(self, id: int, data, ext=False) -> Dict[str, float]:
+        r = self._call("decode", {
+            "id": id, "data": list(bytes(data)), "ext": ext})
         return {s["name"]: s["physical"] for s in r.get("signals", [])}
 
-    def signal(self, ch: int, id: int, name: str, dir: str = "rx") -> Optional[float]:
+    def signal(self, ch: int, id: int, name: str, dir: str = "rx",
+               ext=False) -> Optional[float]:
         # dir is explicit: read back your own sent value with dir="tx".
         _check_ch(ch)
-        r = self._call("get_signal", {"ch": ch, "id": id, "name": name, "dir": dir})
+        r = self._call("get_signal", {
+            "ch": ch, "id": id, "name": name, "dir": dir, "ext": ext})
         return r.get("physical") if r.get("present") else None
 
     def load_dbc(self, path: str) -> str:
@@ -377,6 +448,10 @@ class Session:
         {id, name, dlc, file, signals:[{name, unit, min, max, ...}]}.
         Use it to DISCOVER the real signal names your DBC defines."""
         return self._call("dbc_info").get("messages", [])
+
+    def dbc_diagnostics(self) -> dict:
+        """Static DBC validation result with summary and machine-readable findings."""
+        return self._call("dbc_diagnostics")
 
     def signals_of(self, id: int) -> List[str]:
         """Signal names defined for message `id` in the loaded DBC(s)."""
@@ -423,12 +498,13 @@ class Session:
                 self._evt_subs.remove(token)
 
     def wait_for_signal(self, ch: int, id: int, name: str,
-                        cmp: Callable[[float], bool], timeout: float = 2.0) -> float:
+                        cmp: Callable[[float], bool], timeout: float = 2.0,
+                        ext=False) -> float:
         def pred(f: Frame) -> bool:
-            d = self.decode(id, f.data)
+            d = self.decode(id, f.data, ext=ext)
             return name in d and cmp(d[name])
         f = self.wait_for(ch, id, predicate=pred, timeout=timeout)
-        return self.decode(id, f.data)[name]
+        return self.decode(id, f.data, ext=ext)[name]
 
     # ---- assertions (in-process, no IPC) ----
     def expect(self, cond: bool, msg: str) -> bool:
@@ -532,5 +608,3 @@ def dev(device_type: str = "PCAN", *, sw_channel: int = 1, channel_index: int = 
         "baud": baud, "data_baud": data_baud, "termination": termination,
         "net_server": net_server, "ip": ip, "port": port,
     }
-
-

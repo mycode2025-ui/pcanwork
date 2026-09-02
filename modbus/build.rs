@@ -18,26 +18,6 @@ fn main() {
     }
     println!("cargo:rerun-if-changed=app.ico");
 
-    // 把自签名测试证书拷到 exe 同目录的 certs/，使从 PcanWork 拉起(cwd=exe 目录)时
-    // TLS 功能仍能按 "certs/xxx" 相对路径找到。OUT_DIR 上溯三级即 target/<profile>。
-    if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        let exe_dir = std::path::Path::new(&out_dir)
-            .join("..")
-            .join("..")
-            .join("..");
-        let dst = exe_dir.join("certs");
-        let _ = std::fs::create_dir_all(&dst);
-        if let Ok(entries) = std::fs::read_dir("certs") {
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.is_file() {
-                    if let Some(name) = p.file_name() {
-                        let _ = std::fs::copy(&p, dst.join(name));
-                    }
-                }
-            }
-        }
-    }
-    println!("cargo:rerun-if-changed=certs");
+    // TLS identity files are runtime inputs and are never build or installer inputs.
     println!("cargo:rerun-if-changed=ui/app.slint");
 }

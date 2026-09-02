@@ -15,10 +15,22 @@ fn main() {
         embed_manifest(new_manifest("SerialTool").dpi_awareness(DpiAwareness::System))
             .expect("failed to embed Windows application manifest");
 
-        let mut res = winres::WindowsResource::new();
+        let mut res = winresource::WindowsResource::new();
+        let version = std::env::var("CARGO_PKG_VERSION").expect("missing package version");
+        let mut parts = version
+            .split('.')
+            .map(|part| part.parse::<u64>().expect("invalid package version"));
+        let version_number = (parts.next().unwrap_or(0) << 48)
+            | (parts.next().unwrap_or(0) << 32)
+            | (parts.next().unwrap_or(0) << 16);
         res.set_icon("assets/app.ico");
         res.set("ProductName", "Serial Tool");
         res.set("FileDescription", "串口/网络/SSH 调试工具");
+        res.set("FileVersion", &version);
+        res.set("ProductVersion", &version);
+        res.set("CompanyName", "XCharge");
+        res.set_version_info(winresource::VersionInfo::FILEVERSION, version_number);
+        res.set_version_info(winresource::VersionInfo::PRODUCTVERSION, version_number);
         res.compile().expect("failed to embed Windows resources");
     }
 }

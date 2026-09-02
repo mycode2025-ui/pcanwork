@@ -1,0 +1,150 @@
+import { ListView, HorizontalBox, VerticalBox } from "std-widgets.slint";
+import { DbcDiagnosticRow, I18n, Theme, TBtn, Icon, ThemedWindow } from "common.slint";
+
+export component DbcDiagnosticsWindow inherits ThemedWindow {
+    title: I18n.en ? "PcanWork - DBC Diagnostics" : "PcanWork - DBC 诊断中心";
+    icon: @image-url("logo.svg");
+    preferred-width: 1040px;
+    preferred-height: 720px;
+    min-width: 760px;
+    min-height: 520px;
+    background: Theme.bg;
+    default-font-family: Theme.sans;
+
+    in property <[DbcDiagnosticRow]> rows;
+    in property <int> file-count;
+    in property <int> error-count;
+    in property <int> warning-count;
+    in property <int> info-count;
+    in-out property <int> severity-filter: 0; // 0=all, 1=error, 2=warning, 3=info
+    in-out property <string> action-status;
+    callback rescan();
+    callback copy-report();
+    callback export-report();
+    callback dismiss();
+
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle {
+            height: 72px;
+            background: Theme.brand-header;
+            HorizontalLayout {
+                padding-left: 22px; padding-right: 18px; spacing: 14px;
+                Rectangle {
+                    width: 42px; height: 42px; border-radius: 10px;
+                    background: Theme.on-accent-faint;
+                    Icon { width: 24px; height: 24px; x: 9px; y: 9px; name: "database"; clr: Theme.on-accent; }
+                }
+                VerticalLayout {
+                    alignment: center; spacing: 2px;
+                    Text { text: I18n.en ? "DBC Diagnostics" : "DBC 诊断中心"; color: Theme.on-accent; font-size: 20px; font-weight: 800; vertical-alignment: center; }
+                    Text { text: I18n.en ? "Static protocol integrity and encoding safety" : "协议静态完整性与编码安全检查"; color: Theme.on-accent-border; font-size: Theme.fs-sm; vertical-alignment: center; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                TBtn { text: I18n.en ? "Rescan" : "重新检查"; boxed: true; clicked => { root.rescan(); } }
+            }
+        }
+
+        VerticalLayout {
+            padding: 16px; spacing: 12px;
+            HorizontalLayout {
+                spacing: 10px;
+                Rectangle {
+                    height: 74px; horizontal-stretch: 1; border-radius: 8px;
+                    background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                    VerticalLayout { padding: 12px; spacing: 3px;
+                        Text { text: root.file-count; color: Theme.accent; font-size: 22px; font-weight: 800; horizontal-alignment: center; }
+                        Text { text: I18n.en ? "DBC files" : "DBC 文件"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 74px; horizontal-stretch: 1; border-radius: 8px;
+                    background: root.error-count > 0 ? Theme.err-bg : Theme.panel; border-width: 1px; border-color: root.error-count > 0 ? Theme.bad : Theme.border;
+                    VerticalLayout { padding: 12px; spacing: 3px;
+                        Text { text: root.error-count; color: Theme.bad; font-size: 22px; font-weight: 800; horizontal-alignment: center; }
+                        Text { text: I18n.en ? "Errors" : "错误"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 74px; horizontal-stretch: 1; border-radius: 8px;
+                    background: root.warning-count > 0 ? Theme.timeout-bg : Theme.panel; border-width: 1px; border-color: root.warning-count > 0 ? Theme.warn : Theme.border;
+                    VerticalLayout { padding: 12px; spacing: 3px;
+                        Text { text: root.warning-count; color: Theme.warn; font-size: 22px; font-weight: 800; horizontal-alignment: center; }
+                        Text { text: I18n.en ? "Warnings" : "警告"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 74px; horizontal-stretch: 1; border-radius: 8px;
+                    background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                    VerticalLayout { padding: 12px; spacing: 3px;
+                        Text { text: root.info-count; color: Theme.accent; font-size: 22px; font-weight: 800; horizontal-alignment: center; }
+                        Text { text: I18n.en ? "Notes" : "提示"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; }
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 44px; border-radius: 7px; background: Theme.panel; border-width: 1px; border-color: Theme.border;
+                HorizontalLayout { padding-left: 8px; padding-right: 8px; spacing: 4px;
+                    Text { text: I18n.en ? "Show" : "筛选"; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; }
+                    TBtn { text: I18n.en ? "All" : "全部"; active: root.severity-filter == 0; clicked => { root.severity-filter = 0; root.rescan(); } }
+                    TBtn { text: I18n.en ? "Errors" : "错误"; active: root.severity-filter == 1; clicked => { root.severity-filter = 1; root.rescan(); } }
+                    TBtn { text: I18n.en ? "Warnings" : "警告"; active: root.severity-filter == 2; clicked => { root.severity-filter = 2; root.rescan(); } }
+                    TBtn { text: I18n.en ? "Notes" : "提示"; active: root.severity-filter == 3; clicked => { root.severity-filter = 3; root.rescan(); } }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.error-count == 0 && root.warning-count == 0
+                            ? (I18n.en ? "No blocking DBC problem detected" : "未检测到阻断性 DBC 问题")
+                            : (I18n.en ? "Errors block unsafe encoding; warnings require review" : "错误会阻止不安全编码；警告需要人工确认");
+                        color: root.error-count == 0 ? Theme.ok : Theme.bad; font-size: Theme.fs-sm; vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle {
+                vertical-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 8px; clip: true;
+                if root.rows.length == 0: VerticalLayout {
+                    alignment: center; spacing: 10px;
+                    Icon { width: 34px; height: 34px; name: root.file-count == 0 ? "database" : "info"; clr: root.file-count == 0 ? Theme.text-dim : Theme.ok; }
+                    Text { text: root.file-count == 0 ? (I18n.en ? "Load a DBC file to run diagnostics" : "请先加载 DBC 文件") : (I18n.en ? "DBC diagnostics passed" : "DBC 诊断通过"); color: Theme.text; font-size: Theme.fs; font-weight: 700; }
+                }
+                if root.rows.length > 0: diag-list := ListView {
+                    width: 100%; height: 100%;
+                    for row[index] in root.rows: Rectangle {
+                        width: diag-list.width;
+                        height: 94px;
+                        background: Math.mod(index, 2) == 0 ? Theme.panel : Theme.zebra;
+                        Rectangle { x: 0px; y: 0px; width: 4px; height: parent.height; background: row.severity == 2 ? Theme.bad : row.severity == 1 ? Theme.warn : Theme.accent; }
+                        HorizontalLayout {
+                            x: 4px; y: 0px; width: parent.width - 4px; height: parent.height;
+                            padding-left: 16px; padding-right: 14px; padding-top: 10px; padding-bottom: 10px; spacing: 12px;
+                            Rectangle {
+                                width: 64px; height: 24px; border-radius: 12px;
+                                background: row.severity == 2 ? Theme.err-bg : row.severity == 1 ? Theme.timeout-bg : Theme.accent-soft;
+                                Text { text: row.severity == 2 ? (I18n.en ? "ERROR" : "错误") : row.severity == 1 ? (I18n.en ? "WARN" : "警告") : (I18n.en ? "INFO" : "提示"); color: row.severity == 2 ? Theme.bad : row.severity == 1 ? Theme.warn : Theme.accent; font-size: Theme.fs-sm; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            VerticalLayout { spacing: 3px; horizontal-stretch: 1;
+                                HorizontalLayout { spacing: 8px;
+                                    Text { text: I18n.en ? row.title-en : row.title-zh; color: Theme.text; font-size: Theme.fs; font-weight: 750; vertical-alignment: center; }
+                                    Text { text: row.code; color: Theme.text-dim; font-family: Theme.mono; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                }
+                                Text { text: row.location; color: Theme.accent; font-family: Theme.mono; font-size: Theme.fs-sm; overflow: elide; }
+                                Text { text: I18n.en ? row.detail-en : row.detail-zh; color: Theme.text-dim; font-size: Theme.fs-sm; overflow: elide; }
+                            }
+                        }
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.border; }
+                    }
+                }
+            }
+
+            Rectangle { height: 42px;
+                HorizontalLayout { spacing: 8px;
+                    Text { text: root.action-status; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                    TBtn { text: I18n.en ? "Copy report" : "复制报告"; boxed: true; clicked => { root.copy-report(); } }
+                    TBtn { text: I18n.en ? "Export..." : "导出..."; boxed: true; clicked => { root.export-report(); } }
+                    TBtn { text: I18n.en ? "Close" : "关闭"; primary: true; clicked => { root.dismiss(); } }
+                }
+            }
+        }
+    }
+}

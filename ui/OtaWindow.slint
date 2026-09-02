@@ -1,7 +1,7 @@
 import { LineEdit, TextEdit } from "std-widgets.slint";
-import { I18n, Theme, TBtn } from "common.slint";
+import { I18n, Theme, TBtn, ThemedWindow } from "common.slint";
 
-export component OtaWindow inherits Window {
+export component OtaWindow inherits ThemedWindow {
     title: root.single-tool-page == 0 ? "UDS" : (root.single-tool-page == 1 ? "XCP" : "UDS / XCP");
     icon: @image-url("logo.svg");
     preferred-width: 980px;

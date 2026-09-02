@@ -1,0 +1,14 @@
+[package]
+name = "pcanwork-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+[dependencies]
+can-dbc = "9.1.0"
+chrono = "0.4"
+crossbeam-channel = "0.5"
+flate2 = "1.1.9"
+libloading = "0.9.0"
+serde = { version = "1", features = ["derive"] }

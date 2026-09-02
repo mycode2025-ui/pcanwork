@@ -521,8 +521,16 @@ base hex timestamps absolute\n\
         let outd = std::env::temp_dir().join("pcanwork_batch_out");
         let _ = std::fs::create_dir_all(&base);
         let _ = std::fs::create_dir_all(&outd);
-        write_csv(&base.join("a.csv").to_string_lossy(), &[frame.clone()]).unwrap();
-        write_asc(&base.join("b.asc").to_string_lossy(), &[frame.clone()]).unwrap();
+        write_csv(
+            &base.join("a.csv").to_string_lossy(),
+            std::slice::from_ref(&frame),
+        )
+        .unwrap();
+        write_asc(
+            &base.join("b.asc").to_string_lossy(),
+            std::slice::from_ref(&frame),
+        )
+        .unwrap();
         // a non-log file should be ignored
         std::fs::write(base.join("note.txt"), "ignore me").unwrap();
         let (ok, fail, _log) = convert_dir(

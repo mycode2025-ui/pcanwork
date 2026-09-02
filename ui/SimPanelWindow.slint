@@ -1,146 +1,1212 @@
-// One-window Slint page split from the original monolithic file.
-import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { LineEdit, ListView, ScrollView } from "std-widgets.slint";
+import { I18n, Theme, Icon, SignalPickRow, SimGlyph, SimRow, TBtn, ThemedWindow } from "common.slint";
+import { ProductDesign } from "design-system.slint";
 
-export component SimPanelWindow inherits Window {
-    title: I18n.en ? "Simulation Panel" : "仿真面板";
+component HeaderAction inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> primary: false;
+    callback clicked();
+
+    width: label.preferred-width + 56px;
+    height: 40px;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-md;
+    background: primary
+        ? (area.pressed ? ProductDesign.on-brand.with-alpha(0.86) : ProductDesign.on-brand)
+        : (area.pressed ? ProductDesign.on-brand-border.with-alpha(0.32)
+            : area.has-hover ? ProductDesign.on-brand-border
+            : ProductDesign.on-brand-faint);
+    border-width: focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: focus.has-focus ? Theme.warn
+        : primary ? ProductDesign.on-brand-border
+        : ProductDesign.on-brand-border;
+    drop-shadow-blur: primary ? 5px : 0px;
+    drop-shadow-color: Theme.shadow;
+    drop-shadow-offset-y: primary ? 2px : 0px;
+    animate background { duration: 120ms; }
+    animate border-color { duration: 120ms; }
+    accessible-role: AccessibleRole.button;
+    accessible-label: text;
+    forward-focus: focus;
+    accessible-action-default => { root.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        Rectangle {
+            width: 20px;
+            vertical-stretch: 1;
+            Icon {
+                name: root.icon;
+                clr: root.primary ? ProductDesign.brand-header : ProductDesign.on-brand;
+                width: 20px;
+                height: 20px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+        label := Text {
+            text: root.text;
+            color: root.primary ? ProductDesign.brand-header : ProductDesign.on-brand;
+            font-size: ProductDesign.font-md;
+            font-weight: 650;
+            vertical-stretch: 1;
+            vertical-alignment: center;
+        }
+    }
+    area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component StatusPill inherits Rectangle {
+    in property <string> text;
+    in property <color> text-color: Theme.accent;
+    in property <color> fill: Theme.accent-soft;
+
+    width: label.preferred-width + 20px;
+    height: 24px;
+    horizontal-stretch: 0;
+    border-radius: 12px;
+    background: fill;
+    border-width: 1px;
+    border-color: text-color.with-alpha(0.42);
+    label := Text {
+        text: root.text;
+        color: root.text-color;
+        font-size: ProductDesign.font-xs;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component PaletteCard inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    min-width: 64px;
+    preferred-width: 64px;
+    max-width: 64px;
+    height: 48px;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-sm;
+    background: !enabled ? Theme.panel2.with-alpha(0.55)
+        : area.pressed ? Theme.accent-soft.darker(0.08)
+        : area.has-hover ? Theme.accent-soft : Theme.panel;
+    border-width: focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: focus.has-focus ? Theme.warn
+        : area.has-hover ? Theme.accent : Theme.border;
+    drop-shadow-blur: enabled && area.has-hover ? 5px : 0px;
+    drop-shadow-color: Theme.shadow;
+    drop-shadow-offset-y: 2px;
+    animate background { duration: 100ms; }
+    animate border-color { duration: 100ms; }
+    accessible-role: AccessibleRole.button;
+    accessible-label: text;
+    accessible-enabled: enabled;
+    forward-focus: focus;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+
+    VerticalLayout {
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 3px;
+        Rectangle {
+            height: 20px;
+            Icon {
+                name: root.icon;
+                clr: root.enabled ? Theme.accent : Theme.text-dim;
+                width: 18px;
+                height: 18px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
+        }
+        Text {
+            text: root.text;
+            color: root.enabled ? Theme.text : Theme.text-dim;
+            font-size: ProductDesign.font-xs;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component FormatButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> boxed: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    width: label.preferred-width + 20px;
+    horizontal-stretch: 0;
+    vertical-stretch: 1;
+    accessible-role: AccessibleRole.button;
+    accessible-label: text;
+    accessible-enabled: enabled;
+    surface := Rectangle {
+        width: 100%;
+        height: 30px;
+        y: (parent.height - self.height) / 2;
+        border-radius: ProductDesign.radius-sm;
+        background: !root.enabled ? transparent
+            : area.pressed ? Theme.panel2.darker(0.12)
+            : area.has-hover ? Theme.panel
+            : root.boxed ? Theme.panel : transparent;
+        border-width: root.boxed || area.has-hover ? 1px : 0px;
+        border-color: Theme.border;
+        animate background { duration: 80ms; }
+        label := Text {
+            text: root.text;
+            color: root.enabled ? Theme.text : Theme.text-dim;
+            font-size: Theme.fs;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+component FormatLabel inherits Rectangle {
+    in property <string> text;
+    width: label.preferred-width;
+    horizontal-stretch: 0;
+    vertical-stretch: 1;
+    label := Text {
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: ProductDesign.font-xs;
+        font-weight: 700;
+        vertical-alignment: center;
+    }
+}
+
+component FormatDivider inherits Rectangle {
+    width: 1px;
+    horizontal-stretch: 0;
+    vertical-stretch: 1;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 1px;
+        height: 22px;
+        background: Theme.border;
+    }
+}
+
+component EmptyStep inherits Rectangle {
+    in property <string> number;
+    in property <string> title;
+    in property <string> detail;
+
+    min-width: 150px;
+    horizontal-stretch: 1;
+    height: 58px;
+    border-radius: ProductDesign.radius-sm;
+    background: Theme.panel2.with-alpha(0.72);
+    HorizontalLayout {
+        padding: 10px;
+        spacing: 9px;
+        Rectangle {
+            width: 26px;
+            height: 26px;
+            border-radius: 13px;
+            background: Theme.accent-soft;
+            border-width: 1px;
+            border-color: Theme.accent.with-alpha(0.42);
+            Text {
+                text: root.number;
+                color: Theme.accent;
+                font-size: Theme.fs-sm;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            spacing: 1px;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.fs-sm;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.detail;
+                color: Theme.text-dim;
+                font-size: ProductDesign.font-xs;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component SimPanelWindow inherits ThemedWindow {
+    title: project-name == ""
+        ? (I18n.en ? "PcanWork - Simulation Workspace" : "PcanWork - 仿真工作区")
+        : project-name + (I18n.en ? " - Simulation Workspace" : " - 仿真工作区");
     icon: @image-url("logo.svg");
-    preferred-width: 1000px;
-    preferred-height: 660px;
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 920px;
+    min-height: 600px;
     background: Theme.bg;
+    default-font-family: Theme.sans;
+    always-on-top: root.topmost-enabled;
 
     in property <[SimRow]> sim-widgets;
     in property <bool> running: false;
+    in-out property <bool> topmost-enabled: false;
+    in-out property <bool> runtime-fullscreen: false;
+    in property <string> project-name: "CAN_Test_Project";
+    in property <string> project-path: "";
+    in property <bool> layout-dirty: false;
+    in property <int> widget-count: 0;
+    in property <int> selected-count: 0;
+    in property <int> dbc-count: 0;
+    in property <[SignalPickRow]> signal-library-rows;
+    in property <int> signal-library-marked-count: 0;
+    in-out property <bool> signal-library-open: true;
+    in-out property <string> signal-library-filter: "";
+    in-out property <int> signal-library-cursor: -1;
+    property <bool> signal-drag-active: false;
+    property <int> signal-drag-index: -1;
+    property <string> signal-drag-name: "";
+    property <length> signal-drag-x: 0px;
+    property <length> signal-drag-y: 0px;
+    changed dbc-count => {
+        if root.signal-library-open { root.signal-library-refresh(); }
+    }
+    property <bool> marquee-active: false;
+    property <length> marquee-start-x: 0px;
+    property <length> marquee-start-y: 0px;
+    property <length> marquee-x: 0px;
+    property <length> marquee-y: 0px;
+    property <length> marquee-w: 0px;
+    property <length> marquee-h: 0px;
+    property <int> ants-phase: 0;
 
+    callback project-save();
     callback sim-add(int);
-    callback sim-select(int, bool);           // (index, 是否 Ctrl 追加多选)
-    callback sim-edit(int);                    // 双击 → 打开独立属性窗口
-    callback sim-drag(int, length, length);
-    // sim-resize 传绝对尺寸(指针相对控件左上角=目标宽高), 避免增量反馈半速
+    callback sim-select(int, bool);
+    callback sim-clear-selection();
+    callback sim-edit(int);
+    callback sim-drag(int, float, float);
     callback sim-resize(int, float, float);
     callback sim-clear();
     callback sim-run-toggle();
-    callback sim-button(int, bool);           // 运行模式按钮 按下(true)/释放(false)
+    callback sim-button(int, bool);
+    callback sim-switch(int);
     callback sim-slider(int, float);
-    callback sim-select-all();                 // 全选
-    callback sim-align(int);                   // 对齐: 0左 1右 2顶 3底 4水平居中 5垂直居中
+    callback sim-input(int, string);
+    callback sim-trend-action(int, int);
+    callback sim-constrain(float, float);
+    callback sim-select-all();
+    callback sim-align(int);
+    callback sim-marquee(float, float, float, float);
+    callback signal-library-refresh();
+    callback signal-library-filter-changed(string);
+    callback signal-library-row-clicked(int, bool);
+    callback signal-library-activate(int);
+    callback signal-library-create(int, int);
+    callback signal-library-drop(int, float, float);
+    callback runtime-fullscreen-toggle();
+
+    Timer {
+        interval: 110ms;
+        running: root.marquee-active;
+        triggered => { root.ants-phase = Math.mod(root.ants-phase + 1, 2); }
+    }
 
     VerticalLayout {
-        // 顶部工具栏
-        Rectangle {
-            height: 40px; background: Theme.panel;
-            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
-            HorizontalLayout {
-                padding-left: 8px; padding-right: 8px; spacing: 4px;
-                Text { text: root.running ? (I18n.en ? "Running (locked)" : "运行中(已锁定)") : (I18n.en ? "Edit mode" : "编辑模式"); font-weight: 700; font-size: Theme.fs; color: root.running ? Theme.ok : Theme.text; vertical-alignment: center; }
-                Rectangle { width: 8px; }
-                // 控件调色板(编辑模式) — 横向滚动, Clear/Run 常驻右侧
-                ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 4px;
-                Button { text: I18n.en ? "Indicator" : "指示灯"; enabled: !root.running; clicked => { root.sim-add(0); } }
-                Button { text: I18n.en ? "Dial" : "仪表盘"; enabled: !root.running; clicked => { root.sim-add(1); } }
-                Button { text: I18n.en ? "Bar" : "进度条"; enabled: !root.running; clicked => { root.sim-add(2); } }
-                Button { text: I18n.en ? "Value" : "数值"; enabled: !root.running; clicked => { root.sim-add(3); } }
-                Button { text: I18n.en ? "Label" : "标签"; enabled: !root.running; clicked => { root.sim-add(4); } }
-                Button { text: I18n.en ? "Button" : "按钮"; enabled: !root.running; clicked => { root.sim-add(5); } }
-                Button { text: I18n.en ? "Slider" : "滑块"; enabled: !root.running; clicked => { root.sim-add(6); } }
-                Button { text: I18n.en ? "Generator" : "发生器"; enabled: !root.running; clicked => { root.sim-add(7); } }
-                } }
-                Button { text: I18n.en ? "Clear" : "清空"; enabled: !root.running; clicked => { root.sim-clear(); } }
-                Button { text: root.running ? (I18n.en ? "Stop Sim" : "停止仿真") : (I18n.en ? "Run Sim" : "运行仿真"); clicked => { root.sim-run-toggle(); } }
-            }
-        }
-        // 对齐工具栏(编辑模式): 全选 + 6 种对齐
-        if !root.running: Rectangle {
-            height: 36px; background: Theme.panel2;
-            Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
-            HorizontalLayout {
-                padding-left: 8px; padding-right: 8px; spacing: 4px;
-                Text { text: I18n.en ? "Align:" : "对齐:"; font-size: Theme.fs-sm; vertical-alignment: center; color: Theme.text-dim; }
-                ScrollView { horizontal-stretch: 1; HorizontalLayout { spacing: 4px;
-                Button { text: I18n.en ? "Select All" : "全选"; clicked => { root.sim-select-all(); } }
-                Rectangle { width: 6px; }
-                Button { text: I18n.en ? "Left" : "左对齐"; clicked => { root.sim-align(0); } }
-                Button { text: I18n.en ? "Right" : "右对齐"; clicked => { root.sim-align(1); } }
-                Button { text: I18n.en ? "Top" : "顶部对齐"; clicked => { root.sim-align(2); } }
-                Button { text: I18n.en ? "Bottom" : "底部对齐"; clicked => { root.sim-align(3); } }
-                Button { text: I18n.en ? "Center H" : "水平居中"; clicked => { root.sim-align(4); } }
-                Button { text: I18n.en ? "Center V" : "垂直居中"; clicked => { root.sim-align(5); } }
-                Rectangle { width: 6px; }
-                Button { text: I18n.en ? "Equal W" : "等宽"; clicked => { root.sim-align(6); } }
-                Button { text: I18n.en ? "Equal H" : "等高"; clicked => { root.sim-align(7); } }
-                } }
-                Rectangle { width: 12px; }
-                Text { text: I18n.en ? "Tip: click=select / Ctrl+click=multi / dbl-click=edit" : "提示: 单击选中 / Ctrl+单击多选 / 双击编辑属性"; font-size: Theme.fs-sm; vertical-alignment: center; color: Theme.text-dim; }
-            }
-        }
-        // 画布(全宽)
-        Rectangle {
-            background: Theme.bg; clip: true;
-            // 空提示
-            if root.sim-widgets.length == 0: Text {
-                text: I18n.en ? "Blank canvas: add controls from the toolbar, drag to place, double-click a control to edit & bind a DBC signal, then click \"Run Sim\" to lock & go live." : "空白画布：点上方控件按钮添加，拖动摆放，双击控件编辑属性绑定 DBC 信号，点「运行仿真」锁定并联动。";
-                width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center;
-                color: Theme.text-dim; font-size: Theme.fs;
-            }
-            for w[i] in root.sim-widgets: Rectangle {
-                x: w.x * 1px; y: w.y * 1px; width: w.w * 1px; height: w.h * 1px;
-                background: w.kind == 4 ? transparent : Theme.panel;
-                border-width: w.primary ? 3px : (w.selected ? 2px : (w.kind == 4 ? 0px : 1px));
-                border-color: w.primary ? Theme.ok : (w.selected ? Theme.accent : Theme.border);
-                border-radius: 5px;
-                drop-shadow-blur: w.selected ? 6px : 2px; drop-shadow-color: #00000022;
+        spacing: 0px;
 
-                SimGlyph { width: 100%; height: 100%; w: w; }
-
-                // 主控件(模板)角标：等高/等宽以它为基准
-                if w.primary: Rectangle {
-                    x: 0; y: 0; width: 44px; height: 16px;
-                    background: Theme.ok; border-radius: 3px;
-                    Text { text: I18n.en ? "Ref" : "模板"; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; color: white; font-size: 11px; }
+        // 主工程归属与模式状态
+        Rectangle {
+            height: root.runtime-fullscreen ? 0px : 54px;
+            visible: !root.runtime-fullscreen;
+            background: ProductDesign.brand-header;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 10px;
+                Rectangle {
+                    width: 34px;
+                    height: 34px;
+                    border-radius: ProductDesign.radius-md;
+                    background: ProductDesign.on-brand-faint;
+                    border-width: 1px;
+                    border-color: ProductDesign.on-brand-border;
+                    Icon {
+                        name: "layout";
+                        clr: ProductDesign.on-brand;
+                        width: 20px;
+                        height: 20px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
                 }
-
-                // 编辑模式：拖动/缩放 + 选中(右下角 20px 内按下=缩放, 其余=移动; 双击=编辑属性)
-                if !root.running: TouchArea {
-                    width: 100%; height: 100%;
-                    property <bool> resizing: false;
-                    pointer-event(ev) => {
-                        if (ev.button == PointerEventButton.left && ev.kind == PointerEventKind.down) {
-                            root.sim-select(i, ev.modifiers.control);
-                            self.resizing = (self.mouse-x > parent.width - 20px) && (self.mouse-y > parent.height - 20px);
+                VerticalLayout {
+                    min-width: 250px;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: I18n.en ? "Simulation Workspace" : "仿真工作区";
+                            color: ProductDesign.on-brand;
+                            font-size: ProductDesign.font-md;
+                            font-weight: 700;
+                            max-width: 310px;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                        StatusPill {
+                            text: I18n.en ? "MAIN PROJECT" : "当前主工程";
+                            text-color: ProductDesign.on-brand;
+                            fill: ProductDesign.on-brand-faint;
+                        }
+                        StatusPill {
+                            text: root.running
+                                ? (I18n.en ? "LIVE" : "运行中")
+                                : (I18n.en ? "EDIT" : "编辑模式");
+                            text-color: root.running ? Theme.ok : ProductDesign.on-brand;
+                            fill: root.running ? ProductDesign.success-soft : ProductDesign.on-brand-faint;
+                        }
+                        if root.layout-dirty: StatusPill {
+                            text: I18n.en ? "Unsaved layout" : "布局未保存";
+                            text-color: Theme.warn;
+                            fill: ProductDesign.warning-soft;
                         }
                     }
-                    double-clicked => { root.sim-edit(i); }
+                    Text {
+                        text: (I18n.en ? "Project: " : "主工程：") + root.project-name + " · "
+                            + (root.project-path == ""
+                                ? (I18n.en ? "Not saved as .pcprj" : "尚未保存为 .pcprj")
+                                : root.project-path);
+                        color: ProductDesign.on-brand-muted;
+                        font-size: ProductDesign.font-xs;
+                        max-width: 460px;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                HeaderAction {
+                    icon: "save";
+                    text: root.layout-dirty
+                        ? (I18n.en ? "Save Main Project *" : "保存主工程 *")
+                        : (I18n.en ? "Save Main Project" : "保存主工程");
+                    primary: true;
+                    clicked => { root.project-save(); }
+                }
+            }
+        }
+
+        // 控件库与运行命令
+        Rectangle {
+            height: root.runtime-fullscreen ? 0px : 120px;
+            visible: !root.runtime-fullscreen;
+            background: Theme.panel;
+            Rectangle { y: parent.height - 1px; width: 100%; height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 10px;
+                VerticalLayout {
+                    width: 64px;
+                    spacing: 2px;
+                    Text {
+                        text: I18n.en ? "CONTROL LIBRARY" : "控件库";
+                        color: Theme.accent;
+                        font-size: ProductDesign.font-xs;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: I18n.en ? "Click to add" : "单击添加";
+                        color: Theme.text-dim;
+                        font-size: ProductDesign.font-xs;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout {
+                            spacing: 4px; alignment: start;
+                            PaletteCard { icon: "record"; text: I18n.en ? "Indicator" : "指示灯"; enabled: !root.running; clicked => { root.sim-add(0); } }
+                            PaletteCard { icon: "curve"; text: I18n.en ? "Gauge" : "仪表盘"; enabled: !root.running; clicked => { root.sim-add(1); } }
+                            PaletteCard { icon: "layout"; text: I18n.en ? "Progress" : "进度条"; enabled: !root.running; clicked => { root.sim-add(2); } }
+                            PaletteCard { icon: "file"; text: I18n.en ? "Numeric" : "数值"; enabled: !root.running; clicked => { root.sim-add(3); } }
+                            PaletteCard { icon: "file"; text: I18n.en ? "Label" : "标签"; enabled: !root.running; clicked => { root.sim-add(4); } }
+                            PaletteCard { icon: "start"; text: I18n.en ? "Button" : "按钮"; enabled: !root.running; clicked => { root.sim-add(5); } }
+                            PaletteCard { icon: "layout"; text: I18n.en ? "Slider" : "滑块"; enabled: !root.running; clicked => { root.sim-add(6); } }
+                            PaletteCard { icon: "layout"; text: I18n.en ? "Bars" : "柱状图"; enabled: !root.running; clicked => { root.sim-add(13); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                        HorizontalLayout {
+                            spacing: 4px; alignment: start;
+                            PaletteCard { icon: "curve"; text: I18n.en ? "Generator" : "发生器"; enabled: !root.running; clicked => { root.sim-add(7); } }
+                            PaletteCard { icon: "connect"; text: I18n.en ? "Switch" : "开关"; enabled: !root.running; clicked => { root.sim-add(8); } }
+                            PaletteCard { icon: "curve"; text: I18n.en ? "Trend" : "趋势图"; enabled: !root.running; clicked => { root.sim-add(9); } }
+                            PaletteCard { icon: "layout"; text: I18n.en ? "Level" : "液位计"; enabled: !root.running; clicked => { root.sim-add(10); } }
+                            PaletteCard { icon: "record"; text: I18n.en ? "Knob" : "旋钮"; enabled: !root.running; clicked => { root.sim-add(11); } }
+                            PaletteCard { icon: "file"; text: I18n.en ? "Input" : "数值输入"; enabled: !root.running; clicked => { root.sim-add(12); } }
+                            PaletteCard { icon: "record"; text: I18n.en ? "Statuses" : "状态灯组"; enabled: !root.running; clicked => { root.sim-add(14); } }
+                            PaletteCard { icon: "record"; text: I18n.en ? "Alarm" : "报警卡片"; enabled: !root.running; clicked => { root.sim-add(15); } }
+                            PaletteCard { icon: "file"; text: I18n.en ? "Image" : "图片背景"; enabled: !root.running; clicked => { root.sim-add(16); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                }
+                Rectangle { width: 1px; background: Theme.border; }
+                TBtn {
+                    boxed: true;
+                    btn-enabled: root.dbc-count > 0 && !root.running;
+                    text: root.signal-library-open
+                        ? (I18n.en ? "Hide signals" : "收起信号库")
+                        : (I18n.en ? "DBC signals" : "DBC 信号库");
+                    clicked => {
+                        root.signal-library-open = !root.signal-library-open;
+                        if root.signal-library-open { root.signal-library-refresh(); }
+                    }
+                }
+                TBtn {
+                    boxed: true;
+                    btn-enabled: !root.running && root.widget-count > 0;
+                    text: I18n.en ? "Clear canvas" : "清空画布";
+                    clicked => { root.sim-clear(); }
+                }
+                TBtn {
+                    boxed: true;
+                    active: root.topmost-enabled;
+                    text: root.topmost-enabled
+                        ? (I18n.en ? "Pinned" : "已置顶")
+                        : (I18n.en ? "Pin" : "置顶");
+                    clicked => { root.topmost-enabled = !root.topmost-enabled; }
+                }
+                TBtn {
+                    primary: true;
+                    text: root.running
+                        ? (I18n.en ? "Stop simulation" : "停止仿真")
+                        : (I18n.en ? "Run simulation" : "运行仿真");
+                    clicked => { root.sim-run-toggle(); }
+                }
+                if root.running: TBtn {
+                    boxed: true;
+                    text: I18n.en ? "Full canvas" : "画布全屏";
+                    clicked => { root.runtime-fullscreen-toggle(); }
+                }
+            }
+        }
+
+        // 编辑命令区在运行状态下保持同高，避免画布跳动
+        Rectangle {
+            height: root.runtime-fullscreen ? 0px : 42px;
+            visible: !root.runtime-fullscreen;
+            background: Theme.panel2;
+            Rectangle { y: parent.height - 1px; width: 100%; height: 1px; background: Theme.border; }
+            if !root.running: HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 5px;
+                FormatLabel { text: I18n.en ? "SELECTION" : "选择"; }
+                FormatButton { boxed: true; text: I18n.en ? "Select all" : "全选"; enabled: root.widget-count > 0; clicked => { root.sim-select-all(); } }
+                FormatDivider { }
+                FormatLabel { text: I18n.en ? "ALIGN" : "对齐"; }
+                FormatButton { text: I18n.en ? "Left" : "左"; enabled: root.selected-count > 1; clicked => { root.sim-align(0); } }
+                FormatButton { text: I18n.en ? "Right" : "右"; enabled: root.selected-count > 1; clicked => { root.sim-align(1); } }
+                FormatButton { text: I18n.en ? "Top" : "上"; enabled: root.selected-count > 1; clicked => { root.sim-align(2); } }
+                FormatButton { text: I18n.en ? "Bottom" : "下"; enabled: root.selected-count > 1; clicked => { root.sim-align(3); } }
+                FormatButton { text: I18n.en ? "Center H" : "水平居中"; enabled: root.selected-count > 1; clicked => { root.sim-align(4); } }
+                FormatButton { text: I18n.en ? "Center V" : "垂直居中"; enabled: root.selected-count > 1; clicked => { root.sim-align(5); } }
+                FormatDivider { }
+                FormatButton { text: I18n.en ? "Equal width" : "等宽"; enabled: root.selected-count > 1; clicked => { root.sim-align(6); } }
+                FormatButton { text: I18n.en ? "Equal height" : "等高"; enabled: root.selected-count > 1; clicked => { root.sim-align(7); } }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: I18n.en ? "Ctrl+click multi-select · Double-click properties"
+                        : "Ctrl+单击多选 · 双击打开属性";
+                    color: Theme.text-dim;
+                    font-size: ProductDesign.font-xs;
+                    vertical-alignment: center;
+                }
+            }
+            if root.running: HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                Rectangle {
+                    width: live-pill.width;
+                    vertical-stretch: 1;
+                    live-pill := StatusPill {
+                        y: (parent.height - self.height) / 2;
+                        text: I18n.en ? "LIVE DATA" : "实时联动";
+                        text-color: Theme.ok;
+                        fill: ProductDesign.success-soft;
+                    }
+                }
+                Rectangle {
+                    width: live-description.preferred-width;
+                    vertical-stretch: 1;
+                    live-description := Text {
+                        width: 100%;
+                        height: 24px;
+                        y: (parent.height - self.height) / 2;
+                        text: I18n.en
+                            ? "Layout is locked. Indicators receive CAN data; buttons, sliders, and generators transmit."
+                            : "布局已锁定：指示类控件接收 CAN 数据，按钮、滑块和发生器执行发送。";
+                        color: Theme.text-dim;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        // 专业网格画布
+        workspace := Rectangle {
+            background: Theme.bg;
+            canvas := Rectangle {
+                x: root.runtime-fullscreen ? 0px : 12px;
+                y: root.runtime-fullscreen ? 0px : 12px;
+                width: root.runtime-fullscreen ? parent.width : parent.width - 24px;
+                height: root.runtime-fullscreen ? parent.height : parent.height - 24px;
+                background: Theme.panel;
+                border-width: root.runtime-fullscreen ? 0px : 1px;
+                border-color: Theme.border;
+                border-radius: root.runtime-fullscreen ? 0px : ProductDesign.radius-md;
+                clip: true;
+                drop-shadow-blur: root.runtime-fullscreen ? 0px : 8px;
+                drop-shadow-color: Theme.shadow;
+                drop-shadow-offset-y: 2px;
+                property <float> logical-width: self.width / 1px;
+                property <float> logical-height: self.height / 1px;
+                changed logical-width => {
+                    if self.logical-width >= 200 && self.logical-height >= 150 {
+                        root.sim-constrain(self.logical-width, self.logical-height);
+                    }
+                }
+                changed logical-height => {
+                    if self.logical-width >= 200 && self.logical-height >= 150 {
+                        root.sim-constrain(self.logical-width, self.logical-height);
+                    }
+                }
+
+                // 24 px 辅助网格；仅作视觉定位，不参与捕获。
+                for column in 80: Rectangle {
+                    x: column * 24px;
+                    width: 1px;
+                    height: 100%;
+                    background: Theme.border.with-alpha(0.28);
+                }
+                for row in 50: Rectangle {
+                    y: row * 24px;
+                    height: 1px;
+                    width: 100%;
+                    background: Theme.border.with-alpha(0.28);
+                }
+
+                blank-area := TouchArea {
+                    mouse-cursor: root.running ? default : crosshair;
+                    enabled: !root.running;
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                            root.marquee-active = true;
+                            root.marquee-start-x = self.mouse-x;
+                            root.marquee-start-y = self.mouse-y;
+                            root.marquee-x = self.mouse-x;
+                            root.marquee-y = self.mouse-y;
+                            root.marquee-w = 0px;
+                            root.marquee-h = 0px;
+                        }
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                            root.sim-marquee(root.marquee-x / 1px, root.marquee-y / 1px, root.marquee-w / 1px, root.marquee-h / 1px);
+                            root.marquee-active = false;
+                        }
+                    }
                     moved => {
-                        if (self.pressed) {
-                            if (self.resizing) {
-                                // 绝对尺寸: 指针相对控件左上角(左上角拖动期间不变)=目标宽高
-                                root.sim-resize(i, self.mouse-x / 1px, self.mouse-y / 1px);
-                            } else {
-                                root.sim-drag(i, self.mouse-x - self.pressed-x, self.mouse-y - self.pressed-y);
+                        if self.pressed {
+                            root.marquee-x = min(root.marquee-start-x, self.mouse-x);
+                            root.marquee-y = min(root.marquee-start-y, self.mouse-y);
+                            root.marquee-w = abs(self.mouse-x - root.marquee-start-x);
+                            root.marquee-h = abs(self.mouse-y - root.marquee-start-y);
+                        }
+                    }
+                }
+
+                if root.sim-widgets.length == 0: Rectangle {
+                    width: min(parent.width - 48px, 650px);
+                    height: 224px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    background: Theme.panel.with-alpha(0.97);
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: ProductDesign.radius-md;
+                    drop-shadow-blur: 14px;
+                    drop-shadow-color: Theme.shadow;
+                    drop-shadow-offset-y: 4px;
+                    VerticalLayout {
+                        padding: 20px;
+                        spacing: 11px;
+                        Rectangle {
+                            height: 36px;
+                            Icon {
+                                name: "layout";
+                                clr: Theme.accent;
+                                width: 30px;
+                                height: 30px;
+                                x: (parent.width - self.width) / 2;
+                            }
+                        }
+                        Text {
+                            text: I18n.en ? "Build a CAN simulation workspace" : "创建 CAN 仿真工作区";
+                            color: Theme.text;
+                            font-size: ProductDesign.font-xl;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: I18n.en
+                                ? "The layout and DBC bindings are stored inside the current main .pcprj project."
+                                : "控件布局与 DBC 信号绑定会随当前主工程 .pcprj 一并保存。";
+                            color: Theme.text-dim;
+                            font-size: Theme.fs-sm;
+                            horizontal-alignment: center;
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            EmptyStep { number: "1"; title: I18n.en ? "Add" : "添加控件"; detail: I18n.en ? "Choose from library" : "从上方控件库选择"; }
+                            EmptyStep { number: "2"; title: I18n.en ? "Bind" : "绑定信号"; detail: I18n.en ? "Drag from signal library" : "从左侧信号库拖入"; }
+                            EmptyStep { number: "3"; title: I18n.en ? "Run" : "运行联动"; detail: I18n.en ? "Lock and go live" : "锁定布局并联动"; }
+                        }
+                        TBtn {
+                            primary: true;
+                            text: I18n.en ? "Add first indicator" : "添加第一个指示灯";
+                            clicked => { root.sim-add(0); }
+                        }
+                    }
+                }
+
+                for w[i] in root.sim-widgets: Rectangle {
+                    x: (w.x * 1px).clamp(0px, parent.width - self.width);
+                    y: (w.y * 1px).clamp(0px, parent.height - self.height);
+                    width: min(w.w * 1px, parent.width);
+                    height: min(w.h * 1px, parent.height);
+                    background: w.kind == 4 ? transparent : Theme.panel;
+                    border-width: w.primary ? 2px : (w.selected ? 2px : (w.kind == 4 ? 0px : 1px));
+                    border-color: w.primary ? Theme.ok : (w.selected ? Theme.accent : Theme.border);
+                    border-radius: ProductDesign.radius-sm;
+                    drop-shadow-blur: w.selected ? 10px : (w.kind == 4 ? 0px : 4px);
+                    drop-shadow-color: w.selected ? Theme.accent.with-alpha(0.28) : Theme.shadow;
+                    drop-shadow-offset-y: w.selected ? 2px : 1px;
+
+                    SimGlyph {
+                        width: 100%; height: 100%; w: w; pressed: action-area.pressed && w.kind == 5;
+                        value-accepted(value) => { if root.running { root.sim-input(i, value); } }
+                        trend-action(action) => { if root.running { root.sim-trend-action(i, action); } }
+                    }
+
+                    if w.primary: Rectangle {
+                        x: 6px;
+                        y: -9px;
+                        width: 48px;
+                        height: 18px;
+                        background: Theme.ok;
+                        border-radius: 9px;
+                        Text {
+                            text: I18n.en ? "Basis" : "基准";
+                            color: Theme.on-accent;
+                            font-size: ProductDesign.font-xs;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if !root.running: TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        property <bool> resizing: false;
+                        property <length> press-global-x: 0px;
+                        property <length> press-global-y: 0px;
+                        property <float> press-widget-x: 0;
+                        property <float> press-widget-y: 0;
+                        property <float> press-widget-w: 0;
+                        property <float> press-widget-h: 0;
+                        mouse-cursor: self.resizing || (self.has-hover
+                            && self.mouse-x > parent.width - 24px
+                            && self.mouse-y > parent.height - 24px) ? nwse-resize : move;
+                        pointer-event(event) => {
+                            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                                root.sim-select(i, event.modifiers.control);
+                                self.resizing = self.mouse-x > parent.width - 24px
+                                    && self.mouse-y > parent.height - 24px;
+                                self.press-global-x = self.absolute-position.x + self.mouse-x;
+                                self.press-global-y = self.absolute-position.y + self.mouse-y;
+                                self.press-widget-x = w.x;
+                                self.press-widget-y = w.y;
+                                self.press-widget-w = w.w;
+                                self.press-widget-h = w.h;
+                            }
+                            if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                                self.resizing = false;
+                            }
+                        }
+                        double-clicked => { root.sim-edit(i); }
+                        moved => {
+                            if self.pressed {
+                                if self.resizing {
+                                    root.sim-resize(i,
+                                        self.press-widget-w + (self.absolute-position.x + self.mouse-x - self.press-global-x) / 1px,
+                                        self.press-widget-h + (self.absolute-position.y + self.mouse-y - self.press-global-y) / 1px);
+                                } else {
+                                    root.sim-drag(i,
+                                        self.press-widget-x + (self.absolute-position.x + self.mouse-x - self.press-global-x) / 1px,
+                                        self.press-widget-y + (self.absolute-position.y + self.mouse-y - self.press-global-y) / 1px);
+                                }
+                            }
+                        }
+                    }
+                    if !root.running && w.selected: Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        x: parent.width - 10px;
+                        y: parent.height - 10px;
+                        background: Theme.panel;
+                        border-width: 2px;
+                        border-color: Theme.accent;
+                        border-radius: 3px;
+                    }
+                    action-area := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        enabled: root.running && (w.kind == 5 || w.kind == 8);
+                        mouse-cursor: pointer;
+                        pointer-event(event) => {
+                            if w.kind == 5 && event.button == PointerEventButton.left {
+                                if event.kind == PointerEventKind.down { root.sim-button(i, true); }
+                                if event.kind == PointerEventKind.up { root.sim-button(i, false); }
+                            }
+                        }
+                        clicked => {
+                            if w.kind == 8 { root.sim-switch(i); }
+                        }
+                    }
+                    if root.running && w.kind == 6: TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        mouse-cursor: pointer;
+                        moved => {
+                            if self.pressed {
+                                root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1));
+                            }
+                        }
+                        clicked => {
+                            root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1));
+                        }
+                    }
+                    if root.running && w.kind == 11: TouchArea {
+                        width: 100%; height: 100%; mouse-cursor: move;
+                        property <length> press-global-x: 0px;
+                        property <length> press-global-y: 0px;
+                        property <float> press-level: 0;
+                        pointer-event(event) => {
+                            if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                                self.press-global-x = self.absolute-position.x + self.mouse-x;
+                                self.press-global-y = self.absolute-position.y + self.mouse-y;
+                                self.press-level = w.level;
+                            }
+                        }
+                        moved => {
+                            if self.pressed {
+                                // Both horizontal and vertical motion rotate the knob. This keeps
+                                // the drag continuous even when the pointer crosses the control.
+                                root.sim-slider(i, (self.press-level
+                                    + ((self.absolute-position.x + self.mouse-x - self.press-global-x)
+                                    + (self.press-global-y - self.absolute-position.y - self.mouse-y))
+                                    / min(parent.width, parent.height) / 1.35).clamp(0, 1));
+                            }
+                        }
+                        scroll-event(event) => {
+                            root.sim-slider(i, (w.level - event.delta-y / 2400px).clamp(0, 1));
+                            accept
+                        }
+                    }
+                }
+
+                if root.marquee-active: Rectangle {
+                    x: root.marquee-x;
+                    y: root.marquee-y;
+                    width: root.marquee-w;
+                    height: root.marquee-h;
+                    background: Theme.accent.with-alpha(0.08);
+                    clip: true;
+                    for segment in 140: Rectangle {
+                        x: segment * 12px - root.ants-phase * 6px; y: 0px;
+                        width: 6px; height: 2px; background: Theme.accent;
+                    }
+                    for segment in 140: Rectangle {
+                        x: segment * 12px - root.ants-phase * 6px; y: parent.height - 2px;
+                        width: 6px; height: 2px; background: Theme.accent;
+                    }
+                    for segment in 90: Rectangle {
+                        x: 0px; y: segment * 12px - root.ants-phase * 6px;
+                        width: 2px; height: 6px; background: Theme.accent;
+                    }
+                    for segment in 90: Rectangle {
+                        x: parent.width - 2px; y: segment * 12px - root.ants-phase * 6px;
+                        width: 2px; height: 6px; background: Theme.accent;
+                    }
+                }
+            }
+
+            if root.signal-library-open && !root.running: Rectangle {
+                z: 80;
+                x: 12px;
+                y: 12px;
+                width: min(326px, parent.width - 48px);
+                height: parent.height - 24px;
+                background: Theme.panel;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: ProductDesign.radius-md;
+                drop-shadow-blur: 14px;
+                drop-shadow-color: Theme.shadow;
+                drop-shadow-offset-x: 3px;
+                clip: true;
+
+                VerticalLayout {
+                    spacing: 0px;
+                    Rectangle {
+                        height: 50px;
+                        background: Theme.panel2;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 8px;
+                            spacing: 8px;
+                            Icon { name: "database"; clr: Theme.accent; width: 19px; height: 19px; }
+                            VerticalLayout {
+                                spacing: 0px;
+                                Text { text: I18n.en ? "DBC Signal Library" : "DBC 信号库"; color: Theme.text; font-size: ProductDesign.font-md; font-weight: 700; vertical-alignment: center; }
+                                Text {
+                                    text: root.signal-library-marked-count > 0
+                                        ? ((I18n.en ? "Selected " : "已选 ") + root.signal-library-marked-count)
+                                        : (I18n.en ? "Drag a signal onto the canvas" : "拖动信号到画布或控件");
+                                    color: root.signal-library-marked-count > 0 ? Theme.accent : Theme.text-dim;
+                                    font-size: ProductDesign.font-xs;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            TBtn { text: "×"; clicked => { root.signal-library-open = false; } }
+                        }
+                    }
+                    Rectangle {
+                        height: 46px;
+                        background: Theme.panel;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 6px;
+                            LineEdit {
+                                horizontal-stretch: 1;
+                                height: Theme.ctrl-h;
+                                text: root.signal-library-filter;
+                                placeholder-text: I18n.en ? "Search signal, message or ID" : "搜索信号、报文或帧 ID";
+                                edited(value) => {
+                                    root.signal-library-filter = value;
+                                    root.signal-library-filter-changed(value);
+                                }
+                            }
+                            TBtn { text: I18n.en ? "Refresh" : "刷新"; clicked => { root.signal-library-refresh(); } }
+                        }
+                    }
+                    Rectangle {
+                        height: 25px;
+                        background: Theme.header;
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 8px;
+                            Text { text: I18n.en ? "DBC / Message / Signal" : "DBC / 报文 / 信号"; color: Theme.text; font-size: ProductDesign.font-xs; font-weight: 700; vertical-alignment: center; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: I18n.en ? "Ctrl multi-select" : "Ctrl 多选"; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; }
+                        }
+                    }
+                    Rectangle {
+                        height: 44px;
+                        background: Theme.panel2;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            spacing: 6px;
+                            TBtn { boxed: true; btn-enabled: root.signal-library-marked-count > 0; text: I18n.en ? "Numeric" : "数值"; clicked => { root.signal-library-create(-1, 3); } }
+                            TBtn { boxed: true; btn-enabled: root.signal-library-marked-count > 0; text: I18n.en ? "Indicator" : "指示灯"; clicked => { root.signal-library-create(-1, 0); } }
+                            TBtn { boxed: true; btn-enabled: root.signal-library-marked-count > 0; text: I18n.en ? "Trend" : "趋势图"; clicked => { root.signal-library-create(-1, 9); } }
+                            Rectangle { horizontal-stretch: 1; }
+                        }
+                    }
+                    ListView {
+                        min-height: 0px;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+                        for row[i] in root.signal-library-rows: Rectangle {
+                            height: Theme.big ? 42px : 38px;
+                            background: row.marked
+                                ? Theme.sel
+                                : (root.signal-library-cursor == i ? Theme.accent-soft : (lib-area.has-hover ? Theme.accent-soft : (Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra)));
+                            Rectangle { y: parent.height - 1px; width: 100%; height: 1px; background: Theme.border.with-alpha(0.7); }
+                            ContextMenuArea {
+                                enabled: row.kind == "signal";
+                                width: 100%; height: 100%;
+                                Menu {
+                                    MenuItem { title: I18n.en ? "Create numeric control" : "创建数值控件"; activated => { root.signal-library-create(i, 3); } }
+                                    MenuItem { title: I18n.en ? "Create gauge" : "创建仪表盘"; activated => { root.signal-library-create(i, 1); } }
+                                    MenuItem { title: I18n.en ? "Create indicator" : "创建指示灯"; activated => { root.signal-library-create(i, 0); } }
+                                    MenuItem { title: I18n.en ? "Create trend" : "创建趋势图"; activated => { root.signal-library-create(i, 9); } }
+                                }
+                            }
+                            HorizontalLayout {
+                                padding-left: 8px + row.level * 15px;
+                                padding-right: row.kind == "signal" ? 40px : 7px;
+                                spacing: 6px;
+                                Text {
+                                    width: 13px;
+                                    text: row.expandable ? (row.expanded ? "−" : "+") : (row.marked ? "•" : "");
+                                    color: row.marked ? Theme.accent : Theme.text-dim;
+                                    font-family: Theme.mono;
+                                    font-size: Theme.fs;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                Icon { name: row.kind == "dbc" ? "database" : (row.kind == "message" ? "send" : "curve"); clr: row.kind == "signal" ? Theme.accent : Theme.text-dim; width: 15px; height: 15px; }
+                                VerticalLayout {
+                                    spacing: 0px;
+                                    Text { text: row.name; color: Theme.text; font-size: ProductDesign.font-sm; font-weight: row.kind == "signal" ? 600 : 650; overflow: elide; vertical-alignment: center; }
+                                    Text { text: row.desc; color: Theme.text-dim; font-size: ProductDesign.font-xs; overflow: elide; vertical-alignment: center; }
+                                }
+                            }
+                            lib-area := TouchArea {
+                                mouse-cursor: pointer;
+                                property <bool> additive: false;
+                                pointer-event(event) => {
+                                    if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                                        self.additive = event.modifiers.control;
+                                    }
+                                }
+                                clicked => { root.signal-library-row-clicked(i, self.additive); }
+                                double-clicked => { root.signal-library-activate(i); }
+                            }
+                            if row.kind == "signal": Rectangle {
+                                x: parent.width - 36px;
+                                width: 36px;
+                                height: 100%;
+                                background: drag-handle.has-hover || drag-handle.pressed ? Theme.accent-soft : transparent;
+                                Rectangle {
+                                    x: 10px; y: parent.height / 2 - 7px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                Rectangle {
+                                    x: 18px; y: parent.height / 2 - 7px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                Rectangle {
+                                    x: 10px; y: parent.height / 2 - 1px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                Rectangle {
+                                    x: 18px; y: parent.height / 2 - 1px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                Rectangle {
+                                    x: 10px; y: parent.height / 2 + 5px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                Rectangle {
+                                    x: 18px; y: parent.height / 2 + 5px;
+                                    width: 4px; height: 4px; border-radius: 2px; background: Theme.text-dim;
+                                }
+                                drag-handle := TouchArea {
+                                    mouse-cursor: move;
+                                    pointer-event(event) => {
+                                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                                            root.signal-drag-index = i;
+                                            root.signal-drag-name = row.name;
+                                            root.signal-drag-x = self.absolute-position.x + self.mouse-x - workspace.absolute-position.x;
+                                            root.signal-drag-y = self.absolute-position.y + self.mouse-y - workspace.absolute-position.y;
+                                            root.signal-drag-active = true;
+                                        }
+                                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                                            if root.signal-drag-active && root.signal-drag-index == i {
+                                                root.signal-library-drop(i,
+                                                    (self.absolute-position.x + self.mouse-x - canvas.absolute-position.x) / 1px,
+                                                    (self.absolute-position.y + self.mouse-y - canvas.absolute-position.y) / 1px);
+                                            }
+                                            root.signal-drag-active = false;
+                                            root.signal-drag-index = -1;
+                                        }
+                                    }
+                                    moved => {
+                                        if self.pressed {
+                                            root.signal-drag-x = self.absolute-position.x + self.mouse-x - workspace.absolute-position.x;
+                                            root.signal-drag-y = self.absolute-position.y + self.mouse-y - workspace.absolute-position.y;
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
-                // 编辑模式：右下角缩放视觉手柄(纯提示, 不拦截事件)
-                if !root.running: Rectangle {
-                    width: 16px; height: 16px; x: parent.width - 16px; y: parent.height - 16px;
-                    background: w.selected ? Theme.accent : Theme.border; border-radius: 3px;
+            }
+
+            if root.signal-drag-active: Rectangle {
+                z: 120;
+                x: 0px;
+                y: 0px;
+                width: 100%;
+                height: 100%;
+                background: transparent;
+                Rectangle {
+                    x: canvas.x;
+                    y: canvas.y;
+                    width: canvas.width;
+                    height: canvas.height;
+                    background: Theme.accent.with-alpha(0.035);
+                    border-width: 2px;
+                    border-color: Theme.accent.with-alpha(0.72);
+                    border-radius: ProductDesign.radius-md;
                 }
-                // 运行模式：按钮 按下发「按下值」、释放发「释放值」
-                if root.running && w.kind == 5: TouchArea {
-                    width: 100%; height: 100%;
-                    pointer-event(ev) => {
-                        if (ev.button == PointerEventButton.left) {
-                            if (ev.kind == PointerEventKind.down) { root.sim-button(i, true); }
-                            if (ev.kind == PointerEventKind.up) { root.sim-button(i, false); }
-                        }
+                drag-preview := Rectangle {
+                    x: (root.signal-drag-x + 12px).clamp(8px, parent.width - self.width - 8px);
+                    y: (root.signal-drag-y + 12px).clamp(8px, parent.height - self.height - 8px);
+                    width: min(drag-label.preferred-width + 44px, 330px);
+                    height: 34px;
+                    background: root.signal-drag-x >= canvas.x && root.signal-drag-x <= canvas.x + canvas.width
+                        && root.signal-drag-y >= canvas.y && root.signal-drag-y <= canvas.y + canvas.height
+                        ? Theme.accent : Theme.text-dim;
+                    border-radius: ProductDesign.radius-sm;
+                    drop-shadow-blur: 10px;
+                    drop-shadow-color: Theme.shadow;
+                    HorizontalLayout {
+                        padding-left: 9px;
+                        padding-right: 9px;
+                        spacing: 7px;
+                        Icon { name: "curve"; clr: Theme.on-accent; width: 16px; height: 16px; }
+                        drag-label := Text { text: root.signal-drag-name; color: Theme.on-accent; font-size: ProductDesign.font-sm; font-weight: 650; overflow: elide; vertical-alignment: center; }
                     }
                 }
-                // 运行模式：滑块可拖动设值(frac 对齐手柄行程, 消除偏移)
-                if root.running && w.kind == 6: TouchArea {
-                    width: 100%; height: 100%;
-                    moved => { if (self.pressed) { root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1)); } }
-                    clicked => { root.sim-slider(i, ((self.mouse-x - 7px) / (parent.width - 14px)).clamp(0, 1)); }
+            }
+
+            if root.running && root.runtime-fullscreen: Rectangle {
+                z: 180;
+                x: parent.width - self.width - 18px;
+                y: 18px;
+                width: 292px;
+                height: 48px;
+                background: Theme.panel.with-alpha(0.94);
+                border-width: 1px;
+                border-color: Theme.border;
+                border-radius: ProductDesign.radius-md;
+                drop-shadow-blur: 12px;
+                drop-shadow-color: Theme.shadow;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 8px;
+                    padding-top: 6px;
+                    padding-bottom: 6px;
+                    spacing: 7px;
+                    StatusPill {
+                        text: I18n.en ? "LIVE" : "运行中";
+                        text-color: Theme.ok;
+                        fill: ProductDesign.success-soft;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    TBtn {
+                        boxed: true;
+                        text: I18n.en ? "Exit full canvas" : "退出全屏";
+                        clicked => { root.runtime-fullscreen-toggle(); }
+                    }
+                    TBtn {
+                        primary: true;
+                        text: I18n.en ? "Stop" : "停止";
+                        clicked => { root.sim-run-toggle(); }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            height: root.runtime-fullscreen ? 0px : 30px;
+            visible: !root.runtime-fullscreen;
+            background: Theme.panel2;
+            Rectangle { y: 0px; width: 100%; height: 1px; background: Theme.border; }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 14px;
+                Text { text: (I18n.en ? "Controls " : "控件 ") + root.widget-count; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; }
+                Text { text: (I18n.en ? "Selected " : "已选 ") + root.selected-count; color: root.selected-count > 0 ? Theme.accent : Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; }
+                Text {
+                    text: (I18n.en ? "DBC files " : "DBC文件 ") + root.dbc-count;
+                    color: root.dbc-count > 0 ? Theme.ok : Theme.text-dim;
+                    font-size: ProductDesign.font-xs;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: root.project-path == ""
+                        ? (I18n.en ? "Main project not saved" : "主工程尚未保存")
+                        : (root.layout-dirty
+                            ? (I18n.en ? "Layout changes pending" : "布局修改待保存")
+                            : (I18n.en ? "Layout saved in main project" : "布局已保存到主工程"));
+                    color: root.layout-dirty ? Theme.warn : (root.project-path == "" ? Theme.text-dim : Theme.ok);
+                    font-size: ProductDesign.font-xs;
+                    font-weight: 600;
+                    vertical-alignment: center;
                 }
             }
         }

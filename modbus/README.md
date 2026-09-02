@@ -12,12 +12,15 @@ One window, two modes:
 | **Master · Poll** | Modbus Poll | Connects to a slave device and continuously polls a register/coil range, displaying live values; can write single registers/coils. |
 | **Slave · Simulator** | Modbus Slave | Emulates a slave device, serving requests from masters; register/coil values are shown in an editable grid and update live as masters read/write. |
 
-Both modes support **Modbus TCP** and **Modbus RTU** (serial).
+Both modes support **Modbus RTU** (serial), **Modbus TCP**, **Modbus UDP**,
+**Modbus RTU over TCP**, and **Modbus RTU over UDP**.
 
 ## Features
 
-- **Transports:** Modbus TCP (client & server) and Modbus RTU over serial
-  (baud / data bits / parity / stop bits configurable). 1000 ms response timeout.
+- **Transports:** Modbus RTU over serial, Modbus TCP, Modbus UDP, Modbus RTU over
+  TCP, and Modbus RTU over UDP in both client and server modes. Serial baud / data
+  bits / parity / stop bits are configurable. TCP Security (TLS) is available for
+  Modbus TCP. 1000 ms response timeout.
 - **Function codes:** Read Coils (FC01), Read Discrete Inputs (FC02),
   Read Holding Registers (FC03), Read Input Registers (FC04),
   Write Single Coil/Register (FC05/FC06), Write Multiple Coils/Registers (FC15/FC16).
@@ -153,8 +156,7 @@ conditional colours, scaling, workspace save/load and CSV export.
 
 ## Roadmap (not yet implemented)
 
-- Connection types beyond TCP/RTU (UDP, TCP/Security, RTU/ASCII over TCP/UDP),
-  Modbus ASCII mode, advanced serial control (RTS/DSR/CTS/DTR).
+- Modbus ASCII mode and advanced serial control (RTS/DSR/CTS/DTR).
 - Master-issued advanced function codes (08 Diagnostics, 11 Comm Event Counter,
   17 Report Server ID, 43/14 Device ID). (The slave already answers 22 and 23.)
 - Excel logging and the OLE/COM automation interface.

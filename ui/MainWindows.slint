@@ -1,0 +1,10 @@
+// The frequently edited application shell is compiled independently from
+// feature dialogs. Chart and transmit stay here because they share live Slint
+// row models with AppWindow and keep shell edits in a small build boundary.
+export {
+    ByteCell, TxByteCell, TxByteRow, MsgRow, SigRow, TxSigRow, TxRow, TreeRow, RecentProjectRow,
+    ChanStat, IdStat, ChartSeries, I18n, Theme, ColW,
+} from "common.slint";
+export { AppWindow } from "AppWindow.slint";
+export { ChartWindow } from "ChartWindow.slint";
+export { TxWindow } from "TxWindow.slint";

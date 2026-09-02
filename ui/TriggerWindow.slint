@@ -1,8 +1,8 @@
 // One-window Slint page split from the original monolithic file.
 import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { ByteCell, TxByteRow, HexDataField, HexByteEditorOverlay, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph, ThemedWindow } from "common.slint";
 
-export component TriggerWindow inherits Window {
+export component TriggerWindow inherits ThemedWindow {
     title: I18n.en ? "Trigger" : "触发器";
     icon: @image-url("logo.svg");
     preferred-width: 680px;
@@ -20,6 +20,16 @@ export component TriggerWindow inherits Window {
     in-out property <string> send-data: "00 11 22 33";
     in-out property <bool> send-ext: false;
     in-out property <bool> send-fd: false;
+    in-out property <bool> hex-editor-open: false;
+    in-out property <string> hex-editor-title: "";
+    in property <[TxByteRow]> hex-editor-rows;
+    in-out property <string> hex-editor-paste: "";
+    in-out property <string> hex-editor-error: "";
+    in-out property <int> hex-editor-length: 8;
+    callback hex-editor-show(string, string, int);
+    callback hex-editor-byte-edited(int, string);
+    callback hex-editor-fill(string);
+    callback hex-editor-apply() -> bool;
     callback trig-apply();
     callback trig-disarm();
 
@@ -50,7 +60,7 @@ export component TriggerWindow inherits Window {
                 Text { text: I18n.en ? "Send ID:0x" : "发送ID:0x"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
                 LineEdit { text: root.send-id; width: 120px; height: Theme.ctrl-h; enabled: root.trig-action == 3; edited(v) => { root.send-id = v; } }
                 Text { text: I18n.en ? "Send data:" : "发送数据:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
-                LineEdit { text: root.send-data; width: 200px; height: Theme.ctrl-h; enabled: root.trig-action == 3; placeholder-text: "00 11 22"; edited(v) => { root.send-data = v; } }
+                HexDataField { value: root.send-data; width: 200px; field-enabled: root.trig-action == 3; edit-requested => { root.hex-editor-show("send-data", root.send-data, root.send-fd ? 64 : 8); } }
             }
             Row {
                 Text { text: I18n.en ? "Send opts:" : "发送选项:"; width: 90px; font-weight: 700; font-size: Theme.fs; vertical-alignment: center; color: Theme.text; }
@@ -78,5 +88,14 @@ export component TriggerWindow inherits Window {
                 Button { text: I18n.en ? "Disarm" : "撤防"; clicked => { root.trig-disarm(); } }
             }
         }
+    }
+
+    HexByteEditorOverlay {
+        open: root.hex-editor-open; editor-title: root.hex-editor-title; rows: root.hex-editor-rows;
+        paste-value <=> root.hex-editor-paste; error-text: root.hex-editor-error;
+        close-requested => { root.hex-editor-open = false; }
+        byte-edited(i, value) => { root.hex-editor-byte-edited(i, value); }
+        paste-requested(value) => { root.hex-editor-fill(value); }
+        apply-requested => { return root.hex-editor-apply(); }
     }
 }

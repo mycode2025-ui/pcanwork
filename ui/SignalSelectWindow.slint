@@ -1,8 +1,8 @@
 // One-window Slint page split from the original monolithic file.
 import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph, ThemedWindow } from "common.slint";
 
-export component SignalSelectWindow inherits Window {
+export component SignalSelectWindow inherits ThemedWindow {
     title: I18n.en ? "Select Signal" : "选择信号";
     icon: @image-url("logo.svg");
     preferred-width: 900px;
@@ -107,7 +107,7 @@ export component SignalSelectWindow inherits Window {
                     }
                     if root.sig-cat == 3 && root.expr-error != "": Rectangle {
                         height: 22px; background: Theme.panel2;
-                        Text { text: root.expr-error; x: 10px; width: parent.width - 16px; color: #e06c6c; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; }
+                        Text { text: root.expr-error; x: 10px; width: parent.width - 16px; color: Theme.bad; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; }
                     }
                     Rectangle {
                         height: 24px;

@@ -1,4 +1,4 @@
-﻿// Python 自动化测试「脚本运行器」窗口的事件接线 + Python 版本检测/校验/启动。
+// Python 自动化测试「脚本运行器」窗口的事件接线 + Python 版本检测/校验/启动。
 // 通过 include! 进 main.rs 的 crate-root 模块，共享其 import 与私有项（无单独 use）。
 //
 // 版本切换 = 改 interp 路径字符串；每次 Run 现读现校验，零 rebuild、零 pip。
@@ -44,7 +44,8 @@ fn extract_win_path(s: &str) -> Option<String> {
         return None;
     }
     for i in (0..b.len() - 2).rev() {
-        if b[i].is_ascii_alphabetic() && b[i + 1] == b':' && (b[i + 2] == b'\\' || b[i + 2] == b'/') {
+        if b[i].is_ascii_alphabetic() && b[i + 1] == b':' && (b[i + 2] == b'\\' || b[i + 2] == b'/')
+        {
             return Some(s[i..].trim().to_string());
         }
     }
@@ -101,7 +102,10 @@ fn detect_pythons() -> Vec<(String, String)> {
     }
     scan_python_dir("C:\\", &mut candidates); // C:\PythonXX
     if let Ok(up) = std::env::var("USERPROFILE") {
-        scan_python_dir(&format!("{up}\\.pyenv\\pyenv-win\\versions"), &mut candidates);
+        scan_python_dir(
+            &format!("{up}\\.pyenv\\pyenv-win\\versions"),
+            &mut candidates,
+        );
     }
     if let Ok(cp) = std::env::var("CONDA_PREFIX") {
         scan_python_dir(&cp, &mut candidates);
@@ -113,12 +117,24 @@ fn detect_pythons() -> Vec<(String, String)> {
         if c.to_ascii_lowercase().contains("\\windowsapps\\") {
             continue; // Microsoft Store 应用执行别名 stub：非可用解释器
         }
-        let canon = std::fs::canonicalize(&c).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| c.clone());
+        let canon = std::fs::canonicalize(&c)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| c.clone());
         if !seen.insert(canon) {
             continue;
         }
-        if let Some((true, out)) = run_capture(&c, &["-c", "import sys;print(sys.version_info[0],sys.version_info[1])"], std::time::Duration::from_secs(3)) {
-            let nums: Vec<u32> = out.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        if let Some((true, out)) = run_capture(
+            &c,
+            &[
+                "-c",
+                "import sys;print(sys.version_info[0],sys.version_info[1])",
+            ],
+            std::time::Duration::from_secs(3),
+        ) {
+            let nums: Vec<u32> = out
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
             if nums.len() >= 2 && nums[0] == 3 && nums[1] >= 7 {
                 result.push((c.clone(), format!("Python {}.{}", nums[0], nums[1])));
             }
@@ -152,8 +168,20 @@ fn validate_interp(exe: &str, client_dir: &str) -> Result<(), String> {
                 if st.success() {
                     return Ok(());
                 }
-                let err = child.wait_with_output().map(|o| String::from_utf8_lossy(&o.stderr).trim().lines().last().unwrap_or("").to_string()).unwrap_or_default();
-                return Err(format!("解释器不可用（需 3.7+ 且能 import pcanwork）: {err}"));
+                let err = child
+                    .wait_with_output()
+                    .map(|o| {
+                        String::from_utf8_lossy(&o.stderr)
+                            .trim()
+                            .lines()
+                            .last()
+                            .unwrap_or("")
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                return Err(format!(
+                    "解释器不可用（需 3.7+ 且能 import pcanwork）: {err}"
+                ));
             }
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
@@ -175,14 +203,75 @@ fn client_dir() -> String {
         .unwrap_or_default()
 }
 
+fn extract_help_doc(source: &str) -> Option<String> {
+    let start = source
+        .find("r\"\"\"")
+        .map(|index| index + 4)
+        .or_else(|| source.find("\"\"\"").map(|index| index + 3))?;
+    let end = source[start..].find("\"\"\"")? + start;
+    Some(source[start..end].trim().to_string())
+}
+
+fn python_help_text() -> String {
+    let mut candidates = vec![
+        std::path::PathBuf::from(client_dir())
+            .join("templates")
+            .join("help.py"),
+    ];
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("templates").join("help.py"));
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(workspace) = executable
+            .parent()
+            .and_then(std::path::Path::parent)
+            .and_then(std::path::Path::parent)
+        {
+            candidates.push(workspace.join("templates").join("help.py"));
+        }
+    }
+    for path in candidates {
+        if let Ok(source) = std::fs::read_to_string(path) {
+            if let Some(help) = extract_help_doc(&source) {
+                return help;
+            }
+        }
+    }
+    "未找到 templates\\help.py，请重新安装完整的 PcanWork 安装包。".to_string()
+}
+
+#[cfg(test)]
+mod help_tests {
+    use super::extract_help_doc;
+
+    #[test]
+    fn packaged_help_is_valid_and_contains_core_workflows() {
+        let help = extract_help_doc(include_str!("../templates/help.py")).unwrap();
+        for section in [
+            "这个功能能做什么",
+            "设备连接方式",
+            "DBC 和信号测试",
+            "运行测试套件",
+            "常见问题",
+        ] {
+            assert!(help.contains(section), "missing help section: {section}");
+        }
+    }
+}
+
 /// 检测并填充 Python 下拉（合并已持久化的自定义路径，避免被检测清掉）。
 fn populate_pythons(w: &ScriptRunnerWindow, persisted: &str) {
     let found = detect_pythons();
-    let mut labels: Vec<slint::SharedString> = found.iter().map(|(p, ver)| format!("{ver} | {p}").into()).collect();
+    let mut labels: Vec<slint::SharedString> = found
+        .iter()
+        .map(|(p, ver)| format!("{ver} | {p}").into())
+        .collect();
     if !persisted.trim().is_empty() && !found.iter().any(|(p, _)| p == persisted) {
         labels.push(format!("自定义 | {persisted}").into());
     }
-    w.set_python_list(slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(labels))));
+    w.set_python_list(slint::ModelRc::from(std::rc::Rc::new(
+        slint::VecModel::from(labels),
+    )));
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -254,73 +343,86 @@ fn spawn_py_process(
             return false;
         }
     };
-    // reader 线程：只持有 mpsc::Sender<String>（Send 安全），不捕获 App。
-    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    // reader 线程只持有有界输出队列，不捕获 App；脚本刷屏不能拖垮主进程内存。
+    let (tx, rx) = crossbeam_channel::bounded::<String>(4096);
+    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     if let Some(out) = child.stdout.take() {
         let tx = tx.clone();
+        let dropped = dropped.clone();
         std::thread::spawn(move || {
             use std::io::BufRead;
             for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-                if tx.send(line).is_err() {
-                    break;
+                match tx.try_send(line) {
+                    Ok(()) => {}
+                    Err(crossbeam_channel::TrySendError::Full(_)) => {
+                        dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
                 }
             }
         });
     }
     if let Some(err) = child.stderr.take() {
+        let dropped = dropped.clone();
         std::thread::spawn(move || {
             use std::io::BufRead;
             for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
-                if tx.send(format!("[stderr] {line}")).is_err() {
-                    break;
+                match tx.try_send(format!("[stderr] {line}")) {
+                    Ok(()) => {}
+                    Err(crossbeam_channel::TrySendError::Full(_)) => {
+                        dropped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    Err(crossbeam_channel::TrySendError::Disconnected(_)) => break,
                 }
             }
         });
     }
     let mut a = app.borrow_mut();
     a.py_out_rx = Some(rx);
+    a.py_output_dropped = Some(dropped);
+    a.py_output_dropped_seen = 0;
     a.py_child = Some(child);
     true
 }
 
-fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_window: &ScriptRunnerWindow, ipc_port: u16, ipc_token: String) {
-    // 打开窗口：从持久化字段回填 + 检测一次 + 显示。
+fn prepare_and_show_script_runner(app: &Rc<std::cell::RefCell<App>>, window: &ScriptRunnerWindow) {
+    window.set_help_text(python_help_text().into());
     {
-        let app = app.clone();
-        let rw = script_runner_window.as_weak();
-        ui.on_open_script_runner(move || {
-            let Some(w) = rw.upgrade() else { return };
-            {
-                let a = app.borrow();
-                if !a.python_interpreter.is_empty() {
-                    w.set_interp_path(a.python_interpreter.clone().into());
-                }
-                if !a.last_script_path.is_empty() {
-                    w.set_script_path(a.last_script_path.clone().into());
-                }
-                // 回显上次运行的输出/状态（重新打开窗口时不丢报错日志）
-                if !a.py_output.is_empty() {
-                    w.set_output(a.py_output.clone().into());
-                    w.set_running(a.py_child.is_some());
-                    let rs = a.run_status.clone();
-                    w.set_result(if rs.starts_with("PASS") {
-                        1
-                    } else if rs.starts_with("FAIL") {
-                        -1
-                    } else {
-                        0
-                    });
-                }
-            }
-            let persisted = app.borrow().python_interpreter.clone();
-            populate_pythons(&w, &persisted);
-            if app.borrow().py_output.is_empty() {
-                w.set_status_text("就绪".into());
-            }
-            show_child_window(&w);
-        });
+        let a = app.borrow();
+        if !a.python_interpreter.is_empty() {
+            window.set_interp_path(a.python_interpreter.clone().into());
+        }
+        if !a.last_script_path.is_empty() {
+            window.set_script_path(a.last_script_path.clone().into());
+        }
+        if !a.py_output.is_empty() {
+            window.set_output(a.py_output.clone().into());
+            window.set_running(a.py_child.is_some());
+            let status = a.run_status.clone();
+            window.set_result(if status.starts_with("PASS") {
+                1
+            } else if status.starts_with("FAIL") {
+                -1
+            } else {
+                0
+            });
+        }
     }
+    let persisted = app.borrow().python_interpreter.clone();
+    populate_pythons(window, &persisted);
+    if app.borrow().py_output.is_empty() {
+        window.set_status_text("就绪".into());
+    }
+    show_child_window(window);
+}
 
+fn wire_pyauto(
+    app: Rc<std::cell::RefCell<App>>,
+    _ui: &AppWindow,
+    script_runner_window: &ScriptRunnerWindow,
+    ipc_port: u16,
+    ipc_token: String,
+) {
     // 检测已装版本。
     {
         let app = app.clone();
@@ -339,7 +441,13 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
         let app = app.clone();
         let rw = script_runner_window.as_weak();
         script_runner_window.on_python_selected(move |label| {
-            let path = label.as_str().rsplit(" | ").next().unwrap_or("").trim().to_string();
+            let path = label
+                .as_str()
+                .rsplit(" | ")
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
             if path.is_empty() {
                 return;
             }
@@ -361,7 +469,9 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
                 let Some(w) = rw.upgrade() else { return };
                 let mut dlg = rfd::AsyncFileDialog::new().add_filter("Python", &["exe"]);
                 dlg = dlg.set_parent(&w.window().window_handle());
-                let Some(file) = dlg.pick_file().await else { return };
+                let Some(file) = dlg.pick_file().await else {
+                    return;
+                };
                 let p = file.path().to_string_lossy().to_string();
                 w.set_interp_path(p.clone().into());
                 match validate_interp(&p, &client_dir()) {
@@ -390,7 +500,9 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
                 let Some(w) = rw.upgrade() else { return };
                 let mut dlg = rfd::AsyncFileDialog::new().add_filter("Python 脚本", &["py"]);
                 dlg = dlg.set_parent(&w.window().window_handle());
-                let Some(file) = dlg.pick_file().await else { return };
+                let Some(file) = dlg.pick_file().await else {
+                    return;
+                };
                 let p = file.path().to_string_lossy().to_string();
                 w.set_script_path(p.clone().into());
                 app.borrow_mut().last_script_path = p;
@@ -437,7 +549,9 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
                 let Some(w) = rw.upgrade() else { return };
                 let mut dlg = rfd::AsyncFileDialog::new();
                 dlg = dlg.set_parent(&w.window().window_handle());
-                let Some(folder) = dlg.pick_folder().await else { return };
+                let Some(folder) = dlg.pick_folder().await else {
+                    return;
+                };
                 let dir = folder.path().to_string_lossy().to_string();
                 let interp = {
                     let p = w.get_interp_path().to_string();
@@ -449,7 +563,16 @@ fn wire_pyauto(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, script_runner_w
                 };
                 let suite = format!("{}/templates/run_suite.py", client_dir());
                 // 套件总超时给大值（逐测试超时由 run_suite.py 自管，默认每个 120s）。
-                spawn_py_process(&app, &w, &interp, &suite, &[("PCANWORK_SUITE_DIR", dir.as_str())], ipc_port, &token, 3600);
+                spawn_py_process(
+                    &app,
+                    &w,
+                    &interp,
+                    &suite,
+                    &[("PCANWORK_SUITE_DIR", dir.as_str())],
+                    ipc_port,
+                    &token,
+                    3600,
+                );
             });
         });
     }

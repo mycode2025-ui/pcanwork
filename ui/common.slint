@@ -1,5 +1,6 @@
 // Common types, globals and reusable widgets split from the original monolithic file.
-import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit, Palette } from "std-widgets.slint";
+import { ProductDesign, ProductI18n } from "design-system.slint";
 
 
 export struct ByteCell {
@@ -7,9 +8,20 @@ export struct ByteCell {
     hot: bool,
 }
 
+export struct TxByteCell {
+    hex: string,
+    valid: bool,
+    enabled: bool,
+}
+
+export struct TxByteRow {
+    offset: string,
+    bytes: [TxByteCell],
+}
+
 // 仿真面板画布上一个控件的显示态
 export struct SimRow {
-    kind: int,       // 0指示灯 1仪表盘 2进度条 3数值 4标签 5按钮 6滑块 7信号发生器
+    kind: int,
     name: string,
     info: string,
     status: string,
@@ -22,6 +34,33 @@ export struct SimRow {
     selected: bool,
     primary: bool,   // 主控件(等高/等宽的模板基准)
     align: int,      // 文本对齐: 0左 1中 2右
+    trace-path-1: string,
+    trace-path-2: string,
+    trace-path-3: string,
+    trace-path-4: string,
+    trace-labels: string,
+    series-label-1: string,
+    series-label-2: string,
+    series-label-3: string,
+    series-label-4: string,
+    series-value-1: string,
+    series-value-2: string,
+    series-value-3: string,
+    series-value-4: string,
+    series-level-1: float,
+    series-level-2: float,
+    series-level-3: float,
+    series-level-4: float,
+    series-on-1: bool,
+    series-on-2: bool,
+    series-on-3: bool,
+    series-on-4: bool,
+    range-label: string,
+    paused: bool,
+    alarm: bool,
+    alarm-message: string,
+    image-source: image,
+    has-image: bool,
 }
 
 export struct MsgRow {
@@ -96,6 +135,7 @@ export struct TxRow {
     brs: string,
     dlc: string,
     data: string,
+    data-summary: string,
     mode: string,
     period: string,
     count: string,
@@ -166,6 +206,16 @@ export struct DbcSignalRow {
     label: string,
 }
 
+export struct DbcDiagnosticRow {
+    severity: int, // 0=info, 1=warning, 2=error
+    code: string,
+    location: string,
+    title-zh: string,
+    title-en: string,
+    detail-zh: string,
+    detail-en: string,
+}
+
 export struct SignalPickRow {
     level: int,
     name: string,
@@ -175,54 +225,93 @@ export struct SignalPickRow {
     expanded: bool,
     selectable: bool,
     selected: bool,
+    marked: bool,
 }
 
 // ======================= Theme =======================
 
 // 中英切换: en=true 显示英文。各处文案写 I18n.en ? "English" : "中文"。
 export global I18n {
-    in-out property <bool> en: false;
+    in-out property <bool> en: ProductI18n.en;
+    changed en => { ProductI18n.en = en; }
+}
+
+export struct RecentProjectRow {
+    name: string,
+    path: string,
+    modified: string,
+    available: bool,
 }
 
 export global Theme {
-    in-out property <bool> dark: false;
-    in-out property <bool> big: true; // 触摸友好的大布局
+    in-out property <bool> dark: ProductDesign.dark;
+    in-out property <bool> big: !ProductDesign.compact; // 触摸友好的大布局
+    changed dark => {
+        ProductDesign.dark = dark;
+        Palette.color-scheme = dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    changed big => { ProductDesign.compact = !big; }
 
     // 学术蓝（Academic Blue）配色：冷蓝灰中性 + 海军/宝蓝主色
-    out property <color> bg: dark ? #0d1726 : #eef3f9;
-    out property <color> panel: dark ? #132237 : #ffffff;
-    out property <color> panel2: dark ? #1a2c44 : #e3ecf6;
-    out property <color> border: dark ? #2a3f5c : #cdd9e8;
-    out property <color> text: dark ? #e4ecf7 : #16243a;
-    out property <color> text-dim: dark ? #93a6c0 : #5a6b85;
-    out property <color> header: dark ? #16273d : #e0eaf5;
-    out property <color> accent: dark ? #5b9bf0 : #1c5aa6;
-    out property <color> accent-soft: dark ? #1e3556 : #dbe7f6;
-    out property <color> tx-bg: dark ? #14253f : #e8f1fc;
-    out property <color> err-bg: dark ? #3a1f23 : #fdecec;
-    out property <color> new-bg: dark ? #16301f : #e8f8ee;
-    out property <color> timeout-bg: dark ? #3a2e16 : #fff4e2;
-    out property <color> changed-bg: dark ? #4a4420 : #fff3bf;
-    out property <color> ok: dark ? #4ade80 : #16a34a;
-    out property <color> warn: dark ? #fbbf24 : #d97706;
-    out property <color> bad: dark ? #f87171 : #dc2626;
-    out property <color> sel: dark ? #21406a : #cfe0f5;
-    out property <color> zebra: dark ? #101c2e : #f6f9fd;
-    out property <color> sigrow: dark ? #122138 : #eef5fd;
+    out property <color> bg: ProductDesign.window;
+    out property <color> panel: ProductDesign.surface;
+    out property <color> panel2: ProductDesign.surface-raised;
+    out property <color> border: ProductDesign.border;
+    out property <color> text: ProductDesign.text;
+    out property <color> text-dim: ProductDesign.text-muted;
+    out property <color> header: ProductDesign.header-surface;
+    out property <color> accent: ProductDesign.brand;
+    out property <color> brand-header: ProductDesign.brand-header;
+    out property <color> accent-soft: ProductDesign.brand-soft;
+    out property <color> tx-bg: ProductDesign.info-soft;
+    out property <color> err-bg: ProductDesign.danger-soft;
+    out property <color> new-bg: ProductDesign.success-soft;
+    out property <color> timeout-bg: ProductDesign.warning-soft;
+    out property <color> changed-bg: ProductDesign.changed-soft;
+    out property <color> ok: ProductDesign.success;
+    out property <color> warn: ProductDesign.warning;
+    out property <color> bad: ProductDesign.danger;
+    out property <color> sel: ProductDesign.selection;
+    out property <color> zebra: ProductDesign.zebra;
+    out property <color> sigrow: ProductDesign.signal-row;
+    out property <color> on-accent: ProductDesign.on-brand;
+    out property <color> on-accent-border: ProductDesign.on-brand-border;
+    out property <color> on-accent-faint: ProductDesign.on-brand-faint;
+    out property <color> shadow: ProductDesign.shadow;
+    out property <color> scrim: ProductDesign.scrim;
 
-    out property <length> rowh: big ? 32px : 26px;
-    out property <length> ctrl-h: big ? 38px : 30px;
-    out property <length> fs: big ? 14px : 12px;
-    out property <length> fs-sm: big ? 13px : 11px;
-    out property <length> radius: 6px;
-    out property <string> mono: "Cascadia Mono, Consolas";
+    out property <length> rowh: ProductDesign.row-height;
+    out property <length> ctrl-h: ProductDesign.control-height;
+    out property <length> fs: big ? ProductDesign.font-md : ProductDesign.font-sm;
+    out property <length> fs-sm: big ? ProductDesign.font-sm : ProductDesign.font-xs;
+    out property <length> radius: ProductDesign.radius-sm;
+    out property <string> sans: ProductDesign.font-sans;
+    out property <string> mono: ProductDesign.font-mono;
+}
+
+// Every secondary window must initialize the native std-widget palette itself.
+// Windows can be created lazily, after the OS color scheme or saved product theme
+// has changed; relying only on the main window leaves controls white-on-white.
+export component ThemedWindow inherits Window {
+    in-out property <bool> dark: Theme.dark;
+    changed dark => {
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    init => {
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
 }
 
 // 列宽（0px = 隐藏该列）。Rust 端在切换列可见性时改写这些值。
 export global ColW {
+    out property <length> expander: 28px;
     in-out property <length> no: 52px;
     in-out property <length> time: 96px;
-    in-out property <length> delta: 80px;
+    in-out property <length> cycle: 72px;
+    // 保留字段仅用于兼容旧配置；主表不再显示“时间差”。
+    in-out property <length> delta: 0px;
     in-out property <length> ch: 56px;
     in-out property <length> dir: 44px;
     in-out property <length> id: 88px;
@@ -233,10 +322,9 @@ export global ColW {
     in-out property <length> dlc: 44px;
     in-out property <length> len: 44px;
     in-out property <length> data: 230px;
-    in-out property <length> cycle: 72px;
     in-out property <length> count: 72px;
     in-out property <length> comment: 140px;
-    in-out property <length> total: 1268px;
+    in-out property <length> total: 1244px;
 }
 
 export component Cell inherits Rectangle {
@@ -265,7 +353,9 @@ export component Cell inherits Rectangle {
 
 export component HCell inherits Rectangle {
     in property <string> text;
-    in property <length> w;
+    in-out property <length> w;
+    in property <bool> resizable: false;
+    in property <length> min-w: 32px;
     width: w;
     visible: w > 0px;
     background: Theme.header;
@@ -273,23 +363,55 @@ export component HCell inherits Rectangle {
     Text {
         text: text;
         x: 7px;
+        width: parent.width - 14px;
         color: Theme.text;
         font-weight: 700;
         font-size: Theme.fs;
         vertical-alignment: center;
+        overflow: elide;
+    }
+    resize-handle := TouchArea {
+        visible: root.resizable;
+        x: parent.width - 4px;
+        width: 8px;
+        mouse-cursor: col-resize;
+        property <length> press-x;
+        property <length> press-w;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                self.press-x = self.absolute-position.x + self.mouse-x;
+                self.press-w = root.w;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                let new-w = Math.max(root.min-w,
+                    self.press-w + self.absolute-position.x + self.mouse-x - self.press-x);
+                ColW.total += new-w - root.w;
+                root.w = new-w;
+            }
+        }
     }
 }
 
 export component SortHeader inherits Rectangle {
     in property <string> text;
-    in property <length> w;
+    in-out property <length> w;
+    in property <bool> resizable: false;
+    in property <length> min-w: 32px;
     in property <int> cidx;
     in property <int> sort-col: -1;
     in property <bool> sort-desc: false;
     callback clicked(int);
     width: w;
     visible: w > 0px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(cidx); }
     background: ta.has-hover ? Theme.accent-soft : Theme.header;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: Theme.warn;
     Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
     ta := TouchArea { clicked => { root.clicked(cidx); } }
     HorizontalLayout {
@@ -301,6 +423,39 @@ export component SortHeader inherits Rectangle {
         Text {
             text: root.sort-col == cidx ? (sort-desc ? "v" : "^") : "";
             color: Theme.accent; font-size: Theme.fs-sm; vertical-alignment: center;
+        }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked(cidx);
+                return accept;
+            }
+            return reject;
+        }
+    }
+    resize-handle := TouchArea {
+        visible: root.resizable;
+        x: parent.width - 4px;
+        width: 8px;
+        mouse-cursor: col-resize;
+        property <length> press-x;
+        property <length> press-w;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                self.press-x = self.absolute-position.x + self.mouse-x;
+                self.press-w = root.w;
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                let new-w = Math.max(root.min-w,
+                    self.press-w + self.absolute-position.x + self.mouse-x - self.press-x);
+                ColW.total += new-w - root.w;
+                root.w = new-w;
+            }
         }
     }
 }
@@ -317,6 +472,11 @@ export component TBtn inherits Rectangle {
     width: txt.preferred-width + 22px;
     height: h;
     border-radius: Theme.radius;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    accessible-enabled: root.btn-enabled;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
     background: !root.btn-enabled ? Theme.panel2
         : ta.pressed ? ((root.primary || root.active) ? Theme.accent.darker(0.22) : Theme.panel2.darker(0.10))
         : (root.primary || root.active) ? Theme.accent
@@ -324,19 +484,35 @@ export component TBtn inherits Rectangle {
         : root.boxed ? Theme.panel
         : transparent;
     animate background { duration: 90ms; }
-    border-width: 1px;
-    border-color: (root.primary || root.active) ? Theme.accent
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? Theme.warn
+        : (root.primary || root.active) ? Theme.accent
         : (root.boxed || ta.has-hover) ? Theme.border
         : transparent;
     txt := Text {
         text: text;
         width: 100%;
-        color: !root.btn-enabled ? Theme.text-dim : ((root.primary || root.active) ? white : Theme.text);
+        color: !root.btn-enabled ? Theme.text-dim : ((root.primary || root.active) ? Theme.on-accent : Theme.text);
         vertical-alignment: center;
         horizontal-alignment: center;
         font-size: root.fs;
     }
-    ta := TouchArea { enabled: root.btn-enabled; clicked => { root.clicked(); } }
+    ta := TouchArea {
+        enabled: root.btn-enabled;
+        clicked => { root.clicked(); }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.btn-enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 
@@ -349,6 +525,7 @@ export component Icon inherits Rectangle {
         name == "start" ? "M8 5 L19 12 L8 19 Z" :
         name == "stop" ? "M7 7 H17 V17 H7 Z" :
         name == "record" ? "M12 6 A6 6 0 0 0 12 18 A6 6 0 0 0 12 6 Z" :
+        name == "trigger" ? "M13 2 L5 13 H11 L9 22 L19 9 H13 Z" :
         name == "pause" ? "M7 6 H10 V18 H7 Z M14 6 H17 V18 H14 Z" :
         name == "theme" ? "M12 4 A8 8 0 0 0 12 20 Z" : "";
     property <string> scmd:
@@ -366,8 +543,12 @@ export component Icon inherits Rectangle {
         name == "file" ? "M7 3 H14 L19 8 V21 H7 Z M14 3 V8 H19" :
         name == "folder" ? "M3 7 H9 L11 9 H21 V19 H3 Z" :
         name == "save" ? "M4 4 H16 L20 8 V20 H4 Z M8 4 V9 H15 M8 20 V14 H16 V20" :
+        name == "info" ? "M12 3 A9 9 0 0 0 12 21 A9 9 0 0 0 12 3 Z M12 10 V17 M12 7 V7.2" :
         name == "filter" ? "M4 5 H20 L14 12 V19 L10 17 V12 Z" :
         name == "window" ? "M4 5 H20 V19 H4 Z M4 9 H20" : "";
+    property <string> treecmd:
+        name == "expand" ? "M9 6 L15 12 L9 18" :
+        name == "collapse" ? "M6 9 L12 15 L18 9" : "";
     Path {
         visible: fcmd != "";
         commands: fcmd; fill: clr;
@@ -377,6 +558,18 @@ export component Icon inherits Rectangle {
         visible: scmd != "";
         commands: scmd; stroke: clr; stroke-width: 1.7px;
         viewbox-width: 24; viewbox-height: 24; width: 100%; height: 100%;
+    }
+    Path {
+        visible: treecmd != "";
+        commands: treecmd; stroke: clr; stroke-width: 2px;
+        viewbox-width: 24; viewbox-height: 24; width: 100%; height: 100%;
+    }
+    Image {
+        visible: name == "convert";
+        source: @image-url("icons/convert.svg");
+        colorize: clr;
+        width: 100%; height: 100%;
+        image-fit: contain;
     }
     Text {
         visible: name == "language";
@@ -399,6 +592,12 @@ export component RibbonBtn inherits Rectangle {
     callback clicked;
     width: Theme.big ? 62px : 54px;
     border-radius: Theme.radius;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.label;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: Theme.warn;
     background: active ? Theme.accent : (ta.has-hover ? Theme.accent-soft : transparent);
     VerticalLayout {
         padding: 4px;
@@ -409,14 +608,14 @@ export component RibbonBtn inherits Rectangle {
                 width: Theme.big ? 36px : 30px; height: self.width;
                 x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
                 border-radius: Theme.radius;
-                background: active ? #ffffff33 : (ta.has-hover ? Theme.panel : Theme.panel2);
+                background: active ? Theme.on-accent-faint : (ta.has-hover ? Theme.panel : Theme.panel2);
                 border-width: 1px;
-                border-color: active ? #ffffff44 : Theme.border;
+                border-color: active ? Theme.on-accent-border : Theme.border;
                 drop-shadow-blur: 2px;
-                drop-shadow-color: active ? transparent : #00000018;
+                drop-shadow-color: active ? transparent : Theme.shadow;
                 drop-shadow-offset-y: 1px;
                 Icon {
-                    name: icon; clr: active ? white : icon-clr;
+                    name: icon; clr: active ? Theme.on-accent : icon-clr;
                     width: Theme.big ? 22px : 18px; height: self.width;
                     x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
                 }
@@ -424,12 +623,120 @@ export component RibbonBtn inherits Rectangle {
         }
         Text {
             text: label; font-size: Theme.fs-sm;
-            color: active ? white : Theme.text;
+            color: active ? Theme.on-accent : Theme.text;
             horizontal-alignment: center; vertical-alignment: center;
             wrap: word-wrap;
         }
     }
     ta := TouchArea { clicked => { root.clicked(); } }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+// Reusable compact field for every raw CAN/UDS/XCP byte payload.
+export component HexDataField inherits Rectangle {
+    in property <string> value;
+    in property <bool> field-enabled: true;
+    callback edit-requested;
+    height: Theme.ctrl-h;
+    background: Theme.panel;
+    border-width: 1px; border-color: Theme.border; border-radius: Theme.radius;
+    Text {
+        x: 7px; width: parent.width - edit-button.width - 14px;
+        text: root.value == "" ? "—" : root.value;
+        font-family: Theme.mono; font-size: Theme.fs-sm;
+        color: root.field-enabled ? Theme.text : Theme.text-dim;
+        vertical-alignment: center; overflow: elide;
+    }
+    edit-button := TBtn {
+        x: parent.width - self.width - 2px; y: 2px; h: parent.height - 4px;
+        boxed: true; btn-enabled: root.field-enabled;
+        text: I18n.en ? "Edit" : "编辑";
+        clicked => { root.edit-requested(); }
+    }
+}
+
+// Reusable modal byte editor. The host owns parsing/model state and receives callbacks.
+export component HexByteEditorOverlay inherits Rectangle {
+    in property <bool> open: false;
+    in property <string> editor-title;
+    in property <[TxByteRow]> rows;
+    in-out property <string> paste-value;
+    in property <string> error-text;
+    callback close-requested;
+    callback byte-edited(int, string);
+    callback paste-requested(string);
+    callback apply-requested() -> bool;
+
+    visible: root.open;
+    background: #00000070;
+    TouchArea { clicked => { root.close-requested(); } }
+    Rectangle {
+        width: 620px; height: Math.min(620px, parent.height - 16px);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: Theme.panel;
+        border-width: 1px; border-color: Theme.border; border-radius: 8px;
+        VerticalLayout {
+            padding: 16px; spacing: 10px;
+            HorizontalLayout {
+                Text { text: I18n.en ? "CAN data editor" : "CAN 数据编辑器"; font-size: Theme.fs + 2px; font-weight: 800; color: Theme.text; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                TBtn { boxed: true; text: "×"; clicked => { root.close-requested(); } }
+            }
+            Text { text: root.editor-title; color: Theme.accent; font-size: Theme.fs; overflow: elide; }
+            Rectangle {
+                height: 28px; background: Theme.header; border-radius: 4px;
+                HorizontalLayout { padding-left: 8px; padding-right: 8px; spacing: 5px;
+                    Text { text: I18n.en ? "Offset" : "偏移"; width: 44px; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: right; vertical-alignment: center; }
+                    for column in 8: Text { text: "0" + column; width: 54px; font-family: Theme.mono; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.panel2; border-width: 1px; border-color: Theme.border; border-radius: 4px;
+                ScrollView {
+                    x: 0px; y: 0px; width: parent.width; height: parent.height;
+                    viewport-width: 568px;
+                    VerticalLayout { width: 568px; padding: 8px; spacing: 4px; alignment: start;
+                        for byte-row[r] in root.rows: HorizontalLayout {
+                            spacing: 5px;
+                            Text { text: byte-row.offset; width: 44px; font-family: Theme.mono; font-size: Theme.fs; color: Theme.text-dim; horizontal-alignment: right; vertical-alignment: center; }
+                            for byte-cell[c] in byte-row.bytes: Rectangle {
+                                width: 54px; height: 32px;
+                                border-width: byte-cell.enabled && !byte-cell.valid ? 2px : 0px;
+                                border-color: Theme.bad; border-radius: 4px;
+                                LineEdit {
+                                    x: 2px; y: 2px; width: parent.width - 4px; height: parent.height - 4px;
+                                    enabled: byte-cell.enabled; text: byte-cell.hex; horizontal-alignment: center;
+                                    edited(v) => { root.byte-edited(r * 8 + c, v); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout { spacing: 6px;
+                LineEdit { horizontal-stretch: 1; height: Theme.ctrl-h; text <=> root.paste-value; placeholder-text: I18n.en ? "Optional: paste continuous or spaced hex" : "可选：粘贴连续或空格分隔的十六进制数据"; }
+                TBtn { boxed: true; text: I18n.en ? "Fill" : "批量填充"; clicked => { root.paste-requested(root.paste-value); } }
+            }
+            Text { text: root.error-text; color: Theme.bad; font-size: Theme.fs-sm; visible: root.error-text != ""; }
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                TBtn { boxed: true; text: I18n.en ? "Cancel" : "取消"; clicked => { root.close-requested(); } }
+                TBtn { primary: true; text: I18n.en ? "Apply" : "应用"; clicked => { if (root.apply-requested()) { root.close-requested(); } } }
+            }
+        }
+    }
 }
 
 export component RibbonGroup inherits Rectangle {
@@ -452,7 +759,13 @@ export component RibbonTab inherits Rectangle {
     callback clicked;
     width: txt.preferred-width + 22px;
     height: 28px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
     background: active ? Theme.panel : transparent;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: Theme.warn;
     border-top-left-radius: 4px; border-top-right-radius: 4px;
     txt := Text {
         text: text; color: active ? Theme.accent : Theme.text;
@@ -463,6 +776,17 @@ export component RibbonTab inherits Rectangle {
         visible: active; height: 2px; width: 100%; y: parent.height - 2px; background: Theme.accent;
     }
     ta := TouchArea { clicked => { root.clicked(); } }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 export component ConvTab inherits Rectangle {
@@ -471,96 +795,154 @@ export component ConvTab inherits Rectangle {
     callback clicked();
     height: 32px;
     width: 110px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.label;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
     border-radius: 4px;
-    border-width: 1px;
-    border-color: Theme.border;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? Theme.warn : Theme.border;
     background: active ? Theme.accent : Theme.panel2;
     Text {
         text: label;
         vertical-alignment: center;
         horizontal-alignment: center;
         font-size: 13px;
-        color: active ? #ffffff : Theme.text;
+        color: active ? Theme.on-accent : Theme.text;
     }
     TouchArea {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 export component SimGlyph inherits Rectangle {
     in property <SimRow> w;
+    in property <bool> pressed: false;
+    callback value-accepted(string);
+    callback trend-action(int);
     // 指示灯
-    if w.kind == 0: Rectangle {
+    if w.kind == 0: VerticalLayout {
+        padding: 6px; spacing: 3px;
         Rectangle {
-            width: min(parent.width, parent.height) - 34px; height: self.width; border-radius: self.width / 2;
-            x: (parent.width - self.width) / 2; y: 6px;
-            background: w.on ? Theme.ok : Theme.text-dim;
-            border-width: 2px; border-color: w.on ? #ffffff80 : Theme.border;
-            drop-shadow-blur: w.on ? 8px : 0px; drop-shadow-color: Theme.ok;
+            vertical-stretch: 1;
+            Rectangle {
+                width: min(parent.width, parent.height); height: self.width; border-radius: self.width / 2;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                background: w.on ? Theme.ok : Theme.text-dim;
+                border-width: 2px; border-color: w.on ? Theme.on-accent-border : Theme.border;
+                drop-shadow-blur: w.on ? 8px : 0px; drop-shadow-color: Theme.ok;
+                animate background { duration: 120ms; }
+            }
         }
-        Text { text: w.name; y: parent.height - 18px; width: 100%; horizontal-alignment: center; font-size: 11px; color: Theme.text; }
+        Text { text: w.name; height: 18px; horizontal-alignment: center; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; overflow: elide; }
     }
     // 仪表盘(圆盘 + 沿弧移动的指示珠 + 中心读数)
-    if w.kind == 1: Rectangle {
-        dial := Rectangle {
-            width: min(parent.width, parent.height) - 28px; height: self.width; border-radius: self.width / 2;
-            x: (parent.width - self.width) / 2; y: 4px;
-            background: Theme.panel2; border-width: 2px; border-color: Theme.border;
-            // 量程 0 弧端标记(左下)
-            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
-                x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(-120deg);
-                y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(-120deg);
+    if w.kind == 1: VerticalLayout {
+        padding: 5px; spacing: 2px;
+        Rectangle {
+            vertical-stretch: 1;
+            dial := Rectangle {
+                width: min(parent.width, parent.height); height: self.width; border-radius: self.width / 2;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                background: Theme.panel2; border-width: 2px; border-color: Theme.border;
+                Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
+                    x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(-120deg);
+                    y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(-120deg);
+                }
+                Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
+                    x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(120deg);
+                    y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(120deg);
+                }
+                Rectangle { width: 13px; height: 13px; border-radius: 7px; background: Theme.accent; border-width: 2px; border-color: Theme.on-accent-border;
+                    x: parent.width / 2 - 7px + (parent.width / 2 - 14px) * sin(-120deg + 240deg * w.level);
+                    y: parent.height / 2 - 7px - (parent.height / 2 - 14px) * cos(-120deg + 240deg * w.level);
+                    animate x { duration: 100ms; } animate y { duration: 100ms; }
+                }
+                Text { text: w.status; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; font-weight: 700; font-family: Theme.mono; color: Theme.accent; }
             }
-            // 量程 max 弧端标记(右下)
-            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.text-dim;
-                x: parent.width / 2 - 3px + (parent.width / 2 - 12px) * sin(120deg);
-                y: parent.height / 2 - 3px - (parent.height / 2 - 12px) * cos(120deg);
-            }
-            // 指示珠(沿 240° 弧移动)
-            Rectangle { width: 13px; height: 13px; border-radius: 7px; background: Theme.accent; border-width: 2px; border-color: #ffffff80;
-                x: parent.width / 2 - 7px + (parent.width / 2 - 14px) * sin(-120deg + 240deg * w.level);
-                y: parent.height / 2 - 7px - (parent.height / 2 - 14px) * cos(-120deg + 240deg * w.level);
-            }
-            // 中心读数
-            Text { text: w.status; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: 14px; font-weight: 700; font-family: Theme.mono; color: Theme.accent; }
         }
-        Text { text: w.name; y: parent.height - 16px; width: 100%; horizontal-alignment: center; font-size: 10px; color: Theme.text-dim; }
+        Text { text: w.name; height: 18px; horizontal-alignment: center; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; overflow: elide; }
     }
     // 进度条
     if w.kind == 2: VerticalLayout {
         padding: 6px; spacing: 3px;
-        Text { text: w.name; font-size: 11px; color: Theme.text-dim; }
+        Text { text: w.name; font-size: Theme.fs; color: Theme.text-dim; vertical-alignment: center; overflow: elide; }
         Rectangle {
             height: 16px; background: Theme.panel2; border-radius: 4px; border-width: 1px; border-color: Theme.border;
             Rectangle { x: 0; y: 0; height: parent.height; width: parent.width * w.level; background: Theme.accent; border-radius: 4px; }
         }
-        Text { text: w.status; font-size: 11px; color: Theme.text; horizontal-alignment: right; }
+        Text { text: w.status; font-size: Theme.fs; color: Theme.text; horizontal-alignment: right; vertical-alignment: center; }
     }
     // 数值
     if w.kind == 3: VerticalLayout {
         padding: 4px;
-        Text { text: w.name; font-size: 11px; color: Theme.text-dim; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; }
+        Text { text: w.name; font-size: Theme.fs; color: Theme.text-dim; vertical-alignment: center; overflow: elide; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; }
         Text { text: w.status; font-size: 22px; font-weight: 700; font-family: Theme.mono; color: Theme.accent; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; vertical-alignment: center; }
     }
-    // 标签
-    if w.kind == 4: Text { text: w.name; width: 100%; height: 100%; horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center; vertical-alignment: center; font-size: 14px; font-weight: 700; color: Theme.text; }
+    // 标签 / 分区标题
+    if w.kind == 4: Rectangle {
+        background: Theme.panel2.with-alpha(0.86);
+        border-radius: ProductDesign.radius-sm;
+        Rectangle {
+            x: 0px;
+            width: 4px;
+            height: 100%;
+            background: Theme.accent;
+            border-top-left-radius: ProductDesign.radius-sm;
+            border-bottom-left-radius: ProductDesign.radius-sm;
+        }
+        Text {
+            x: 12px;
+            width: parent.width - 20px;
+            height: 100%;
+            text: w.name;
+            horizontal-alignment: w.align == 0 ? TextHorizontalAlignment.left : w.align == 2 ? TextHorizontalAlignment.right : TextHorizontalAlignment.center;
+            vertical-alignment: center;
+            font-size: ProductDesign.font-md;
+            font-weight: 700;
+            color: Theme.text;
+            overflow: elide;
+        }
+    }
     // 按钮
     if w.kind == 5: Rectangle {
-        background: Theme.accent; border-radius: 5px;
-        Text { text: w.name; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: 13px; font-weight: 700; color: white; }
+        y: root.pressed ? 2px : 0px;
+        height: parent.height - (root.pressed ? 2px : 0px);
+        background: root.pressed ? Theme.accent.darker(0.20) : Theme.accent;
+        border-radius: ProductDesign.radius-sm;
+        border-width: 1px;
+        border-color: root.pressed ? Theme.accent.darker(0.28) : Theme.accent;
+        drop-shadow-blur: root.pressed ? 1px : 5px;
+        drop-shadow-color: Theme.shadow;
+        drop-shadow-offset-y: root.pressed ? 0px : 2px;
+        animate y { duration: 70ms; }
+        animate height { duration: 70ms; }
+        animate background { duration: 70ms; }
+        Text { text: w.name; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; font-size: ProductDesign.font-md; font-weight: 700; color: Theme.on-accent; overflow: elide; }
     }
     // 滑块
     if w.kind == 6: VerticalLayout {
         padding: 6px; spacing: 3px;
-        Text { text: w.name + ": " + w.status; font-size: 11px; color: Theme.text; }
+        Text { text: w.name + ": " + w.status; font-size: Theme.fs; color: Theme.text; vertical-alignment: center; overflow: elide; }
         Rectangle {
             height: 18px;
             Rectangle { y: (parent.height - 4px) / 2; height: 4px; width: 100%; background: Theme.panel2; border-radius: 2px; }
             Rectangle {
                 width: 14px; height: 14px; border-radius: 7px;
                 x: (parent.width - self.width) * w.level; y: (parent.height - self.height) / 2;
-                background: Theme.accent; border-width: 1px; border-color: #ffffff80;
+                background: Theme.accent; border-width: 1px; border-color: Theme.on-accent-border;
             }
         }
     }
@@ -568,10 +950,198 @@ export component SimGlyph inherits Rectangle {
     if w.kind == 7: VerticalLayout {
         padding: 6px; spacing: 2px;
         HorizontalLayout {
-            spacing: 4px;
-            Text { text: "∿"; font-size: 16px; color: Theme.accent; }
-            Text { text: w.name; font-size: 12px; font-weight: 700; color: Theme.text; }
+            spacing: 6px;
+            Rectangle {
+                width: 16px;
+                Icon { name: "curve"; width: 16px; height: 16px; y: (parent.height - self.height) / 2; clr: Theme.accent; }
+            }
+            Text { text: w.name; font-size: Theme.fs; font-weight: 700; color: Theme.text; overflow: elide; vertical-alignment: center; }
         }
-        Text { text: w.info + " = " + w.status; font-size: 11px; color: Theme.text-dim; }
+        Text { text: w.info + " = " + w.status; font-size: Theme.fs; color: Theme.text-dim; overflow: elide; vertical-alignment: center; }
+    }
+    // 开关
+    if w.kind == 8: HorizontalLayout {
+        padding-left: 10px; padding-right: 10px; spacing: 9px;
+        Text {
+            text: w.name;
+            color: Theme.text;
+            font-size: Theme.fs;
+            font-weight: 650;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Rectangle {
+            width: 46px;
+            horizontal-stretch: 0;
+            switch-track := Rectangle {
+                width: 46px; height: 24px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 12px;
+                background: w.on ? Theme.accent : Theme.panel2;
+                border-width: 1px;
+                border-color: w.on ? Theme.accent : Theme.border;
+                animate background { duration: 140ms; }
+                Rectangle {
+                    width: 18px; height: 18px;
+                    x: w.on ? 25px : 3px;
+                    y: 3px;
+                    border-radius: 9px;
+                    background: w.on ? Theme.on-accent : Theme.text-dim;
+                    drop-shadow-blur: 3px;
+                    drop-shadow-color: Theme.shadow;
+                    animate x { duration: 140ms; easing: ease-in-out; }
+                    animate background { duration: 140ms; }
+                }
+            }
+        }
+    }
+    // 实时趋势图
+    if w.kind == 9: Rectangle {
+        background: Theme.panel2.with-alpha(0.72);
+        border-radius: ProductDesign.radius-sm;
+        header := Rectangle {
+            x: 8px; y: 5px; width: parent.width - 16px; height: 24px;
+            Text { text: w.name; width: parent.width - 112px; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+            Text { x: parent.width - 108px; width: 58px; text: w.range-label; color: Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: right; vertical-alignment: center; overflow: elide; }
+            Rectangle {
+                x: parent.width - 46px; y: 1px; width: 20px; height: 20px; border-radius: 4px;
+                background: pause-area.has-hover ? Theme.accent-soft : transparent;
+                Text { text: w.paused ? "▶" : "Ⅱ"; color: w.paused ? Theme.warn : Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: center; vertical-alignment: center; }
+                pause-area := TouchArea { mouse-cursor: pointer; clicked => { root.trend-action(0); } }
+            }
+            Rectangle {
+                x: parent.width - 22px; y: 1px; width: 20px; height: 20px; border-radius: 4px;
+                background: clear-area.has-hover ? Theme.accent-soft : transparent;
+                Text { text: "×"; color: Theme.text-dim; font-size: Theme.fs; horizontal-alignment: center; vertical-alignment: center; }
+                clear-area := TouchArea { mouse-cursor: pointer; clicked => { root.trend-action(1); } }
+            }
+        }
+        plot := Rectangle {
+            x: 8px; y: 32px; width: parent.width - 16px; height: parent.height - 66px;
+            background: Theme.panel;
+            border-width: 1px; border-color: Theme.border;
+            border-radius: ProductDesign.radius-sm;
+            clip: true;
+            for line in 5: Rectangle { x: line * parent.width / 4; width: 1px; height: 100%; background: Theme.border.with-alpha(0.42); }
+            for line in 5: Rectangle { y: line * parent.height / 4; height: 1px; width: 100%; background: Theme.border.with-alpha(0.42); }
+            Path { commands: w.trace-path-1; fill: transparent; stroke: Theme.accent; stroke-width: 2px; viewbox-width: 100; viewbox-height: 100; width: 100%; height: 100%; }
+            Path { commands: w.trace-path-2; fill: transparent; stroke: Theme.ok; stroke-width: 2px; viewbox-width: 100; viewbox-height: 100; width: 100%; height: 100%; }
+            Path { commands: w.trace-path-3; fill: transparent; stroke: Theme.warn; stroke-width: 2px; viewbox-width: 100; viewbox-height: 100; width: 100%; height: 100%; }
+            Path { commands: w.trace-path-4; fill: transparent; stroke: Theme.bad; stroke-width: 2px; viewbox-width: 100; viewbox-height: 100; width: 100%; height: 100%; }
+            if w.paused: Rectangle {
+                x: parent.width - 68px; y: 6px; width: 60px; height: 20px; border-radius: 10px;
+                background: ProductDesign.warning-soft.with-alpha(0.92);
+                Text { text: I18n.en ? "PAUSED" : "已暂停"; color: Theme.warn; font-size: ProductDesign.font-xs; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+        HorizontalLayout {
+            x: 10px; y: parent.height - 29px; width: parent.width - 20px; height: 22px; spacing: 8px;
+            if w.series-label-1 != "": Rectangle { width: min(96px, s1.preferred-width + 16px); Rectangle { x: 0px; width: 7px; height: 7px; y: (parent.height - self.height) / 2; border-radius: 4px; background: Theme.accent; } s1 := Text { x: 11px; text: w.series-label-1; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; overflow: elide; } }
+            if w.series-label-2 != "": Rectangle { width: min(96px, s2.preferred-width + 16px); Rectangle { x: 0px; width: 7px; height: 7px; y: (parent.height - self.height) / 2; border-radius: 4px; background: Theme.ok; } s2 := Text { x: 11px; text: w.series-label-2; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; overflow: elide; } }
+            if w.series-label-3 != "": Rectangle { width: min(96px, s3.preferred-width + 16px); Rectangle { x: 0px; width: 7px; height: 7px; y: (parent.height - self.height) / 2; border-radius: 4px; background: Theme.warn; } s3 := Text { x: 11px; text: w.series-label-3; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; overflow: elide; } }
+            if w.series-label-4 != "": Rectangle { width: min(96px, s4.preferred-width + 16px); Rectangle { x: 0px; width: 7px; height: 7px; y: (parent.height - self.height) / 2; border-radius: 4px; background: Theme.bad; } s4 := Text { x: 11px; text: w.series-label-4; color: Theme.text-dim; font-size: ProductDesign.font-xs; vertical-alignment: center; overflow: elide; } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+    // 液位 / 温度柱
+    if w.kind == 10: VerticalLayout {
+        padding: 7px; spacing: 5px;
+        Text { text: w.name; height: 20px; color: Theme.text; font-size: Theme.fs; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        Rectangle {
+            vertical-stretch: 1;
+            tank := Rectangle {
+                width: min(48px, parent.width - 18px); height: 100%;
+                x: (parent.width - self.width) / 2;
+                background: Theme.panel2; border-width: 2px; border-color: Theme.border; border-radius: 9px; clip: true;
+                Rectangle {
+                    x: 3px; width: parent.width - 6px;
+                    y: 3px + (parent.height - 6px) * (1 - w.level);
+                    height: (parent.height - 6px) * w.level;
+                    background: w.level > 0.85 ? Theme.bad : w.level > 0.65 ? Theme.warn : Theme.accent;
+                    border-radius: 5px;
+                    animate y { duration: 120ms; }
+                    animate height { duration: 120ms; }
+                    animate background { duration: 120ms; }
+                }
+            }
+        }
+        Text { text: w.status; height: 20px; color: Theme.accent; font-family: Theme.mono; font-size: Theme.fs; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+    }
+    // 旋钮
+    if w.kind == 11: VerticalLayout {
+        padding: 7px; spacing: 4px;
+        Text { text: w.name; height: 20px; color: Theme.text; font-size: Theme.fs; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; overflow: elide; }
+        Rectangle {
+            vertical-stretch: 1;
+            knob := Rectangle {
+                width: min(parent.width, parent.height) - 6px; height: self.width;
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2; background: Theme.panel2; border-width: 2px; border-color: Theme.border;
+                Rectangle {
+                    width: 10px; height: 10px; border-radius: 5px; background: Theme.accent;
+                    border-width: 2px; border-color: Theme.on-accent-border;
+                    x: parent.width / 2 - 5px + (parent.width / 2 - 14px) * sin(-135deg + 270deg * w.level);
+                    y: parent.height / 2 - 5px - (parent.height / 2 - 14px) * cos(-135deg + 270deg * w.level);
+                }
+                Text { text: w.status; width: 100%; height: 100%; color: Theme.accent; font-size: Theme.fs; font-family: Theme.mono; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+    }
+    // 运行时数值输入
+    if w.kind == 12: VerticalLayout {
+        padding: 8px; spacing: 5px;
+        Text { text: w.name; height: 20px; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+        LineEdit {
+            height: Theme.ctrl-h;
+            text: w.status;
+            horizontal-alignment: right;
+            accepted(value) => { root.value-accepted(value); }
+        }
+    }
+    // 多信号柱状比较
+    if w.kind == 13: Rectangle {
+        background: Theme.panel2.with-alpha(0.72); border-radius: ProductDesign.radius-sm;
+        Text { x: 10px; y: 5px; width: parent.width - 20px; height: 22px; text: w.name; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+        chart := Rectangle {
+            x: 10px; y: 31px; width: parent.width - 20px; height: parent.height - 40px;
+            background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: ProductDesign.radius-sm;
+            for line in 4: Rectangle { y: line * (parent.height - 30px) / 3; height: 1px; width: 100%; background: Theme.border.with-alpha(0.4); }
+            HorizontalLayout {
+                x: 8px; y: 5px; width: parent.width - 16px; height: parent.height - 10px; spacing: 8px;
+                Rectangle { horizontal-stretch: 1; bar-1 := Rectangle { x: 4px; y: (parent.height - 28px) * (1 - w.series-level-1); width: parent.width - 8px; height: (parent.height - 28px) * w.series-level-1; background: Theme.accent; border-radius: 4px; animate y { duration: 120ms; } animate height { duration: 120ms; } } Text { y: parent.height - 26px; width: 100%; height: 13px; text: w.series-value-1; color: Theme.text; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } Text { y: parent.height - 13px; width: 100%; height: 13px; text: w.series-label-1; color: Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } }
+                Rectangle { horizontal-stretch: 1; Rectangle { x: 4px; y: (parent.height - 28px) * (1 - w.series-level-2); width: parent.width - 8px; height: (parent.height - 28px) * w.series-level-2; background: Theme.ok; border-radius: 4px; animate y { duration: 120ms; } animate height { duration: 120ms; } } Text { y: parent.height - 26px; width: 100%; height: 13px; text: w.series-value-2; color: Theme.text; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } Text { y: parent.height - 13px; width: 100%; height: 13px; text: w.series-label-2; color: Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } }
+                Rectangle { horizontal-stretch: 1; Rectangle { x: 4px; y: (parent.height - 28px) * (1 - w.series-level-3); width: parent.width - 8px; height: (parent.height - 28px) * w.series-level-3; background: Theme.warn; border-radius: 4px; animate y { duration: 120ms; } animate height { duration: 120ms; } } Text { y: parent.height - 26px; width: 100%; height: 13px; text: w.series-value-3; color: Theme.text; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } Text { y: parent.height - 13px; width: 100%; height: 13px; text: w.series-label-3; color: Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } }
+                Rectangle { horizontal-stretch: 1; Rectangle { x: 4px; y: (parent.height - 28px) * (1 - w.series-level-4); width: parent.width - 8px; height: (parent.height - 28px) * w.series-level-4; background: Theme.bad; border-radius: 4px; animate y { duration: 120ms; } animate height { duration: 120ms; } } Text { y: parent.height - 26px; width: 100%; height: 13px; text: w.series-value-4; color: Theme.text; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } Text { y: parent.height - 13px; width: 100%; height: 13px; text: w.series-label-4; color: Theme.text-dim; font-size: ProductDesign.font-xs; horizontal-alignment: center; overflow: elide; } }
+            }
+        }
+    }
+    // 多状态灯组
+    if w.kind == 14: VerticalLayout {
+        padding: 8px; spacing: 6px;
+        Text { text: w.name; height: 22px; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+        HorizontalLayout { spacing: 6px;
+            Rectangle { horizontal-stretch: 1; background: Theme.panel2; border-radius: 5px; Rectangle { x: 7px; width: 12px; height: 12px; y: (parent.height - self.height) / 2; border-radius: 6px; background: w.series-on-1 ? Theme.ok : Theme.text-dim; drop-shadow-blur: w.series-on-1 ? 6px : 0px; drop-shadow-color: Theme.ok; } Text { x: 25px; width: parent.width - 31px; height: 100%; text: w.series-label-1; color: Theme.text; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; } }
+            Rectangle { horizontal-stretch: 1; background: Theme.panel2; border-radius: 5px; Rectangle { x: 7px; width: 12px; height: 12px; y: (parent.height - self.height) / 2; border-radius: 6px; background: w.series-on-2 ? Theme.ok : Theme.text-dim; drop-shadow-blur: w.series-on-2 ? 6px : 0px; drop-shadow-color: Theme.ok; } Text { x: 25px; width: parent.width - 31px; height: 100%; text: w.series-label-2; color: Theme.text; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; } }
+        }
+        HorizontalLayout { spacing: 6px;
+            Rectangle { horizontal-stretch: 1; background: Theme.panel2; border-radius: 5px; Rectangle { x: 7px; width: 12px; height: 12px; y: (parent.height - self.height) / 2; border-radius: 6px; background: w.series-on-3 ? Theme.ok : Theme.text-dim; drop-shadow-blur: w.series-on-3 ? 6px : 0px; drop-shadow-color: Theme.ok; } Text { x: 25px; width: parent.width - 31px; height: 100%; text: w.series-label-3; color: Theme.text; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; } }
+            Rectangle { horizontal-stretch: 1; background: Theme.panel2; border-radius: 5px; Rectangle { x: 7px; width: 12px; height: 12px; y: (parent.height - self.height) / 2; border-radius: 6px; background: w.series-on-4 ? Theme.ok : Theme.text-dim; drop-shadow-blur: w.series-on-4 ? 6px : 0px; drop-shadow-color: Theme.ok; } Text { x: 25px; width: parent.width - 31px; height: 100%; text: w.series-label-4; color: Theme.text; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; } }
+        }
+    }
+    // 越限报警卡片
+    if w.kind == 15: Rectangle {
+        background: w.alarm ? ProductDesign.danger-soft : ProductDesign.success-soft;
+        border-width: 1px; border-color: w.alarm ? Theme.bad : Theme.ok; border-radius: ProductDesign.radius-md;
+        animate background { duration: 160ms; } animate border-color { duration: 160ms; }
+        Rectangle { x: 12px; y: (parent.height - self.height) / 2; width: 34px; height: 34px; border-radius: 17px; background: (w.alarm ? Theme.bad : Theme.ok).with-alpha(0.16); Text { text: w.alarm ? "!" : "✓"; color: w.alarm ? Theme.bad : Theme.ok; font-size: ProductDesign.font-lg; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; } }
+        Text { x: 56px; y: 10px; width: parent.width - 68px; height: 22px; text: w.name + "  " + w.status; color: Theme.text; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+        Text { x: 56px; y: 34px; width: parent.width - 68px; height: parent.height - 44px; text: w.alarm ? w.alarm-message : (I18n.en ? "Value is within range" : "当前数值正常"); color: w.alarm ? Theme.bad : Theme.text-dim; font-size: Theme.fs-sm; wrap: word-wrap; vertical-alignment: center; overflow: elide; }
+    }
+    // 设备图片 / 背景
+    if w.kind == 16: Rectangle {
+        background: Theme.panel2; border-radius: ProductDesign.radius-sm; clip: true;
+        if w.has-image: Image { source: w.image-source; width: 100%; height: 100%; image-fit: ImageFit.contain; }
+        if !w.has-image: VerticalLayout { padding: 16px; spacing: 8px; Rectangle { height: 32px; Icon { name: "file"; width: 30px; height: 30px; x: (parent.width - self.width) / 2; clr: Theme.text-dim; } } Text { text: I18n.en ? "Double-click to import an image" : "双击属性导入设备图片"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; } }
+        if w.name != "": Rectangle { x: 8px; y: 8px; width: min(parent.width - 16px, image-title.preferred-width + 16px); height: 24px; border-radius: 12px; background: Theme.panel.with-alpha(0.82); image-title := Text { x: 8px; width: parent.width - 16px; height: 100%; text: w.name; color: Theme.text; font-size: ProductDesign.font-xs; font-weight: 700; vertical-alignment: center; overflow: elide; } }
     }
 }

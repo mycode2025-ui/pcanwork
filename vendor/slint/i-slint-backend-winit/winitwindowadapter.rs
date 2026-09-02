@@ -1123,9 +1123,12 @@ impl WinitWindowAdapter {
                 self.resize_window(size.into())?;
             };
 
-            // Pre-render the first frame before mapping the window to avoid
-            // a flash of uninitialized VRAM on X11 (no background_pixmap).
-            if matches!(visibility, WindowVisibility::ShownFirstTime) {
+            // Pre-render the first frame before mapping the window to avoid a flash of
+            // uninitialized VRAM on X11 (no background_pixmap). Skipped on Wayland, where
+            // rendering before the initial configure makes the compositor mis-size the window.
+            if matches!(visibility, WindowVisibility::ShownFirstTime)
+                && !self.shared_backend_data.is_wayland
+            {
                 let _ = self.draw();
             }
 
@@ -1148,18 +1151,10 @@ impl WinitWindowAdapter {
                 self.draw()?;
             };
 
-            // On some platforms making an already-created window visible doesn't generate a fresh
-            // RedrawRequested. winit's one initial RedrawRequested can be delivered while the
-            // window is created, so a window first shown later misses it and stays blank.
-            #[cfg(target_os = "windows")]
-            if matches!(visibility, WindowVisibility::Shown) {
-                self.renderer.occluded(false);
-                let _ = self.resize_event(winit_window.surface_size());
-                self.window_state_event();
-                winit_window.request_redraw();
-                let _ = self.draw();
-            }
-            #[cfg(any(ios_and_friends, target_os = "windows"))]
+            // On iOS making an already-created window visible doesn't generate a fresh
+            // RedrawRequested. winit's one initial RedrawRequested is delivered while the window is
+            // created (during `resumed`), so a window first shown later misses it and stays blank.
+            #[cfg(ios_and_friends)]
             self.request_redraw();
 
             Ok(())
@@ -1176,8 +1171,6 @@ impl WinitWindowAdapter {
                 // on wayland implies making it visible. Unfortunately, winit won't allow creating a window on wayland
                 // that's not visible.
             } else {
-                #[cfg(target_os = "windows")]
-                self.renderer.occluded(true);
                 self.winit_window_or_none.borrow().set_visible(false);
             }
 

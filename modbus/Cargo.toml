@@ -1,27 +1,38 @@
 [package]
 name = "modbus-tools"
-version = "0.1.11"
+version = "0.3.2"
 edition = "2021"
+rust-version = "1.88"
+exclude = ["certs/*.key", "certs/*.crt"]
 
-# devmcp: 仅本地验证用 —— 启用 Slint 内置 MCP server(运行时 SLINT_MCP_PORT 开启)。绝不进发布包。
+# devmcp is for local Slint MCP validation and is never enabled in release packages.
 [features]
 devmcp = ["slint/mcp"]
 
 [dependencies]
 anyhow = "1.0"
 arboard = "3.4"
+chrono = "0.4"
+ed25519-dalek = "2.2"
 futures = "0.3"
 rfd = "0.17.2"
-slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+slint = { version = "1.17.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util"] }
-tokio-modbus = { version = "0.17", default-features = false, features = ["tcp", "rtu", "tcp-server", "rtu-server"] }
+tokio-modbus = { version = "0.17", default-features = false, features = ["tcp", "rtu", "tcp-server", "rtu-server", "rtu-over-tcp-server"] }
 tokio-serial = "5.5"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 rustls-pemfile = "2"
 rustls-native-certs = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+rcgen = "0.14.8"
+tempfile = "3"
 
 [build-dependencies]
 embed-manifest = "1.5.0"
-slint-build = "1.17.0"
-winresource = "0.1"  # 嵌入 exe 图标(app.ico)
-# 注: profile 由工作区根 (Pcanwork/Cargo.toml) 统一管理，成员不再单独设置。
+slint-build = "1.17.1"
+winresource = "0.1"  # 宓屽叆 exe 鍥炬爣(app.ico)
+# 娉? profile 鐢卞伐浣滃尯鏍?(Pcanwork/Cargo.toml) 缁熶竴绠＄悊锛屾垚鍛樹笉鍐嶅崟鐙缃€?

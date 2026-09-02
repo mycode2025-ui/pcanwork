@@ -41,6 +41,7 @@ fn wire_tx(
         let txw = tx_window.as_weak();
         let app = app.clone();
         tx_window.on_tx_file_send(move || {
+            if !app.borrow_mut().license_allows("can-transmit") { return; }
             let Some(w) = txw.upgrade() else { return };
             let en = app.borrow().lang_en;
             let path = w.get_tx_file_path().to_string();
@@ -49,49 +50,39 @@ fn wire_tx(
                 return;
             }
             let id = parse_u32(&w.get_tx_file_id()).unwrap_or(0);
+            let channel = ch_from_name(&w.get_tx_file_ch());
             let mode = w.get_tx_file_mode();
             let repeat = w.get_tx_file_repeat().trim().parse::<u32>().unwrap_or(1).max(1);
-            let mut a = app.borrow_mut();
-            if mode == 1 || mode == 2 {
-                let job = match build_ota_job(&w, &path, id, mode, en) {
-                    Ok(job) => job,
-                    Err(e) => {
-                        w.set_tx_file_status(e.into());
-                        return;
-                    }
-                };
-                let total = job.steps.len();
-                let _ = a.cmd.send(Cmd::OtaRun(job));
-                w.set_tx_file_progress(0.0);
-                w.set_tx_file_status(if en {
-                    format!("OTA started ({total} steps)")
-                } else {
-                    format!("OTA 已启动（{total} 步）")
-                }.into());
+            let max_len = w
+                .get_tx_file_len()
+                .trim()
+                .parse::<usize>()
+                .unwrap_or(8)
+                .clamp(1, 64);
+            let address = parse_u32(&w.get_tx_file_addr()).unwrap_or(0);
+            let crc = parse_u32(&w.get_tx_file_crc()).unwrap_or(0) as u16;
+            let worker = app.borrow().worker_tx.clone();
+            w.set_tx_file_progress(0.0);
+            w.set_tx_file_status(if en {
+                "Preparing file...".into()
             } else {
-                let frames = match build_file_send_frames(&w, &path, id, mode, en) {
-                    Ok(frames) => frames,
-                    Err(e) => {
-                        w.set_tx_file_status(e.into());
-                        return;
-                    }
-                };
-                let mut sent = 0u64;
-                for _ in 0..repeat {
-                    for frame in &frames {
-                        let _ = a.cmd.send(Cmd::SendOnce(frame.clone()));
-                        sent += 1;
-                    }
-                }
-                a.tx += sent;
-                a.log(format!("File send: {path}, total {sent} frames"));
-                w.set_tx_file_progress(1.0);
-                w.set_tx_file_status(if en {
-                    format!("Sent {sent} frames ({} frames x {repeat})", frames.len())
+                "正在解析文件...".into()
+            });
+            std::thread::spawn(move || {
+                let result = if mode == 1 || mode == 2 {
+                    build_ota_job(&path, channel, id, mode, address, crc, en)
+                        .map(TxFilePayload::Ota)
                 } else {
-                    format!("已发送 {sent} 帧（{} 帧 x {repeat}）", frames.len())
-                }.into());
-            }
+                    build_normal_file_frames(&path, channel, id, max_len, en)
+                        .map(TxFilePayload::Frames)
+                };
+                let _ = worker.send(WorkerEvent::TxFilePrepared {
+                    path,
+                    repeat,
+                    english: en,
+                    result,
+                });
+            });
         });
     }
     {
@@ -101,13 +92,7 @@ fn wire_tx(
             let i = i as usize;
             if i < a.txs.len() {
                 let t = a.txs.remove(i);
-                let _ = a.cmd.send(Cmd::SetPeriodic {
-                    handle: t.handle,
-                    frame: tx_frame(&t),
-                    period_ms: t.period_ms,
-                    repeat: t.repeat,
-                    enable: false,
-                });
+                stop_task_periodic(&a, &t);
             }
         });
     }
@@ -115,6 +100,7 @@ fn wire_tx(
         let app = app.clone();
         tx_window.on_tx_send_once(move |i| {
             let mut a = app.borrow_mut();
+            if !a.license_allows("can-transmit") { return; }
             if i >= 0 && (i as usize) < a.txs.len() {
                 let f = tx_frame(&a.txs[i as usize]);
                 let _ = a.cmd.send(Cmd::SendOnce(f));
@@ -130,6 +116,7 @@ fn wire_tx(
             let mut a = app.borrow_mut();
             if i >= 0 && (i as usize) < a.txs.len() {
                 let idx = i as usize;
+                if !a.txs[idx].periodic && !a.license_allows("can-transmit") { return; }
                 a.txs[idx].periodic = !a.txs[idx].periodic;
                 toggle_task_periodic(&mut a, idx);
                 // instant feedback: refresh the list now instead of waiting for the 100ms tick
@@ -145,26 +132,15 @@ fn wire_tx(
         let txw2 = tx_window.as_weak();
         tx_window.on_tx_all(move |start| {
             let mut a = app.borrow_mut();
-            let speed = a.tx_speed;
-            let cmds: Vec<Cmd> = a
-                .txs
-                .iter_mut()
-                .map(|t| {
-                    t.periodic = start;
-                    if start {
-                        t.sent = 0;
-                    }
-                    Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: eff_period(t.period_ms, speed),
-                        repeat: t.repeat,
-                        enable: start,
-                    }
-                })
-                .collect();
-            for c in cmds {
-                let _ = a.cmd.send(c);
+            if start && !a.license_allows("can-transmit") { return; }
+            for task in &mut a.txs {
+                task.periodic = start;
+                if start {
+                    task.sent = 0;
+                }
+            }
+            for idx in 0..a.txs.len() {
+                configure_task_periodic(&mut a, idx);
             }
             a.log(if start {
                 "启动全部发送"
@@ -197,21 +173,10 @@ fn wire_tx(
                 }
             }
             // 重新下发正在运行的非变化任务（变化任务由 app 循环按新值步进）
-            let speed = a.tx_speed;
-            let cmds: Vec<Cmd> = a
-                .txs
-                .iter()
-                .filter(|t| t.periodic && !has_vary(t))
-                .map(|t| Cmd::SetPeriodic {
-                    handle: t.handle,
-                    frame: tx_frame(t),
-                    period_ms: eff_period(t.period_ms, speed),
-                    repeat: t.repeat,
-                    enable: true,
-                })
-                .collect();
-            for c in cmds {
-                let _ = a.cmd.send(c);
+            for idx in 0..a.txs.len() {
+                if a.txs[idx].periodic {
+                    configure_task_periodic(&mut a, idx);
+                }
             }
             a.log(format!(
                 "已把第 {} 行的{}套用到全部任务",
@@ -238,20 +203,10 @@ fn wire_tx(
             a.tx_speed = if sp <= 0.0 { 1.0 } else { sp };
             let speed = a.tx_speed;
             // 重新下发正在运行的非变化任务以应用新间隔
-            let cmds: Vec<Cmd> = a
-                .txs
-                .iter()
-                .filter(|t| t.periodic && !has_vary(t))
-                .map(|t| Cmd::SetPeriodic {
-                    handle: t.handle,
-                    frame: tx_frame(t),
-                    period_ms: eff_period(t.period_ms, speed),
-                    repeat: t.repeat,
-                    enable: true,
-                })
-                .collect();
-            for c in cmds {
-                let _ = a.cmd.send(c);
+            for idx in 0..a.txs.len() {
+                if a.txs[idx].periodic {
+                    configure_task_periodic(&mut a, idx);
+                }
             }
             a.log(format!("发送速度倍率: {}×", speed));
             if let Some(w) = txw2.upgrade() {
@@ -264,22 +219,11 @@ fn wire_tx(
         tx_window.on_tx_clear(move || {
             let mut a = app.borrow_mut();
             // 停掉所有周期任务再清空
-            let stops: Vec<Cmd> = a
-                .txs
-                .iter()
-                .map(|t| Cmd::SetPeriodic {
-                    handle: t.handle,
-                    frame: tx_frame(t),
-                    period_ms: t.period_ms,
-                    repeat: t.repeat,
-                    enable: false,
-                })
-                .collect();
-            for c in stops {
-                let _ = a.cmd.send(c);
+            let tasks = a.txs.clone();
+            for task in &tasks {
+                stop_task_periodic(&a, task);
             }
             a.txs.clear();
-            a.change_next.clear();
             a.tx_checked.clear();
             a.log("已清空发送列表".to_string());
         });
@@ -390,26 +334,17 @@ fn wire_tx(
                 return;
             }
             // stop periodic on the tasks about to be removed
-            let stops: Vec<Cmd> = a
+            let stops: Vec<TxTask> = a
                 .txs
                 .iter()
                 .filter(|t| checked.contains(&t.handle))
-                .map(|t| Cmd::SetPeriodic {
-                    handle: t.handle,
-                    frame: tx_frame(t),
-                    period_ms: t.period_ms,
-                    repeat: t.repeat,
-                    enable: false,
-                })
+                .cloned()
                 .collect();
-            for c in stops {
-                let _ = a.cmd.send(c);
+            for task in &stops {
+                stop_task_periodic(&a, task);
             }
             let cnt = checked.len();
             a.txs.retain(|t| !checked.contains(&t.handle));
-            for h in &checked {
-                a.change_next.remove(h);
-            }
             a.tx_checked.clear();
             a.log(format!("已删除 {cnt} 个发送任务"));
             if let (Some(u), Some(w)) = (uiw.upgrade(), txw2.upgrade()) {
@@ -440,15 +375,20 @@ fn wire_tx(
                 }
                 let Some(file) = dlg.save_file().await else { return };
                 let path = file.path().to_path_buf();
-                match serde_json::to_string_pretty(&dto) {
-                    Ok(txt) => match std::fs::write(&path, txt) {
-                        Ok(_) => app
-                            .borrow_mut()
-                            .log(format!("已保存发送列表: {}", path.display())),
-                        Err(e) => app.borrow_mut().log(format!("保存失败: {e}")),
-                    },
-                    Err(e) => app.borrow_mut().log(format!("序列化失败: {e}")),
-                }
+                let worker = app.borrow().worker_tx.clone();
+                std::thread::spawn(move || {
+                    let result = serde_json::to_string_pretty(&dto)
+                        .map_err(|error| format!("序列化失败: {error}"))
+                        .and_then(|text| {
+                            std::fs::write(&path, text)
+                                .map_err(|error| format!("保存失败: {error}"))
+                        });
+                    let message = match result {
+                        Ok(()) => format!("已保存发送列表: {}", path.display()),
+                        Err(error) => error,
+                    };
+                    let _ = worker.send(WorkerEvent::Log(message));
+                });
             });
         });
     }
@@ -465,43 +405,16 @@ fn wire_tx(
                 }
                 let Some(file) = dlg.pick_file().await else { return };
                 let path = file.path().to_path_buf();
-                let txt = match std::fs::read_to_string(&path) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        app.borrow_mut().log(format!("读取失败: {e}"));
-                        return;
-                    }
-                };
-                match serde_json::from_str::<Vec<TxTaskDto>>(&txt) {
-                    Ok(dtos) => {
-                        let mut a = app.borrow_mut();
-                        // 先停掉并清空现有任务
-                        let stops: Vec<Cmd> = a
-                            .txs
-                            .iter()
-                            .map(|t| Cmd::SetPeriodic {
-                                handle: t.handle,
-                                frame: tx_frame(t),
-                                period_ms: t.period_ms,
-                                repeat: t.repeat,
-                                enable: false,
-                            })
-                            .collect();
-                        for c in stops {
-                            let _ = a.cmd.send(c);
-                        }
-                        a.txs.clear();
-                        a.change_next.clear();
-                        let n = dtos.len();
-                        for dto in dtos {
-                            let h = a.next_handle;
-                            a.next_handle += 1;
-                            a.txs.push(dto.into_task(h));
-                        }
-                        a.log(format!("已加载发送列表 {n} 条（默认停发，按需启动）"));
-                    }
-                    Err(e) => app.borrow_mut().log(format!("解析失败: {e}")),
-                }
+                let worker = app.borrow().worker_tx.clone();
+                std::thread::spawn(move || {
+                    let result = std::fs::read_to_string(&path)
+                        .map_err(|error| format!("读取失败: {error}"))
+                        .and_then(|text| {
+                            serde_json::from_str::<Vec<TxTaskDto>>(&text)
+                                .map_err(|error| format!("解析失败: {error}"))
+                        });
+                    let _ = worker.send(WorkerEvent::TxListLoaded(result));
+                });
             });
         });
     }
@@ -530,71 +443,6 @@ fn wire_tx(
     {
         let txw = tx_window.as_weak();
         let app = app.clone();
-        tx_window.on_tx_file_send(move || {
-            let Some(w) = txw.upgrade() else { return };
-            let en = app.borrow().lang_en;
-            let path = w.get_tx_file_path().to_string();
-            if path.trim().is_empty() {
-                w.set_tx_file_status(if en { "Select a file first".into() } else { "请先选择文件".into() });
-                return;
-            }
-            let text = match std::fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(e) => {
-                    w.set_tx_file_status(if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") }.into());
-                    return;
-                }
-            };
-            let id = parse_u32(&w.get_tx_file_id()).unwrap_or(0);
-            let ext = id > 0x7FF;
-            let max_len = w.get_tx_file_len().trim().parse::<usize>().unwrap_or(8).clamp(1, 64);
-            let repeat = w.get_tx_file_repeat().trim().parse::<u32>().unwrap_or(1).max(1);
-            // 每行解析为一帧数
-let mut frames: Vec<Vec<u8>> = Vec::new();
-            for line in text.lines() {
-                let bytes = parse_tx_bytes(line, max_len);
-                if !bytes.is_empty() {
-                    frames.push(bytes);
-                }
-            }
-            if frames.is_empty() {
-                w.set_tx_file_status(if en { "No valid frame data in file".into() } else { "文件无有效帧数据".into() });
-                return;
-            }
-            let total = (frames.len() as u64) * (repeat as u64);
-            let cap = total.min(50_000);
-            let mut a = app.borrow_mut();
-            let mut n = 0u64;
-            'outer: for _ in 0..repeat {
-                for data in &frames {
-                    if n >= cap {
-                        break 'outer;
-                    }
-                    let f = CanFrame {
-                        t: 0.0,
-                        ch: 1,
-                        tx: true,
-                        id,
-                        ext,
-                        fd: max_len > 8,
-                        brs: false,
-                        remote: false,
-                        error: false,
-                        data: data.clone(),
-                    };
-                    let _ = a.cmd.send(Cmd::SendOnce(f));
-                    n += 1;
-                }
-            }
-            a.tx += n;
-            a.log(format!("文件发送: {} 共 {n} 帧", path));
-            w.set_tx_file_progress(1.0);
-            w.set_tx_file_status(if en { format!("Sent {n} frames (file {} frames ×{repeat})", frames.len()) } else { format!("已发送 {n} 帧（文件 {} 帧 ×{repeat}）", frames.len()) }.into());
-        });
-    }
-    {
-        let txw = tx_window.as_weak();
-        let app = app.clone();
         tx_window.on_tx_file_stop(move || {
             if let Some(w) = txw.upgrade() {
                 w.set_tx_file_status(if app.borrow().lang_en { "Stopped".into() } else { "已停止".into() });
@@ -602,64 +450,122 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
         });
     }
     {
-        let txw = tx_window.as_weak();
-        let app = app.clone();
-        tx_window.on_tx_file_send(move || {
-            let Some(w) = txw.upgrade() else { return };
-            let en = app.borrow().lang_en;
-            let path = w.get_tx_file_path().to_string();
-            if path.trim().is_empty() {
-                w.set_tx_file_status(if en { "Select a file first".into() } else { "请选择文件".into() });
-                return;
-            }
-            let id = parse_u32(&w.get_tx_file_id()).unwrap_or(0);
-            let mode = w.get_tx_file_mode();
-            let repeat = w.get_tx_file_repeat().trim().parse::<u32>().unwrap_or(1).max(1);
-            let frames = match build_file_send_frames(&w, &path, id, mode, en) {
-                Ok(frames) => frames,
-                Err(e) => {
-                    w.set_tx_file_status(e.into());
-                    return;
-                }
-            };
-            let mut a = app.borrow_mut();
-            let mut sent = 0u64;
-            for _ in 0..repeat {
-                for frame in &frames {
-                    let _ = a.cmd.send(Cmd::SendOnce(frame.clone()));
-                    sent += 1;
-                }
-            }
-            a.tx += sent;
-            let mode_name = match mode {
-                1 => "XCP OTA",
-                2 => "UDS OTA",
-                _ => "File",
-            };
-            a.log(format!("{mode_name} send: {path}, total {sent} frames"));
-            w.set_tx_file_progress(1.0);
-            w.set_tx_file_status(if en {
-                format!("Sent {sent} frames ({} frames x {repeat})", frames.len())
-            } else {
-                format!("已发送 {sent} 帧（{} 帧 x {repeat}）", frames.len())
-            }.into());
-        });
-    }
-    {
         let app = app.clone();
         tx_window.on_tx_update(move |i, field, value| {
             let mut a = app.borrow_mut();
             update_tx_task(&mut a, i, &field, &value);
-            if let Some(t) = a.txs.get(i as usize)
-                && t.periodic {
-                    let _ = a.cmd.send(Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: true,
-                    });
+            let idx = i as usize;
+            if a.txs.get(idx).is_some_and(|t| t.periodic) {
+                configure_task_periodic(&mut a, idx);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let txw = tx_window.as_weak();
+        tx_window.on_tx_data_editor_show(move |i| {
+            let Some(w) = txw.upgrade() else { return };
+            if i < 0 {
+                let fd = w.get_tx_form_fd() == "Yes";
+                let max_len = if fd { 64 } else { 8 };
+                let dlc = w
+                    .get_tx_form_dlc()
+                    .trim()
+                    .parse::<usize>()
+                    .unwrap_or(8)
+                    .min(max_len);
+                let data = parse_tx_bytes(&w.get_tx_form_data(), max_len);
+                w.set_tx_data_editor_row(-1);
+                w.set_tx_data_editor_title(
+                    format!("普通发送 · DLC {dlc} · {}", if fd { "CAN FD" } else { "CAN" })
+                        .into(),
+                );
+                w.set_tx_data_editor_rows(build_tx_data_editor_rows(&data, dlc));
+                w.set_tx_data_editor_paste_value("".into());
+                w.set_tx_data_editor_error("".into());
+                w.set_tx_data_editor_open(true);
+                return;
+            }
+            let a = app.borrow();
+            let Some(task) = a.txs.get(i as usize) else { return };
+            w.set_tx_data_editor_row(i);
+            w.set_tx_data_editor_title(
+                format!(
+                    "{} · ID {} · DLC {}",
+                    task.name,
+                    id_str(task.id, task.ext),
+                    task.data.len()
+                )
+                .into(),
+            );
+            w.set_tx_data_editor_rows(build_tx_data_editor_rows(&task.data, task.data.len()));
+            w.set_tx_data_editor_paste_value("".into());
+            w.set_tx_data_editor_error("".into());
+            w.set_tx_data_editor_open(true);
+        });
+    }
+    {
+        let txw = tx_window.as_weak();
+        tx_window.on_tx_data_editor_byte_edited(move |i, value| {
+            let Some(w) = txw.upgrade() else { return };
+            edit_tx_data_editor_byte(&w.get_tx_data_editor_rows(), i as usize, &value);
+            w.set_tx_data_editor_error("".into());
+        });
+    }
+    {
+        let app = app.clone();
+        let txw = tx_window.as_weak();
+        tx_window.on_tx_data_editor_paste(move |value| {
+            let Some(w) = txw.upgrade() else { return };
+            let row = w.get_tx_data_editor_row();
+            let dlc = if row < 0 {
+                let max_len = if w.get_tx_form_fd() == "Yes" { 64 } else { 8 };
+                w.get_tx_form_dlc().trim().parse::<usize>().unwrap_or(8).min(max_len)
+            } else {
+                app.borrow().txs.get(row as usize).map(|task| task.data.len()).unwrap_or(0)
+            };
+            let filled = paste_tx_data_editor(&w.get_tx_data_editor_rows(), &value, dlc);
+            if filled == 0 {
+                w.set_tx_data_editor_error("没有识别到有效的十六进制字节".into());
+            } else {
+                w.set_tx_data_editor_error("".into());
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let txw = tx_window.as_weak();
+        tx_window.on_tx_data_editor_apply(move || {
+            let Some(w) = txw.upgrade() else { return false };
+            let row = w.get_tx_data_editor_row();
+            let dlc = if row < 0 {
+                let max_len = if w.get_tx_form_fd() == "Yes" { 64 } else { 8 };
+                w.get_tx_form_dlc().trim().parse::<usize>().unwrap_or(8).min(max_len)
+            } else {
+                app.borrow().txs.get(row as usize).map(|task| task.data.len()).unwrap_or(0)
+            };
+            let data = match collect_tx_data_editor(&w.get_tx_data_editor_rows(), dlc) {
+                Ok(data) => data,
+                Err(index) => {
+                    w.set_tx_data_editor_error(
+                        format!("字节 {:02X} 必须是两位十六进制数", index).into(),
+                    );
+                    return false;
                 }
+            };
+            if row < 0 {
+                let value = data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+                w.set_tx_form_data(value.into());
+                return true;
+            }
+            let mut a = app.borrow_mut();
+            let Some(task) = a.txs.get_mut(row as usize) else { return false };
+            task.data = data;
+            if task.periodic {
+                configure_task_periodic(&mut a, row as usize);
+            }
+            a.tx_list_cache = u64::MAX;
+            true
         });
     }
     // DBC 发送：双击报文添加
@@ -668,7 +574,7 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
         let txw = tx_window.as_weak();
         tx_window.on_tx_dbc_add(move |i| {
             let mut a = app.borrow_mut();
-            let Some((id, name)) = a.tx_dbc_order.get(i as usize).cloned() else {
+            let Some((id, ext, name)) = a.tx_dbc_order.get(i as usize).cloned() else {
                 return;
             };
             let ch = txw
@@ -676,11 +582,13 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                 .map(|w| ch_from_name(&w.get_tx_dbc_ch()))
                 .unwrap_or(1);
             let sig_values: Vec<(String, f64)> = a
-                .dbc_message(id)
+                .dbc_message_frame(id, ext)
                 .map(|m| m.signals.iter().map(|s| (s.name.clone(), 0.0)).collect())
                 .unwrap_or_default();
             let map: std::collections::HashMap<String, f64> = sig_values.iter().cloned().collect();
-            let data = a.dbc_encode(id, &map).unwrap_or_else(|| vec![0u8; 8]);
+            let data = a
+                .dbc_encode_frame(id, ext, &map)
+                .unwrap_or_else(|| vec![0u8; 8]);
             // a DBC message longer than 8 bytes can only be carried by CAN FD
             let fd = data.len() > 8;
             let h = a.next_handle;
@@ -689,7 +597,7 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                 name: name.clone(),
                 ch,
                 id,
-                ext: id > 0x7FF,
+                ext,
                 fd,
                 brs: false,
                 remote: false,
@@ -736,8 +644,9 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
             let Some(id) = a.txs[sel as usize].dbc_id else {
                 return;
             };
+            let ext = a.txs[sel as usize].ext;
             let sig_name = a
-                .dbc_message(id)
+                .dbc_message_frame(id, ext)
                 .and_then(|m| m.signals.get(i as usize).map(|s| s.name.clone()));
             let Some(sig_name) = sig_name else {
                 return;
@@ -752,18 +661,12 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
             }
             let map: std::collections::HashMap<String, f64> =
                 a.txs[sel as usize].sig_values.iter().cloned().collect();
-            let data_opt = a.dbc_encode(id, &map);
+            let data_opt = a.dbc_encode_frame(id, ext, &map);
             if let Some(data) = data_opt {
                 a.txs[sel as usize].data = data;
-                let t = &a.txs[sel as usize];
-                if t.periodic {
-                    let _ = a.cmd.send(Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: true,
-                    });
+                let idx = sel as usize;
+                if a.txs[idx].periodic {
+                    configure_task_periodic(&mut a, idx);
                 }
             }
         });
@@ -791,6 +694,10 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                 set_signal_value(&mut a, &name, phys);
                 let raw = if factor != 0.0 { ((phys - offset) / factor).round() } else { 0.0 };
                 w.set_tx_sel_sig_raw(fmtf(raw).into());
+                let idx = a.tx_sel;
+                if idx >= 0 && a.txs.get(idx as usize).is_some_and(|t| t.periodic) {
+                    configure_task_periodic(&mut a, idx as usize);
+                }
             }
         });
     }
@@ -807,6 +714,10 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                 let phys = raw * factor + offset;
                 set_signal_value(&mut a, &name, phys);
                 w.set_tx_sel_sig_phys(fmtf(phys).into());
+                let idx = a.tx_sel;
+                if idx >= 0 && a.txs.get(idx as usize).is_some_and(|t| t.periodic) {
+                    configure_task_periodic(&mut a, idx as usize);
+                }
             }
         });
     }
@@ -848,6 +759,9 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                         mode: vmode,
                     });
                 }
+            }
+            if a.txs[sel as usize].periodic {
+                configure_task_periodic(&mut a, sel as usize);
             }
             a.tx_sig_cache = u64::MAX;
             a.log(format!("已设置信号变化: {name}"));
@@ -899,57 +813,41 @@ let mut frames: Vec<Vec<u8>> = Vec::new();
                     };
                     let total = (burst as u64) * (repeat as u64);
                     let cap = total.min(100_000); // 防误操作刷爆总线
-                    let id_mask: u32 = if t.ext { 0x1FFF_FFFF } else { 0x7FF };
-                    let mut f = tx_frame(&t);
-                    let mut n = 0u64;
-                    for _ in 0..cap {
-                        let _ = a.cmd.send(Cmd::SendOnce(f.clone()));
-                        n += 1;
-                        if id_inc {
-                            f.id = (f.id.wrapping_add(1)) & id_mask;
-                        }
-                        if data_inc && !f.data.is_empty() {
-                            // 末字节进位递增（小端整体 +1）
-let mut carry = true;
-                            for b in f.data.iter_mut() {
-                                if carry {
-                                    let (v, c) = b.overflowing_add(1);
-                                    *b = v;
-                                    carry = c;
-                                }
-                            }
-                        }
+                    let frame = tx_frame(&t);
+                    if a
+                        .cmd
+                        .send(Cmd::SendSequence {
+                            frame,
+                            count: cap,
+                            id_increment: id_inc,
+                            data_increment: data_inc,
+                        })
+                        .is_ok()
+                    {
+                        a.log(format!(
+                            "发送任务: {} {} ×{}帧{}{}",
+                            t.name,
+                            id_str(t.id, t.ext),
+                            cap,
+                            if id_inc { " ID递增" } else { "" },
+                            if data_inc { " 数据递增" } else { "" }
+                        ));
+                    } else {
+                        a.log("发送任务提交失败: 命令队列已满，请稍后重试");
                     }
-                    a.tx += n;
-                    a.log(format!(
-                        "立即发送: {} {} ×{}帧{}{}",
-                        t.name,
-                        id_str(t.id, t.ext),
-                        n,
-                        if id_inc { " ID递增" } else { "" },
-                        if data_inc { " 数据递增" } else { "" }
-                    ));
                 }
                 Err(e) => a.log(format!("自动加载 sample.dbc 失败: {e}")),
             }
         });
     }
-    // DLC <-> data field sync in the Normal Send form
+    // Preserve the user's draft while changing frame type/protocol/DLC.
+    // DLC controls the transmitted length when the task is created; it must not
+    // destructively pad/truncate the data editor merely because focus changed.
     {
         let txw = tx_window.as_weak();
         tx_window.on_tx_form_dlc_edited(move |v| {
             let Some(w) = txw.upgrade() else { return };
-            let maxb = if w.get_tx_form_fd() == "Yes" { 64 } else { 8 };
-            let n = v.trim().parse::<usize>().unwrap_or(0).min(maxb);
-            w.set_tx_form_dlc(n.to_string().into());
-            // grow-only while typing so multi-digit entry (e.g. "6"->"64") never drops bytes;
-            // the full pad/truncate reconcile happens on commit (Enter) and at send time.
-            let mut bytes = parse_tx_bytes(&w.get_tx_form_data(), maxb);
-            if bytes.len() < n {
-                bytes.resize(n, 0);
-                let s = bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
-                w.set_tx_form_data(s.into());
-            }
+            w.set_tx_form_dlc(v);
         });
     }
     {
@@ -958,70 +856,42 @@ let mut carry = true;
             let Some(w) = txw.upgrade() else { return };
             let maxb = if w.get_tx_form_fd() == "Yes" { 64 } else { 8 };
             let n = v.trim().parse::<usize>().unwrap_or(0).min(maxb);
-            let mut bytes = parse_tx_bytes(&w.get_tx_form_data(), maxb);
-            bytes.resize(n, 0);
-            let s = bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
             w.set_tx_form_dlc(n.to_string().into());
-            w.set_tx_form_data(s.into());
         });
     }
     {
         let txw = tx_window.as_weak();
         tx_window.on_tx_form_data_edited(move |v| {
             let Some(w) = txw.upgrade() else { return };
-            let maxb = if w.get_tx_form_fd() == "Yes" { 64 } else { 8 };
-            let n = parse_tx_bytes(&v, maxb).len();
             w.set_tx_form_data(v);
-            w.set_tx_form_dlc(n.to_string().into());
         });
     }
 }
-
-fn build_file_send_frames(
-    w: &TxWindow,
-    path: &str,
-    id: u32,
-    mode: i32,
-    en: bool,
-) -> Result<Vec<CanFrame>, String> {
-    match mode {
-        1 => build_xcp_file_frames(path, id, en),
-        2 => {
-            let addr = parse_u32(&w.get_tx_file_addr()).unwrap_or(0);
-            let crc = parse_u32(&w.get_tx_file_crc()).unwrap_or(0) as u16;
-            build_uds_file_frames(path, id, addr, crc, en)
-        }
-        _ => build_normal_file_frames(w, path, id, en),
-    }
-}
-
 fn build_ota_job(
-    w: &TxWindow,
     path: &str,
+    channel: u8,
     id: u32,
     mode: i32,
+    addr: u32,
+    crc: u16,
     en: bool,
 ) -> Result<OtaJob, String> {
     match mode {
-        1 => build_xcp_ota_job(path, id, en),
-        2 => {
-            let addr = parse_u32(&w.get_tx_file_addr()).unwrap_or(0);
-            let crc = parse_u32(&w.get_tx_file_crc()).unwrap_or(0) as u16;
-            build_uds_ota_job(path, id, addr, crc, en)
-        }
+        1 => build_xcp_ota_job(path, channel, id, en),
+        2 => build_uds_ota_job(path, channel, id, addr, crc, en),
         _ => Err("unsupported OTA mode".into()),
     }
 }
 
 fn build_normal_file_frames(
-    w: &TxWindow,
     path: &str,
+    channel: u8,
     id: u32,
+    max_len: usize,
     en: bool,
 ) -> Result<Vec<CanFrame>, String> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
-    let max_len = w.get_tx_file_len().trim().parse::<usize>().unwrap_or(8).clamp(1, 64);
     let ext = id > 0x7FF;
     let mut frames = Vec::new();
     for line in text.lines() {
@@ -1029,7 +899,7 @@ fn build_normal_file_frames(
         if !data.is_empty() {
             frames.push(CanFrame {
                 t: 0.0,
-                ch: 1,
+                ch: channel,
                 tx: true,
                 id,
                 ext,
@@ -1054,7 +924,7 @@ fn xcp_response_to_can(response: ota::xcp::XcpResponseId) -> OtaResponseId {
     }
 }
 
-fn build_xcp_ota_job(path: &str, id: u32, en: bool) -> Result<OtaJob, String> {
+fn build_xcp_ota_job(path: &str, channel: u8, id: u32, en: bool) -> Result<OtaJob, String> {
     let ids = ota::xcp::resolve_ids(id)
         .ok_or_else(|| if en { "Invalid XCP CAN ID, expected 0x1821xx10".to_string() } else { "无效 XCP CAN ID，应为 0x1821xx10".to_string() })?;
     let response = xcp_response_to_can(ids.response);
@@ -1063,14 +933,14 @@ fn build_xcp_ota_job(path: &str, id: u32, en: bool) -> Result<OtaJob, String> {
     let image = ota::xcp::padded_image(raw)?;
     let mut steps = Vec::new();
     steps.push(OtaStep {
-        frame: ota::xcp::connect_frame(1, ids.send_id),
+        frame: ota::xcp::connect_frame(channel, ids.send_id),
         ack: OtaAck::XcpConnect { response },
         timeout_ms: 100,
         retries: 200,
     });
     for prepared in ota::xcp::prepare_download(&image) {
         steps.push(OtaStep {
-            frame: ota::xcp::prepared_frame_to_can(1, ids.send_id, &prepared),
+            frame: ota::xcp::prepared_frame_to_can(channel, ids.send_id, &prepared),
             ack: OtaAck::XcpAck { response },
             timeout_ms: if matches!(prepared, ota::xcp::XcpPreparedFrame::End) { 500 } else { 60 },
             retries: 3,
@@ -1083,23 +953,6 @@ fn build_xcp_ota_job(path: &str, id: u32, en: bool) -> Result<OtaJob, String> {
         retries: 3,
     })
 }
-
-fn build_xcp_file_frames(path: &str, id: u32, en: bool) -> Result<Vec<CanFrame>, String> {
-    let ids = ota::xcp::resolve_ids(id)
-        .ok_or_else(|| if en { "Invalid XCP CAN ID, expected 0x1821xx10".to_string() } else { "无效 XCP CAN ID，应为 0x1821xx10".to_string() })?;
-    let raw = std::fs::read(path)
-        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
-    let image = ota::xcp::padded_image(raw)?;
-    let mut frames = Vec::new();
-    frames.push(ota::xcp::connect_frame(1, ids.send_id));
-    frames.extend(
-        ota::xcp::prepare_download(&image)
-            .iter()
-            .map(|frame| ota::xcp::prepared_frame_to_can(1, ids.send_id, frame)),
-    );
-    Ok(frames)
-}
-
 fn push_uds_multiframe_steps(
     steps: &mut Vec<OtaStep>,
     frames: impl IntoIterator<Item = CanFrame>,
@@ -1126,6 +979,7 @@ fn push_uds_multiframe_steps(
 
 fn build_uds_ota_job(
     path: &str,
+    channel: u8,
     id: u32,
     addr: u32,
     crc: u16,
@@ -1142,25 +996,25 @@ fn build_uds_ota_job(
 
     let mut steps = Vec::new();
     steps.push(OtaStep {
-        frame: ota::uds::diagnostic_session(1, id, 0x03),
+        frame: ota::uds::diagnostic_session(channel, id, 0x03),
         ack: OtaAck::UdsPositive { service: ota::uds::DIAGNOSTIC_SESSION_CONTROL },
         timeout_ms: 1000,
         retries: 3,
     });
     push_uds_multiframe_steps(
         &mut steps,
-        ota::uds::request_download(1, id, addr, image.len() as u32),
+        ota::uds::request_download(channel, id, addr, image.len() as u32),
         OtaAck::UdsPositive { service: ota::uds::REQUEST_DOWNLOAD },
     );
     for (i, chunk) in image.chunks(256).enumerate() {
         push_uds_multiframe_steps(
             &mut steps,
-            ota::uds::transfer_data_block(1, id, i as u8, chunk),
+            ota::uds::transfer_data_block(channel, id, i as u8, chunk),
             OtaAck::UdsPositive { service: ota::uds::TRANSFER_DATA },
         );
     }
     steps.push(OtaStep {
-        frame: ota::uds::request_transfer_exit(1, id, crc),
+        frame: ota::uds::request_transfer_exit(channel, id, crc),
         ack: OtaAck::UdsPositive { service: ota::uds::REQUEST_TRANSFER_EXIT },
         timeout_ms: 1000,
         retries: 3,
@@ -1171,29 +1025,4 @@ fn build_uds_ota_job(
         timeout_ms: 1000,
         retries: 3,
     })
-}
-
-fn build_uds_file_frames(
-    path: &str,
-    id: u32,
-    addr: u32,
-    crc: u16,
-    en: bool,
-) -> Result<Vec<CanFrame>, String> {
-    if id == 0 {
-        return Err(if en { "UDS CAN ID is empty".into() } else { "UDS CAN ID 为空".into() });
-    }
-    let image = std::fs::read(path)
-        .map_err(|e| if en { format!("Read failed: {e}") } else { format!("读取失败: {e}") })?;
-    if image.is_empty() {
-        return Err(if en { "UDS file is empty".into() } else { "UDS 文件为空".into() });
-    }
-    let mut frames = Vec::new();
-    frames.push(ota::uds::diagnostic_session(1, id, 0x03));
-    frames.extend(ota::uds::request_download(1, id, addr, image.len() as u32));
-    for (i, chunk) in image.chunks(256).enumerate() {
-        frames.extend(ota::uds::transfer_data_block(1, id, i as u8, chunk));
-    }
-    frames.push(ota::uds::request_transfer_exit(1, id, crc));
-    Ok(frames)
 }

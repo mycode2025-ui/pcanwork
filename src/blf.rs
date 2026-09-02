@@ -4,7 +4,8 @@
 //! 写：CAN/CAN FD 帧写成单个无压缩 LOG_CONTAINER 内的 CAN_MESSAGE / CAN_FD_MESSAGE 对象（CANoe/ZXDoc 可打开）。
 
 use crate::can::CanFrame;
-use std::io::{Read, Write};
+use chrono::{DateTime, Datelike, Local, Timelike};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 const FILE_SIG: &[u8; 4] = b"LOGG";
 const OBJ_SIG: &[u8; 4] = b"LOBJ";
@@ -19,6 +20,7 @@ const NO_COMPRESSION: u16 = 0;
 const ZLIB_DEFLATE: u16 = 2;
 
 const CAN_ID_EXT: u32 = 0x8000_0000;
+const STREAM_CONTAINER_TARGET: usize = 256 * 1024;
 
 // ---- 小端读取助手 ----
 fn u16le(b: &[u8], o: usize) -> u16 {
@@ -194,114 +196,237 @@ fn fd_dlc(len: usize) -> u8 {
     }
 }
 
-/// 写 CAN / CAN FD 帧为 BLF（单个无压缩 LOG_CONTAINER）：
-/// 经典帧 → CAN_MESSAGE(48B)；FD 帧 → CAN_FD_MESSAGE(116B，含 EDL/BRS 标志与 64 字节数据)。
-pub fn write(path: &str, frames: &[CanFrame]) -> Result<(), String> {
-    // 1) 构建容器内的对象流
-    let mut payload: Vec<u8> = Vec::new();
-    let mut count: u32 = 0;
-    for f in frames {
-        let can_id = (f.id & 0x1FFF_FFFF) | if f.ext { CAN_ID_EXT } else { 0 };
-        if f.fd {
-            // CAN_FD_MESSAGE = base(16) + v1 头(16) + can_fd_msg(84) = 116
-            let obj_size: u32 = 16 + 16 + 84;
-            payload.extend_from_slice(OBJ_SIG);
-            payload.extend_from_slice(&32u16.to_le_bytes()); // header_size = base16+v1 16
-            payload.extend_from_slice(&1u16.to_le_bytes()); // header_version = 1
-            payload.extend_from_slice(&obj_size.to_le_bytes());
-            payload.extend_from_slice(&OBJ_CAN_FD_MESSAGE.to_le_bytes());
-            // v1 头：flags=2(ns), client=0, ver=0, timestamp
-            payload.extend_from_slice(&2u32.to_le_bytes());
-            payload.extend_from_slice(&0u16.to_le_bytes());
-            payload.extend_from_slice(&0u16.to_le_bytes());
-            payload.extend_from_slice(&((f.t * 1e9) as u64).to_le_bytes());
-            // can_fd_msg(84): channel(2) flags(1) dlc(1) id(4) frameLen(4) bitCount(1)
-            //                 fdFlags(1) validBytes(1) reserved(1) reserved(4) data[64]
-            let len = f.data.len().min(64);
-            payload.extend_from_slice(&(f.ch as u16).to_le_bytes());
-            payload.push(if f.tx { 0x1 } else { 0x0 }); // flags: bit0=TX
-            payload.push(fd_dlc(len)); // dlc 码
-            payload.extend_from_slice(&can_id.to_le_bytes());
-            payload.extend_from_slice(&0u32.to_le_bytes()); // frame_length(ns)，不跟踪→0
-            payload.push(0); // bit_count
-            payload.push(0x1 | if f.brs { 0x2 } else { 0x0 }); // fd_flags: bit0=EDL, bit1=BRS
-            payload.push(len as u8); // valid_data_bytes（实际字节数）
-            payload.push(0); // reserved(1)
-            payload.extend_from_slice(&0u32.to_le_bytes()); // reserved(4)
-            let mut d = [0u8; 64];
-            d[..len].copy_from_slice(&f.data[..len]);
-            payload.extend_from_slice(&d); // data[64]
-            count += 1;
-            continue;
-        }
-        let obj_size: u32 = 16 + 16 + 16; // base + v1 + can_msg = 48
-        // base header
+fn append_frame_object(payload: &mut Vec<u8>, f: &CanFrame) {
+    let can_id = (f.id & 0x1FFF_FFFF) | if f.ext { CAN_ID_EXT } else { 0 };
+    if f.fd {
+        let obj_size: u32 = 16 + 16 + 84;
         payload.extend_from_slice(OBJ_SIG);
-        payload.extend_from_slice(&32u16.to_le_bytes()); // header_size = base16+v1 16
-        payload.extend_from_slice(&1u16.to_le_bytes()); // header_version = 1
+        payload.extend_from_slice(&32u16.to_le_bytes());
+        payload.extend_from_slice(&1u16.to_le_bytes());
         payload.extend_from_slice(&obj_size.to_le_bytes());
-        payload.extend_from_slice(&OBJ_CAN_MESSAGE.to_le_bytes());
-        // v1 header: flags=2(ns), client=0, ver=0, timestamp
+        payload.extend_from_slice(&OBJ_CAN_FD_MESSAGE.to_le_bytes());
         payload.extend_from_slice(&2u32.to_le_bytes());
         payload.extend_from_slice(&0u16.to_le_bytes());
         payload.extend_from_slice(&0u16.to_le_bytes());
         payload.extend_from_slice(&((f.t * 1e9) as u64).to_le_bytes());
-        // can_msg: channel, flags, dlc, can_id, data[8]
+        let len = f.data.len().min(64);
         payload.extend_from_slice(&(f.ch as u16).to_le_bytes());
-        // flags: bit0=TX, bit7=远程帧(本工具约定，供自身往返保真)
-        payload.push((if f.tx { 0x1 } else { 0x0 }) | (if f.remote { 0x80 } else { 0x0 }));
-        let len = f.data.len().min(8);
-        payload.push(len as u8);
+        payload.push(if f.tx { 0x1 } else { 0x0 });
+        payload.push(fd_dlc(len));
         payload.extend_from_slice(&can_id.to_le_bytes());
-        let mut d = [0u8; 8];
-        d[..len].copy_from_slice(&f.data[..len]);
-        payload.extend_from_slice(&d);
-        count += 1;
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.push(0);
+        payload.push(0x1 | if f.brs { 0x2 } else { 0x0 });
+        payload.push(len as u8);
+        payload.push(0);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        let mut data = [0u8; 64];
+        data[..len].copy_from_slice(&f.data[..len]);
+        payload.extend_from_slice(&data);
+        return;
     }
 
-    // 2) LOG_CONTAINER 对象 = base(16) + log_container(16) + payload
+    let obj_size: u32 = 16 + 16 + 16;
+    payload.extend_from_slice(OBJ_SIG);
+    payload.extend_from_slice(&32u16.to_le_bytes());
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&obj_size.to_le_bytes());
+    payload.extend_from_slice(&OBJ_CAN_MESSAGE.to_le_bytes());
+    payload.extend_from_slice(&2u32.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&((f.t * 1e9) as u64).to_le_bytes());
+    payload.extend_from_slice(&(f.ch as u16).to_le_bytes());
+    payload.push((if f.tx { 0x1 } else { 0x0 }) | (if f.remote { 0x80 } else { 0x0 }));
+    let len = f.data.len().min(8);
+    payload.push(len as u8);
+    payload.extend_from_slice(&can_id.to_le_bytes());
+    let mut data = [0u8; 8];
+    data[..len].copy_from_slice(&f.data[..len]);
+    payload.extend_from_slice(&data);
+}
+
+fn build_container(payload: &[u8]) -> Vec<u8> {
     let container_obj_size = (16 + 16 + payload.len()) as u32;
-    let mut container: Vec<u8> = Vec::new();
+    let mut container = Vec::with_capacity(container_obj_size as usize + 3);
     container.extend_from_slice(OBJ_SIG);
-    container.extend_from_slice(&16u16.to_le_bytes()); // header_size = 16 (仅 base)
-    container.extend_from_slice(&1u16.to_le_bytes()); // header_version
+    container.extend_from_slice(&16u16.to_le_bytes());
+    container.extend_from_slice(&1u16.to_le_bytes());
     container.extend_from_slice(&container_obj_size.to_le_bytes());
     container.extend_from_slice(&OBJ_LOG_CONTAINER.to_le_bytes());
-    // LOG_CONTAINER_STRUCT "<H6xL4x": method, 6pad, uncompressed_size, 4pad
     container.extend_from_slice(&NO_COMPRESSION.to_le_bytes());
     container.extend_from_slice(&[0u8; 6]);
     container.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     container.extend_from_slice(&[0u8; 4]);
-    container.extend_from_slice(&payload);
+    container.extend_from_slice(payload);
     // 4 字节对齐
     while !container.len().is_multiple_of(4) {
         container.push(0);
     }
+    container
+}
 
-    // 3) 文件头（144 字节）
-    let file_size = FILE_HEADER_SIZE as u64 + container.len() as u64;
-    let uncompressed = payload.len() as u64;
+fn system_time_bytes(value: &DateTime<Local>) -> [u8; 16] {
+    let fields = [
+        value.year() as u16,
+        value.month() as u16,
+        value.weekday().num_days_from_sunday() as u16,
+        value.day() as u16,
+        value.hour() as u16,
+        value.minute() as u16,
+        value.second() as u16,
+        value.timestamp_subsec_millis() as u16,
+    ];
+    let mut bytes = [0u8; 16];
+    for (index, field) in fields.into_iter().enumerate() {
+        bytes[index * 2..index * 2 + 2].copy_from_slice(&field.to_le_bytes());
+    }
+    bytes
+}
+
+fn build_file_header(
+    file_size: u64,
+    uncompressed_size: u64,
+    object_count: u32,
+    started: &DateTime<Local>,
+    ended: &DateTime<Local>,
+) -> [u8; FILE_HEADER_SIZE as usize] {
     let mut header: Vec<u8> = Vec::with_capacity(FILE_HEADER_SIZE as usize);
     header.extend_from_slice(FILE_SIG);
     header.extend_from_slice(&FILE_HEADER_SIZE.to_le_bytes());
-    header.extend_from_slice(&[0u8; 8]); // 8×B app/bin 版本信息
+    header.extend_from_slice(&[0u8; 8]);
     header.extend_from_slice(&file_size.to_le_bytes());
-    header.extend_from_slice(&uncompressed.to_le_bytes());
-    header.extend_from_slice(&count.to_le_bytes());
-    header.extend_from_slice(&0u32.to_le_bytes()); // objects read
-    header.extend_from_slice(&[0u8; 16]); // 起始时间 SYSTEMTIME
-    header.extend_from_slice(&[0u8; 16]); // 结束时间 SYSTEMTIME
+    header.extend_from_slice(&uncompressed_size.to_le_bytes());
+    header.extend_from_slice(&object_count.to_le_bytes());
+    header.extend_from_slice(&0u32.to_le_bytes());
+    header.extend_from_slice(&system_time_bytes(started));
+    header.extend_from_slice(&system_time_bytes(ended));
     while header.len() < FILE_HEADER_SIZE as usize {
         header.push(0);
     }
+    header
+        .try_into()
+        .expect("BLF file header has a fixed 144-byte size")
+}
 
-    let f = std::fs::File::create(path).map_err(|e| format!("创建失败: {e}"))?;
-    let mut w = std::io::BufWriter::new(f);
-    w.write_all(&header).map_err(|e| format!("写入失败: {e}"))?;
-    w.write_all(&container)
-        .map_err(|e| format!("写入失败: {e}"))?;
-    w.flush().map_err(|e| format!("写入失败: {e}"))?;
-    Ok(())
+/// Incremental BLF writer. Each completed container is independently readable and the file
+/// header is checkpointed after every container, bounding crash loss to the in-memory payload.
+pub struct StreamWriter {
+    writer: std::io::BufWriter<std::fs::File>,
+    payload: Vec<u8>,
+    object_count: u32,
+    uncompressed_size: u64,
+    started: DateTime<Local>,
+    ended: DateTime<Local>,
+    finished: bool,
+}
+
+impl StreamWriter {
+    pub fn create(path: &std::path::Path) -> Result<Self, String> {
+        let file = std::fs::File::create(path).map_err(|e| format!("创建 BLF 失败: {e}"))?;
+        let now = Local::now();
+        let mut writer = std::io::BufWriter::new(file);
+        writer
+            .write_all(&build_file_header(
+                FILE_HEADER_SIZE as u64,
+                0,
+                0,
+                &now,
+                &now,
+            ))
+            .map_err(|e| format!("写入 BLF 文件头失败: {e}"))?;
+        writer
+            .flush()
+            .map_err(|e| format!("刷新 BLF 文件头失败: {e}"))?;
+        Ok(Self {
+            writer,
+            payload: Vec::with_capacity(STREAM_CONTAINER_TARGET + 128),
+            object_count: 0,
+            uncompressed_size: 0,
+            started: now,
+            ended: now,
+            finished: false,
+        })
+    }
+
+    pub fn push(&mut self, frame: &CanFrame) -> Result<(), String> {
+        append_frame_object(&mut self.payload, frame);
+        self.object_count = self.object_count.saturating_add(1);
+        self.ended = Local::now();
+        if self.payload.len() >= STREAM_CONTAINER_TARGET {
+            self.flush_checkpoint()?;
+        }
+        Ok(())
+    }
+
+    fn flush_container(&mut self) -> Result<(), String> {
+        if self.payload.is_empty() {
+            return Ok(());
+        }
+        let payload = std::mem::take(&mut self.payload);
+        self.uncompressed_size = self.uncompressed_size.saturating_add(payload.len() as u64);
+        self.writer
+            .write_all(&build_container(&payload))
+            .map_err(|e| format!("写入 BLF 容器失败: {e}"))?;
+        self.payload = Vec::with_capacity(STREAM_CONTAINER_TARGET + 128);
+        Ok(())
+    }
+
+    fn checkpoint_header(&mut self) -> Result<(), String> {
+        self.writer
+            .flush()
+            .map_err(|e| format!("刷新 BLF 数据失败: {e}"))?;
+        let end = self
+            .writer
+            .stream_position()
+            .map_err(|e| format!("读取 BLF 写入位置失败: {e}"))?;
+        self.writer
+            .seek(SeekFrom::Start(0))
+            .and_then(|_| {
+                self.writer.write_all(&build_file_header(
+                    end,
+                    self.uncompressed_size,
+                    self.object_count,
+                    &self.started,
+                    &self.ended,
+                ))
+            })
+            .and_then(|_| self.writer.seek(SeekFrom::Start(end)).map(|_| ()))
+            .and_then(|_| self.writer.flush())
+            .map_err(|e| format!("更新 BLF 检查点失败: {e}"))
+    }
+
+    pub fn flush_checkpoint(&mut self) -> Result<(), String> {
+        self.flush_container()?;
+        self.checkpoint_header()
+    }
+
+    pub fn finish(mut self) -> Result<u32, String> {
+        self.flush_checkpoint()?;
+        self.writer
+            .get_ref()
+            .sync_data()
+            .map_err(|e| format!("同步 BLF 到磁盘失败: {e}"))?;
+        self.finished = true;
+        Ok(self.object_count)
+    }
+}
+
+impl Drop for StreamWriter {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.flush_checkpoint();
+        }
+    }
+}
+
+/// Compatibility helper for conversion/tests; production capture uses `StreamWriter` directly.
+pub fn write(path: &str, frames: &[CanFrame]) -> Result<(), String> {
+    let mut writer = StreamWriter::create(std::path::Path::new(path))?;
+    for frame in frames {
+        writer.push(frame)?;
+    }
+    writer.finish().map(|_| ())
 }
 
 #[cfg(test)]
@@ -369,6 +494,40 @@ mod tests {
         assert_eq!(back[2].id, 0x2A0);
         assert_eq!(back[2].data, (1u8..=24).collect::<Vec<u8>>());
         assert!((back[2].t - 0.5).abs() < 1e-6);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn streaming_writer_checkpoints_multiple_containers() {
+        let path = std::env::temp_dir().join("pcanwork_blf_stream_test.blf");
+        let mut writer = StreamWriter::create(&path).unwrap();
+        let first = CanFrame {
+            t: 1.0,
+            ch: 1,
+            tx: false,
+            id: 0x101,
+            ext: false,
+            fd: false,
+            brs: false,
+            remote: false,
+            error: false,
+            data: vec![1, 2, 3],
+        };
+        writer.push(&first).unwrap();
+        writer.flush_checkpoint().unwrap();
+        let mut second = first.clone();
+        second.t = 2.0;
+        second.id = 0x102;
+        writer.push(&second).unwrap();
+        assert_eq!(writer.finish().unwrap(), 2);
+
+        let raw = std::fs::read(&path).unwrap();
+        assert_eq!(u64le(&raw, 16), raw.len() as u64);
+        assert_eq!(u32le(&raw, 32), 2);
+        let back = read(&path.to_string_lossy()).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].id, 0x101);
+        assert_eq!(back[1].id, 0x102);
         let _ = std::fs::remove_file(&path);
     }
 

@@ -6,14 +6,17 @@ slint::include_modules!();
 mod backend;
 mod expr;
 mod format;
+mod license;
+#[path = "../../shared/product_version.rs"]
+mod product_version;
 mod protocol;
 mod tls;
 #[cfg(windows)]
 mod windows_dpi;
 
 use backend::{
-    Cmd, DerivedCh, LogCfg, MasterCfg, ScanCfg, SimCfg, SimMode, SlaveCfg, SlaveScanCfg, UiCfg,
-    WriteFunc, WriteItem, WriteReq,
+    Cmd, CommandSender, DerivedCh, LogCfg, MasterCfg, ScanCfg, SimCfg, SimMode, SlaveCfg,
+    SlaveScanCfg, UiCfg, WriteFunc, WriteItem, WriteReq,
 };
 use format::{Order, RegFormat, Scaling};
 use protocol::{Area, CmpOp, ColorRules, Transport, ValueNames};
@@ -21,6 +24,7 @@ use slint::Model;
 use slint::VecModel;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 fn baud_from_index(i: i32) -> u32 {
@@ -62,21 +66,27 @@ fn parse_derived(text: &str) -> Vec<DerivedCh> {
 
 /// Collect WriteItems from the Write List grid model. Addresses are derived from
 /// the Start address plus row index (mirrors the read definition). Value accepts 0x.
-fn wl_items(rows: &slint::ModelRc<WriteRow>, start: i32) -> Vec<WriteItem> {
+fn wl_items(rows: &slint::ModelRc<WriteRow>, start: i32) -> Result<Vec<WriteItem>, String> {
     rows.iter()
         .enumerate()
-        .filter_map(|(i, r)| {
+        .map(|(i, r)| {
             let v = r.value.trim();
             let value = v
                 .strip_prefix("0x")
                 .or_else(|| v.strip_prefix("0X"))
                 .and_then(|h| i64::from_str_radix(h, 16).ok())
-                .or_else(|| v.parse::<i64>().ok())?;
-            let address = start + i as i32;
-            if !(0..=65535).contains(&value) || !(0..=65535).contains(&address) {
-                return None;
+                .or_else(|| v.parse::<i64>().ok())
+                .ok_or_else(|| format!("写列表第 {} 行不是有效整数", i + 1))?;
+            let address = start
+                .checked_add(i as i32)
+                .ok_or_else(|| format!("写列表第 {} 行地址溢出", i + 1))?;
+            if !(0..=65535).contains(&value) {
+                return Err(format!("写列表第 {} 行数值超出 0..65535", i + 1));
             }
-            Some(WriteItem {
+            if !(0..=65535).contains(&address) {
+                return Err(format!("写列表第 {} 行地址超出 0..65535", i + 1));
+            }
+            Ok(WriteItem {
                 address: address as u16,
                 value: value as u16,
                 inc: r.auto,
@@ -133,10 +143,10 @@ fn parse_num(s: &str, d: f64) -> f64 {
 }
 
 fn master_transport(a: &AppWindow) -> Transport {
-    // m_transport: 0=TCP, 1=RTU(串口), 2=UDP, 3=RTU over TCP, 4=RTU over UDP
+    // m_transport: 0=RTU(串口), 1=TCP, 2=UDP, 3=RTU over TCP, 4=RTU over UDP
     let (host, port) = (a.get_m_host().to_string(), a.get_m_port() as u16);
     match a.get_m_transport() {
-        0 => Transport::Tcp { host, port },
+        1 => Transport::Tcp { host, port },
         2 => Transport::Udp { host, port },
         3 => Transport::RtuOverTcp { host, port },
         4 => Transport::RtuOverUdp { host, port },
@@ -154,10 +164,10 @@ fn master_transport(a: &AppWindow) -> Transport {
 fn master_chart_ident(a: &AppWindow) -> String {
     let id = a.get_m_slave_id();
     match a.get_m_transport() {
-        1 => format!("RTU  {}  ·  Slave ID {id}", a.get_m_serial()),
+        0 => format!("RTU  {}  ·  Slave ID {id}", a.get_m_serial()),
         t => {
             let kind = match t {
-                0 => "TCP",
+                1 => "TCP",
                 2 => "UDP",
                 3 => "RTU/TCP",
                 4 => "RTU/UDP",
@@ -175,31 +185,39 @@ fn master_chart_ident(a: &AppWindow) -> String {
 /// Chart 窗识别信息: 从站(Server)绑定地址 + Unit ID。
 fn slave_chart_ident(a: &AppWindow) -> String {
     let id = a.get_s_unit_id();
-    if a.get_s_transport() == 1 {
-        format!("RTU  {}  ·  Unit ID {id}", a.get_s_serial())
-    } else {
-        format!(
-            "TCP  bind {}:{}  ·  Unit ID {id}",
-            a.get_s_host(),
-            a.get_s_port()
-        )
+    match a.get_s_transport() {
+        0 => format!("RTU  {}  ·  Unit ID {id}", a.get_s_serial()),
+        transport => {
+            let kind = match transport {
+                1 => "TCP",
+                2 => "UDP",
+                3 => "RTU/TCP",
+                4 => "RTU/UDP",
+                _ => "TCP",
+            };
+            format!(
+                "{kind}  bind {}:{}  ·  Unit ID {id}",
+                a.get_s_host(),
+                a.get_s_port()
+            )
+        }
     }
 }
 
 fn slave_transport(a: &AppWindow) -> Transport {
-    if a.get_s_transport() == 0 {
-        Transport::Tcp {
-            host: a.get_s_host().to_string(),
-            port: a.get_s_port() as u16,
-        }
-    } else {
-        Transport::Rtu {
+    let (host, port) = (a.get_s_host().trim().to_string(), a.get_s_port() as u16);
+    match a.get_s_transport() {
+        1 => Transport::Tcp { host, port },
+        2 => Transport::Udp { host, port },
+        3 => Transport::RtuOverTcp { host, port },
+        4 => Transport::RtuOverUdp { host, port },
+        _ => Transport::Rtu {
             path: a.get_s_serial().to_string(),
             baud: baud_from_index(a.get_s_baud_index()),
             data_bits: databits_from_index(a.get_s_databits_index()),
             parity: a.get_s_parity() as u8,
             stop_bits: stopbits_from_index(a.get_s_stopbits()),
-        }
+        },
     }
 }
 
@@ -261,20 +279,73 @@ fn func_write(i: i32) -> WriteFunc {
     }
 }
 
-fn master_cfg(a: &AppWindow) -> MasterCfg {
+fn master_quantity_limit(function: i32) -> Result<i32, String> {
+    match function {
+        0 | 1 => Ok(2000),
+        2 | 3 => Ok(125),
+        4 | 5 => Ok(1),
+        6 => Ok(1968),
+        7 => Ok(123),
+        _ => Err(format!("不支持的 Modbus 功能索引: {function}")),
+    }
+}
+
+fn validate_address_span(
+    address: i32,
+    quantity: usize,
+    maximum: usize,
+    label: &str,
+) -> Result<(u16, u16), String> {
+    if !(0..=65535).contains(&address) {
+        return Err(format!("{label}地址 {address} 超出 0..65535"));
+    }
+    if quantity == 0 || quantity > maximum {
+        return Err(format!(
+            "{label} Quantity 必须为 1..{maximum}，当前为 {quantity}"
+        ));
+    }
+    if address as usize + quantity > 65_536 {
+        return Err(format!("{label}地址范围越界: {address} + {quantity}"));
+    }
+    Ok((address as u16, quantity as u16))
+}
+
+fn validate_master_definition(
+    function: i32,
+    address: i32,
+    quantity: i32,
+) -> Result<(Area, u16, u16, bool), String> {
+    let limit = master_quantity_limit(function)?;
+    let (address, quantity) = validate_address_span(
+        address,
+        quantity.max(0) as usize,
+        limit as usize,
+        fc_label(function),
+    )?;
+    Ok((
+        func_area(function),
+        address,
+        quantity,
+        !func_is_write(function),
+    ))
+}
+
+fn master_cfg(a: &AppWindow) -> Result<MasterCfg, String> {
     let func = a.get_m_function();
-    MasterCfg {
+    let (area, address, quantity, poll) =
+        validate_master_definition(func, a.get_m_address(), a.get_m_quantity())?;
+    Ok(MasterCfg {
         transport: master_transport(a),
         slave_id: a.get_m_slave_id() as u8,
-        area: func_area(func),
-        address: a.get_m_address() as u16,
-        quantity: a.get_m_quantity() as u16,
+        area,
+        address,
+        quantity,
         scan_ms: a.get_m_scanrate() as u64,
         format: RegFormat::from_index(a.get_m_format()),
         scaling: scaling_cfg(a),
         colors: colors_cfg(a),
         value_names: value_names_cfg(a),
-        poll: !func_is_write(func),
+        poll,
         timeout_ms: a.get_m_timeout() as u64,
         reconnect: a.get_m_reconnect(),
         reconnect_ms: a.get_m_reconnect_ms() as u64,
@@ -287,7 +358,31 @@ fn master_cfg(a: &AppWindow) -> MasterCfg {
             cipher: a.get_m_tls_cipher(),
             version: a.get_m_tls_version(),
         }),
-    }
+    })
+}
+
+fn write_file_with_feedback(
+    weak: slint::Weak<AppWindow>,
+    path: PathBuf,
+    data: Vec<u8>,
+    server: bool,
+    action: &'static str,
+) {
+    std::thread::spawn(move || {
+        let result = std::fs::write(&path, data);
+        let display = path.display().to_string();
+        let _ = weak.upgrade_in_event_loop(move |a| {
+            let message = match result {
+                Ok(()) => format!("{action}成功: {display}"),
+                Err(error) => format!("{action}失败: {display} — {error}"),
+            };
+            if server {
+                a.set_s_status(message.into());
+            } else {
+                a.set_m_status(message.into());
+            }
+        });
+    });
 }
 
 fn read_uicfg(a: &AppWindow) -> UiCfg {
@@ -333,7 +428,8 @@ fn slave_cfg(a: &AppWindow) -> SlaveCfg {
         address: a.get_s_address() as u16,
         quantity: a.get_s_quantity() as u16,
         format: RegFormat::from_index(a.get_s_format()),
-        tls: a.get_s_tls().then(|| tls::TlsServerCfg {
+        english: a.get_lang_en(),
+        tls: (a.get_s_transport() == 1 && a.get_s_tls()).then(|| tls::TlsServerCfg {
             cert_file: a.get_s_tls_cert().to_string(),
             key_file: a.get_s_tls_key().to_string(),
             require_client_cert: a.get_s_tls_require(),
@@ -404,6 +500,7 @@ fn csv_escape(s: &str) -> String {
 ///  - 十进制 0 基(原样): `16`
 ///  - 十六进制: `0x10` / `0X10`
 ///  - PLC(Modicon)风格: `40001`/`30001`/`10001`(5 位)或 `400001`/...(6 位)→ 去表前缀、1 基转 0 基。
+///
 /// 注: 线圈 PLC `0xxxx`(00001-09999)与原始十进制冲突, 无法自动区分, 不支持; 用原始 0 基即可。
 fn parse_csv_address(s: &str) -> Option<u16> {
     let t = s.trim();
@@ -465,6 +562,18 @@ fn is_yes(s: &str) -> bool {
     )
 }
 
+fn workspace_transport_index(value: i32, serial_first: bool) -> i32 {
+    if serial_first {
+        value
+    } else {
+        match value {
+            0 => 1,
+            1 => 0,
+            other => other,
+        }
+    }
+}
+
 fn serialize_workspace(a: &AppWindow) -> String {
     use std::fmt::Write;
     let mut s = String::from("modbus-tools-workspace v1\n");
@@ -474,6 +583,10 @@ fn serialize_workspace(a: &AppWindow) -> String {
         }};
     }
     kv!("active_mode", a.get_active_mode());
+    kv!("dark", a.get_dark());
+    kv!("lang_en", a.get_lang_en());
+    kv!("topmost_enabled", a.get_topmost_enabled());
+    kv!("transport_order", "serial-first");
     kv!("m_transport", a.get_m_transport());
     kv!("m_host", a.get_m_host());
     kv!("m_port", a.get_m_port());
@@ -542,7 +655,18 @@ fn apply_workspace(a: &AppWindow, content: &str) {
     };
 
     a.set_active_mode(geti("active_mode", a.get_active_mode()));
-    a.set_m_transport(geti("m_transport", 0));
+    a.set_dark(getb("dark", a.get_dark()));
+    a.set_lang_en(getb("lang_en", a.get_lang_en()));
+    a.set_topmost_enabled(getb("topmost_enabled", a.get_topmost_enabled()));
+    // Earlier workspaces used 0=TCP and 1=RTU. Keep them compatible while
+    // making all newly created workspaces serial-first.
+    let serial_first = map
+        .get("transport_order")
+        .is_some_and(|value| value.trim() == "serial-first");
+    a.set_m_transport(workspace_transport_index(
+        geti("m_transport", 1),
+        serial_first,
+    ));
     sets(&|v| a.set_m_host(v), "m_host");
     a.set_m_port(geti("m_port", 502));
     sets(&|v| a.set_m_serial(v), "m_serial");
@@ -576,7 +700,10 @@ fn apply_workspace(a: &AppWindow, content: &str) {
     if let Some(v) = map.get("vn_text") {
         a.set_vn_text(v.trim().replace("\\n", "\n").into());
     }
-    a.set_s_transport(geti("s_transport", 0));
+    a.set_s_transport(workspace_transport_index(
+        geti("s_transport", 1),
+        serial_first,
+    ));
     sets(&|v| a.set_s_host(v), "s_host");
     a.set_s_port(geti("s_port", 502));
     sets(&|v| a.set_s_serial(v), "s_serial");
@@ -595,15 +722,158 @@ fn main() -> Result<(), slint::PlatformError> {
     #[cfg(windows)]
     windows_dpi::force_system_dpi_awareness();
 
+    if let Err(error) = license::verify_self_integrity("modbus", product_version::current()) {
+        rfd::MessageDialog::new()
+            .set_title("Modbus Tools")
+            .set_description(format!("程序完整性验证失败，软件无法启动。\n\nApplication integrity verification failed.\n\n{error}"))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+        return Ok(());
+    }
+
     let app = AppWindow::new()?;
     let tx = backend::start_backend(app.as_weak());
+
+    app.set_license_machine_code(license::machine_code().into());
+    let trial_duration = license::runtime_trial_duration();
+    let license_gate = Rc::new(license::RuntimeGate::new("modbus", trial_duration));
+    let initially_licensed = license_gate.has_signed_license();
+    app.set_license_unlocked(initially_licensed);
+    if let Ok(payload) = license::verify_installed("modbus", "*") {
+        app.set_license_info(format!("{} · .pcanlic", payload.license_id).into());
+        app.set_license_validity_zh(license::license_validity(&payload, false).into());
+        app.set_license_validity_en(license::license_validity(&payload, true).into());
+    }
+    app.set_license_remaining(if initially_licensed {
+        "已授权".into()
+    } else {
+        license::format_remaining(trial_duration.as_secs()).into()
+    });
+    app.set_license_seconds(trial_duration.as_secs() as i32);
+    {
+        let weak = app.as_weak();
+        let gate = license_gate.clone();
+        app.on_license_import(move || {
+            let Some(a) = weak.upgrade() else {
+                return;
+            };
+            let Some(path) = rfd::FileDialog::new()
+                .add_filter("PcanWork License", &["pcanlic"])
+                .pick_file()
+            else {
+                return;
+            };
+            match license::install_license(&path, gate.product()) {
+                Ok(payload) => {
+                    a.set_license_unlocked(true);
+                    a.set_license_open(false);
+                    a.set_license_info(format!("{} · .pcanlic", payload.license_id).into());
+                    a.set_license_validity_zh(license::license_validity(&payload, false).into());
+                    a.set_license_validity_en(license::license_validity(&payload, true).into());
+                    a.set_license_remaining(
+                        if a.get_lang_en() {
+                            "Licensed"
+                        } else {
+                            "已授权"
+                        }
+                        .into(),
+                    );
+                    a.set_license_error(
+                        if a.get_lang_en() {
+                            "Signed license installed."
+                        } else {
+                            "签名授权文件已安装。"
+                        }
+                        .into(),
+                    );
+                }
+                Err(error) => a.set_license_error(
+                    if a.get_lang_en() {
+                        format!("License rejected: {error}")
+                    } else {
+                        format!("授权文件无效：{error}")
+                    }
+                    .into(),
+                ),
+            }
+        });
+    }
+    {
+        let weak = app.as_weak();
+        app.on_license_copy_machine_code(move || {
+            let Some(a) = weak.upgrade() else {
+                return;
+            };
+            match arboard::Clipboard::new().and_then(|mut clipboard| {
+                clipboard.set_text(a.get_license_machine_code().to_string())
+            }) {
+                Ok(()) => a.set_license_error(
+                    if a.get_lang_en() {
+                        "Machine code copied."
+                    } else {
+                        "机器码已复制。"
+                    }
+                    .into(),
+                ),
+                Err(error) => a.set_license_error(
+                    if a.get_lang_en() {
+                        format!("Copy failed: {error}")
+                    } else {
+                        format!("复制失败：{error}")
+                    }
+                    .into(),
+                ),
+            }
+        });
+    }
+    let _license_timer = {
+        let weak = app.as_weak();
+        let gate = license_gate.clone();
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_secs(1),
+            move || {
+                let Some(a) = weak.upgrade() else {
+                    return;
+                };
+                if gate.has_signed_license() {
+                    if !a.get_license_unlocked() {
+                        a.set_license_unlocked(true);
+                        a.set_license_remaining(
+                            if a.get_lang_en() {
+                                "Licensed"
+                            } else {
+                                "已授权"
+                            }
+                            .into(),
+                        );
+                    }
+                    return;
+                }
+                let remaining = gate.remaining_seconds();
+                a.set_license_seconds(remaining.min(i32::MAX as u64) as i32);
+                a.set_license_remaining(license::format_remaining(remaining).into());
+                if remaining == 0 {
+                    let _ = a.window().hide();
+                    let _ = slint::quit_event_loop();
+                }
+            },
+        );
+        timer
+    };
 
     macro_rules! on_cmd {
         ($setter:ident, $build:expr) => {{
             let weak = app.as_weak();
             let tx = tx.clone();
+            let gate = license_gate.clone();
             app.$setter(move || {
                 if let Some(a) = weak.upgrade() {
+                    if !gate.allows("modbus-operation") {
+                        a.set_license_open(true);
+                        return;
+                    }
                     let _ = tx.send($build(&a));
                 }
             });
@@ -611,9 +881,24 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- Master ----
-    on_cmd!(on_master_connect, |a: &AppWindow| Cmd::MasterConnect(
-        master_cfg(a)
-    ));
+    {
+        let weak = app.as_weak();
+        let tx = tx.clone();
+        let gate = license_gate.clone();
+        app.on_master_connect(move || {
+            let Some(a) = weak.upgrade() else { return };
+            if !gate.allows("modbus-connect") {
+                a.set_license_open(true);
+                return;
+            }
+            match master_cfg(&a) {
+                Ok(config) => {
+                    let _ = tx.send(Cmd::MasterConnect(config));
+                }
+                Err(error) => a.set_m_status(format!("配置无效: {error}").into()),
+            }
+        });
+    }
     {
         let tx = tx.clone();
         app.on_master_disconnect(move || {
@@ -663,25 +948,54 @@ fn main() -> Result<(), slint::PlatformError> {
     on_cmd!(on_master_derived, |a: &AppWindow| Cmd::MasterDerived(
         parse_derived(&a.get_dv_text())
     ));
-    on_cmd!(on_master_write_once, |a: &AppWindow| Cmd::MasterWriteOnce {
-        func: func_write(a.get_m_function()),
-        items: wl_items(&a.get_wl_rows(), a.get_m_address()),
-    });
+    {
+        let weak = app.as_weak();
+        let tx = tx.clone();
+        let gate = license_gate.clone();
+        app.on_master_write_once(move || {
+            let Some(a) = weak.upgrade() else { return };
+            if !gate.allows("modbus-write") {
+                a.set_license_open(true);
+                return;
+            }
+            match wl_items(&a.get_wl_rows(), a.get_m_address()) {
+                Ok(items) if !items.is_empty() => {
+                    let _ = tx.send(Cmd::MasterWriteOnce {
+                        func: func_write(a.get_m_function()),
+                        items,
+                    });
+                }
+                Ok(_) => a.set_m_status("写入列表为空".into()),
+                Err(error) => a.set_m_status(error.into()),
+            }
+        });
+    }
     {
         // Auto-write: 前置校验(已连接 + 写入列表有有效行)通过后才真正下发并把 UI 置为运行
         let weak = app.as_weak();
         let tx = tx.clone();
+        let gate = license_gate.clone();
         app.on_master_auto_write(move || {
             let Some(a) = weak.upgrade() else { return };
+            if !gate.allows("modbus-write") {
+                a.set_license_open(true);
+                return;
+            }
             if !a.get_m_connected() {
                 a.set_m_status("自动写入: 未连接".into());
                 return;
             }
-            let items = wl_items(&a.get_wl_rows(), a.get_m_address());
-            if items.is_empty() {
-                a.set_m_status("自动写入: 写入列表无有效行".into());
-                return;
-            }
+            let items = match wl_items(&a.get_wl_rows(), a.get_m_address()) {
+                Ok(items) if !items.is_empty() => items,
+                Ok(_) => {
+                    a.set_m_status("自动写入: 写入列表为空".into());
+                    return;
+                }
+                Err(error) => {
+                    a.set_m_status(format!("自动写入: {error}").into());
+                    return;
+                }
+            };
             let _ = tx.send(Cmd::MasterAutoWrite {
                 func: func_write(a.get_m_function()),
                 items,
@@ -719,19 +1033,44 @@ fn main() -> Result<(), slint::PlatformError> {
         let tx = tx.clone();
         app.on_master_read_write(move || {
             let Some(a) = weak.upgrade() else { return };
-            let vals: Vec<u16> = a
+            let vals = match a
                 .get_rw_write_vals()
                 .split_whitespace()
-                .filter_map(parse_u16_field)
-                .collect();
-            if vals.is_empty() {
-                a.set_m_status("FC23: 写入值为空或非法(空格分隔, 十进制或 0x..)".into());
-                return;
-            }
+                .map(|value| {
+                    parse_u16_field(value).ok_or_else(|| format!("FC23: 非法写入值“{value}”"))
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(values) => values,
+                Err(error) => {
+                    a.set_m_status(error.into());
+                    return;
+                }
+            };
+            let (read_addr, read_qty) = match validate_address_span(
+                a.get_rw_read_addr(),
+                a.get_rw_read_qty().max(0) as usize,
+                125,
+                "FC23 读取",
+            ) {
+                Ok(value) => value,
+                Err(error) => {
+                    a.set_m_status(error.into());
+                    return;
+                }
+            };
+            let (write_addr, _) =
+                match validate_address_span(a.get_rw_write_addr(), vals.len(), 121, "FC23 写入") {
+                    Ok(value) => value,
+                    Err(error) => {
+                        a.set_m_status(error.into());
+                        return;
+                    }
+                };
             let _ = tx.send(Cmd::MasterReadWrite {
-                read_addr: a.get_rw_read_addr() as u16,
-                read_qty: a.get_rw_read_qty() as u16,
-                write_addr: a.get_rw_write_addr() as u16,
+                read_addr,
+                read_qty,
+                write_addr,
                 write_values: vals,
             });
         });
@@ -801,6 +1140,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 addr: addr as u16,
                 right: axis == 1,
             });
+        });
+    }
+    {
+        let tx = tx.clone();
+        app.on_master_chart_page(move |direction| {
+            let _ = tx.send(Cmd::MasterChartPage(direction));
         });
     }
     {
@@ -924,13 +1269,18 @@ fn main() -> Result<(), slint::PlatformError> {
         app.on_master_readdef_changed(move || {
             let Some(a) = weak.upgrade() else { return };
             let func = a.get_m_function();
-            let _ = tx.send(Cmd::MasterReadDef {
-                area: func_area(func),
-                address: a.get_m_address() as u16,
-                quantity: a.get_m_quantity() as u16,
-                scan_ms: a.get_m_scanrate() as u64,
-                poll: !func_is_write(func),
-            });
+            match validate_master_definition(func, a.get_m_address(), a.get_m_quantity()) {
+                Ok((area, address, quantity, poll)) => {
+                    let _ = tx.send(Cmd::MasterReadDef {
+                        area,
+                        address,
+                        quantity,
+                        scan_ms: a.get_m_scanrate() as u64,
+                        poll,
+                    });
+                }
+                Err(error) => a.set_m_status(format!("配置无效: {error}").into()),
+            }
             if let Some(pf) = floats.borrow().get(&(a.get_active_win() as u32)) {
                 pf.set_fc_text(fc_label(func).into());
                 pf.set_is_write(func_is_write(func));
@@ -951,7 +1301,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let s_next = Rc::new(std::cell::Cell::new(2i32));
 
         // helper: load a tab's def into the active s-* props and re-render
-        fn load_tab(a: &AppWindow, tx: &tokio::sync::mpsc::UnboundedSender<Cmd>, t: &SlaveWinTab) {
+        fn load_tab(a: &AppWindow, tx: &CommandSender, t: &SlaveWinTab) {
             a.set_s_area(t.area);
             a.set_s_address(t.address);
             a.set_s_quantity(t.quantity);
@@ -1016,7 +1366,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 }
                 if let Some(idx) =
-                    (0..m.row_count()).find(|&i| m.row_data(i).map_or(false, |t| t.id == id))
+                    (0..m.row_count()).find(|&i| m.row_data(i).is_some_and(|t| t.id == id))
                 {
                     m.remove(idx);
                 }
@@ -1263,7 +1613,13 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 };
                 if let Some(a) = weak.upgrade() {
-                    let _ = std::fs::write(file.path(), a.get_vn_text().as_str());
+                    write_file_with_feedback(
+                        weak.clone(),
+                        file.path().to_path_buf(),
+                        a.get_vn_text().as_bytes().to_vec(),
+                        false,
+                        "值名称导出",
+                    );
                 }
             });
         });
@@ -1284,7 +1640,14 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 };
                 if let Some(a) = weak.upgrade() {
-                    let _ = std::fs::write(file.path(), serialize_workspace(&a));
+                    let server = a.get_active_mode() == 1;
+                    write_file_with_feedback(
+                        weak.clone(),
+                        file.path().to_path_buf(),
+                        serialize_workspace(&a).into_bytes(),
+                        server,
+                        "工作区保存",
+                    );
                 }
             });
         });
@@ -1314,13 +1677,18 @@ fn main() -> Result<(), slint::PlatformError> {
                 let _ = tx.send(Cmd::MasterValueNames(value_names_cfg(&a)));
                 // 补发关键配置, 否则后台仍按旧地址/数量/格式/视图轮询(界面新、通信旧)
                 let func = a.get_m_function();
-                let _ = tx.send(Cmd::MasterReadDef {
-                    area: func_area(func),
-                    address: a.get_m_address() as u16,
-                    quantity: a.get_m_quantity() as u16,
-                    scan_ms: a.get_m_scanrate() as u64,
-                    poll: !func_is_write(func),
-                });
+                match validate_master_definition(func, a.get_m_address(), a.get_m_quantity()) {
+                    Ok((area, address, quantity, poll)) => {
+                        let _ = tx.send(Cmd::MasterReadDef {
+                            area,
+                            address,
+                            quantity,
+                            scan_ms: a.get_m_scanrate() as u64,
+                            poll,
+                        });
+                    }
+                    Err(error) => a.set_m_status(format!("工作区配置无效: {error}").into()),
+                }
                 let _ = tx.send(Cmd::MasterFormat(RegFormat::from_index(a.get_m_format())));
                 let _ = tx.send(Cmd::SlaveView {
                     area: Area::from_index(a.get_s_area()),
@@ -1328,6 +1696,11 @@ fn main() -> Result<(), slint::PlatformError> {
                     quantity: a.get_s_quantity() as u16,
                     format: RegFormat::from_index(a.get_s_format()),
                 });
+                if a.get_active_mode() == 1 {
+                    a.set_s_status(format!("工作区已打开: {}", file.path().display()).into());
+                } else {
+                    a.set_m_status(format!("工作区已打开: {}", file.path().display()).into());
+                }
             });
         });
     }
@@ -1382,9 +1755,9 @@ fn main() -> Result<(), slint::PlatformError> {
                     active_csv,
                 });
                 if server {
-                    a.set_s_status("Exported all tables → CSV".into());
+                    a.set_s_status("正在导出 CSV…".into());
                 } else {
-                    a.set_m_status("Exported all poll windows → CSV".into());
+                    a.set_m_status("正在导出 CSV…".into());
                 }
             });
         });
@@ -1477,9 +1850,29 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     // ---- Slave ----
-    on_cmd!(on_slave_start, |a: &AppWindow| Cmd::SlaveStart(slave_cfg(
-        a
-    )));
+    {
+        let tx = tx.clone();
+        let weak = app.as_weak();
+        let gate = license_gate.clone();
+        app.on_slave_start(move || {
+            let Some(a) = weak.upgrade() else {
+                return;
+            };
+            if !gate.allows("modbus-slave") { a.set_license_open(true); return; }
+            if a.get_s_transport() != 0 && a.get_s_host().trim().is_empty() {
+                a.set_s_status(
+                    if a.get_lang_en() {
+                        "Start failed: enter a local listen address, or use 0.0.0.0 for all interfaces."
+                    } else {
+                        "启动失败：请输入本机监听地址，或使用 0.0.0.0 监听全部网卡。"
+                    }
+                    .into(),
+                );
+                return;
+            }
+            let _ = tx.send(Cmd::SlaveStart(slave_cfg(&a)));
+        });
+    }
     {
         let tx = tx.clone();
         app.on_slave_stop(move || {
@@ -1527,8 +1920,13 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let weak = app.as_weak();
         let tx = tx.clone();
+        let gate = license_gate.clone();
         app.on_slave_sim_start(move || {
             if let Some(a) = weak.upgrade() {
+                if !gate.allows("modbus-simulation") {
+                    a.set_license_open(true);
+                    return;
+                }
                 // 从机服务器没启动时, 后台会忽略 SimStart, 不能假装在模拟
                 if !a.get_s_running() {
                     a.set_s_status("模拟: 请先启动从机服务器".into());
@@ -1577,7 +1975,12 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-    app.on_master_chart(|_| {}); // tab switch handled in Slint callback
+    {
+        let tx = tx.clone();
+        app.on_master_chart(move |addr| {
+            let _ = tx.send(Cmd::MasterChartFocus(addr as u16));
+        });
+    }
     {
         let weak = app.as_weak();
         app.on_slave_copy(move |addr| {
@@ -1638,7 +2041,13 @@ fn main() -> Result<(), slint::PlatformError> {
                     return;
                 };
                 if let Some(a) = weak.upgrade() {
-                    let _ = std::fs::write(file.path(), serialize_workspace(&a));
+                    write_file_with_feedback(
+                        weak.clone(),
+                        file.path().to_path_buf(),
+                        serialize_workspace(&a).into_bytes(),
+                        false,
+                        "工作区保存",
+                    );
                 }
             });
         });
@@ -1651,7 +2060,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 if a.get_m_connected() {
                     let _ = tx.send(Cmd::MasterDisconnect);
                 } else {
-                    let _ = tx.send(Cmd::MasterConnect(master_cfg(&a)));
+                    match master_cfg(&a) {
+                        Ok(config) => {
+                            let _ = tx.send(Cmd::MasterConnect(config));
+                        }
+                        Err(error) => a.set_m_status(format!("配置无效: {error}").into()),
+                    }
                 }
             }
         });
@@ -1695,7 +2109,7 @@ fn main() -> Result<(), slint::PlatformError> {
             if let Some(a) = weak.upgrade() {
                 let info = if a.get_active_mode() == 0 {
                     let transport = match a.get_m_transport() {
-                        0 => format!("Modbus TCP  {}:{}", a.get_m_host(), a.get_m_port()),
+                        1 => format!("Modbus TCP  {}:{}", a.get_m_host(), a.get_m_port()),
                         2 => format!("Modbus UDP  {}:{}", a.get_m_host(), a.get_m_port()),
                         3 => format!("Modbus RTU over TCP  {}:{}", a.get_m_host(), a.get_m_port()),
                         4 => format!("Modbus RTU over UDP  {}:{}", a.get_m_host(), a.get_m_port()),
@@ -1731,14 +2145,17 @@ fn main() -> Result<(), slint::PlatformError> {
                         a.get_m_err()
                     )
                 } else {
-                    let transport = if a.get_s_transport() == 0 {
-                        format!("Modbus TCP  {}:{}", a.get_s_host(), a.get_s_port())
-                    } else {
-                        format!(
+                    let transport = match a.get_s_transport() {
+                        0 => format!(
                             "Modbus RTU  {}  baud={}",
                             a.get_s_serial(),
                             baud_from_index(a.get_s_baud_index())
-                        )
+                        ),
+                        1 => format!("Modbus TCP  {}:{}", a.get_s_host(), a.get_s_port()),
+                        2 => format!("Modbus UDP  {}:{}", a.get_s_host(), a.get_s_port()),
+                        3 => format!("Modbus RTU over TCP  {}:{}", a.get_s_host(), a.get_s_port()),
+                        4 => format!("Modbus RTU over UDP  {}:{}", a.get_s_host(), a.get_s_port()),
+                        _ => "Unknown".to_string(),
                     };
                     format!(
                         "Mode:        {}\n\
@@ -1789,6 +2206,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 addr: addr as u16,
                 right: axis == 1,
             });
+        });
+    }
+    {
+        let tx = tx.clone();
+        chart_win.on_page_change(move |direction| {
+            let _ = tx.send(Cmd::MasterChartPage(direction));
         });
     }
     {
@@ -1848,6 +2271,8 @@ fn main() -> Result<(), slint::PlatformError> {
                 c.set_axis_lmax(a.get_m_axis_lmax());
                 c.set_axis_rmin(a.get_m_axis_rmin());
                 c.set_axis_rmax(a.get_m_axis_rmax());
+                c.set_page_start(a.get_m_chart_page_start());
+                c.set_series_total(a.get_m_chart_total());
                 c.set_ident(master_chart_ident(&a).into());
             },
         );
@@ -1979,5 +2404,67 @@ fn apply_brand_titlebar() {
     }
     unsafe {
         EnumWindows(cb, 0);
+    }
+}
+
+#[cfg(test)]
+mod write_list_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_middle_row_rejects_entire_write_list() {
+        let rows = slint::ModelRc::new(slint::VecModel::from(vec![
+            WriteRow {
+                value: "1".into(),
+                auto: false,
+            },
+            WriteRow {
+                value: "invalid".into(),
+                auto: false,
+            },
+            WriteRow {
+                value: "3".into(),
+                auto: false,
+            },
+        ]));
+        let error = match wl_items(&rows, 100) {
+            Err(error) => error,
+            Ok(_) => panic!("invalid row must reject the entire write list"),
+        };
+        assert!(error.contains("第 2 行"));
+    }
+
+    #[test]
+    fn master_quantity_limits_follow_modbus_function_codes() {
+        assert!(validate_master_definition(0, 0, 2000).is_ok());
+        assert!(validate_master_definition(0, 0, 2001).is_err());
+        assert!(validate_master_definition(2, 0, 125).is_ok());
+        assert!(validate_master_definition(2, 0, 126).is_err());
+        assert!(validate_master_definition(4, 0, 1).is_ok());
+        assert!(validate_master_definition(4, 0, 2).is_err());
+        assert!(validate_master_definition(6, 0, 1968).is_ok());
+        assert!(validate_master_definition(6, 0, 1969).is_err());
+        assert!(validate_master_definition(7, 0, 123).is_ok());
+        assert!(validate_master_definition(7, 0, 124).is_err());
+    }
+
+    #[test]
+    fn master_definition_rejects_address_range_overflow() {
+        assert!(validate_master_definition(2, 65_535, 1).is_ok());
+        assert!(validate_master_definition(2, 65_535, 2).is_err());
+    }
+
+    #[test]
+    fn legacy_workspace_transport_indices_are_migrated() {
+        assert_eq!(workspace_transport_index(0, false), 1);
+        assert_eq!(workspace_transport_index(1, false), 0);
+        assert_eq!(workspace_transport_index(2, false), 2);
+    }
+
+    #[test]
+    fn serial_first_workspace_transport_indices_are_preserved() {
+        for index in 0..=4 {
+            assert_eq!(workspace_transport_index(index, true), index);
+        }
     }
 }

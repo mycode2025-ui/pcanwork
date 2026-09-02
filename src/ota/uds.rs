@@ -100,7 +100,7 @@ pub fn routine_control_start(ch: u8, id: u32, addr: u32, len: u32) -> [CanFrame;
             ch,
             id,
             [
-                ISO_TP_FIRST_FRAME | 0x00,
+                ISO_TP_FIRST_FRAME,
                 0x0D,
                 ROUTINE_CONTROL,
                 0x01,
@@ -146,7 +146,7 @@ pub fn request_download(ch: u8, id: u32, addr: u32, len: u32) -> [CanFrame; 2] {
             ch,
             id,
             [
-                ISO_TP_FIRST_FRAME | 0x00,
+                ISO_TP_FIRST_FRAME,
                 0x0B,
                 REQUEST_DOWNLOAD,
                 0x00,

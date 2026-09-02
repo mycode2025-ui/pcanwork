@@ -418,7 +418,7 @@ pub fn parse_word(text: &str) -> Option<u16> {
 
 pub fn parse_word_list(text: &str) -> Option<Vec<u16>> {
     let parts: Vec<&str> = text
-        .split(|c| c == ',' || c == ' ' || c == ';')
+        .split([',', ' ', ';'])
         .filter(|s| !s.trim().is_empty())
         .collect();
     if parts.is_empty() {
@@ -429,7 +429,7 @@ pub fn parse_word_list(text: &str) -> Option<Vec<u16>> {
 
 pub fn parse_bit_list(text: &str) -> Option<Vec<bool>> {
     let parts: Vec<&str> = text
-        .split(|c| c == ',' || c == ' ' || c == ';')
+        .split([',', ' ', ';'])
         .filter(|s| !s.trim().is_empty())
         .collect();
     if parts.is_empty() {
@@ -473,10 +473,13 @@ mod tests {
     fn encode_decode_roundtrip() {
         // float pi encodes to registers and decodes back, for every byte order.
         for o in [Order::Abcd, Order::Cdab, Order::Badc, Order::Dcba] {
-            let regs = encode_value(3.14159_f64, RegFormat::F32(o)).unwrap();
+            let regs = encode_value(std::f64::consts::PI, RegFormat::F32(o)).unwrap();
             assert_eq!(regs.len(), 2);
             let (_s, num) = multi_base(&regs, RegFormat::F32(o));
-            assert!((num - 3.14159).abs() < 1e-4, "order {o:?} -> {num}");
+            assert!(
+                (num - std::f64::consts::PI).abs() < 1e-4,
+                "order {o:?} -> {num}"
+            );
         }
         // 32-bit int
         let regs = encode_value(-123456.0, RegFormat::I32(Order::Cdab)).unwrap();

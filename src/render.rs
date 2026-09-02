@@ -4,7 +4,7 @@
 use crate::dbc::MessageDef;
 use crate::{
     App, AppWindow, ChanStat, IdStat, LastInfo, SigRow, SignalPickItem, SignalPickRow,
-    SignalSelectWindow, fmtf,
+    SignalSelectWindow, fmtf, sync_vec_model,
 };
 use slint::{ModelRc, VecModel};
 use std::rc::Rc;
@@ -42,6 +42,7 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
             expanded,
             selectable,
             selected,
+            marked: false,
         });
         items.push(item);
     }
@@ -330,19 +331,35 @@ pub(crate) fn refresh_signal_picker(a: &mut App, signal_window: &SignalSelectWin
 }
 
 /// Rebuild the per-channel and per-ID statistics tables.
-pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
-    let active_ids = a.last.len();
-    let chan = vec![ChanStat {
-        ch: "CAN1".into(),
-        state: if a.running { "Running" } else { "Stopped" }.into(),
-        rx: a.rx.to_string().into(),
-        tx: a.tx.to_string().into(),
-        err: a.err.to_string().into(),
-        load: format!("{:.1}%", a.bus_load).into(),
-        fps: format!("{:.0}", a.fps).into(),
-        active_ids: active_ids.to_string().into(),
-    }];
-    ui.set_chan_stats(ModelRc::from(Rc::new(VecModel::from(chan))));
+pub(crate) fn build_stats(a: &App, _ui: &AppWindow) {
+    let mut channels = std::collections::BTreeSet::new();
+    channels.extend(a.channels.iter().map(|config| config.sw_channel.max(1)));
+    channels.extend(a.chan_stats.keys().copied());
+    if channels.is_empty() {
+        channels.insert(1);
+    }
+    let chan: Vec<ChanStat> = channels
+        .into_iter()
+        .map(|channel| {
+            let stats = a.chan_stats.get(&channel).cloned().unwrap_or_default();
+            let active_ids = a
+                .last
+                .keys()
+                .filter(|key| (((**key >> 40) & 0xFF) as u8).max(1) == channel)
+                .count();
+            ChanStat {
+                ch: format!("CAN{channel}").into(),
+                state: if a.running { "Running" } else { "Stopped" }.into(),
+                rx: stats.rx.to_string().into(),
+                tx: stats.tx.to_string().into(),
+                err: stats.err.to_string().into(),
+                load: format!("{:.1}%", stats.bus_load).into(),
+                fps: format!("{:.0}", stats.fps).into(),
+                active_ids: active_ids.to_string().into(),
+            }
+        })
+        .collect();
+    sync_vec_model(&a.chan_stat_model, chan);
 
     let mut ids: Vec<(&u64, &LastInfo)> = a.last.iter().collect();
     ids.sort_by_key(|(k, _)| **k & 0xFFFF_FFFF);
@@ -362,6 +379,7 @@ pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
     for (k, li) in ids {
         let id = (*k & 0xFFFF_FFFF) as u32;
         let ch = ((*k >> 40) & 0xFF) as u8;
+        let ext = ((*k >> 38) & 1) == 1;
         // 真均值 = 周期累加 / 周期个数(count-1)，而非 min/max 中点。
         let avg = if li.count > 1 {
             li.sum_cycle / (li.count - 1) as f64
@@ -375,7 +393,7 @@ pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
             id: format!("0x{id:X}").into(),
             name: {
                 // tx 帧(发送/回显)在统计里加 (Tx) 标记，与同 ID 的 rx 行区分。
-                let base = a.dbc_message_name(id).unwrap_or("");
+                let base = a.dbc_message_name_frame(id, ext).unwrap_or("");
                 if (*k >> 39) & 1 == 1 {
                     if base.is_empty() {
                         "(Tx)".into()
@@ -405,13 +423,27 @@ pub(crate) fn build_stats(a: &App, ui: &AppWindow) {
             .into(),
         });
     }
-    ui.set_id_stats(ModelRc::from(Rc::new(VecModel::from(id_rows))));
+    sync_vec_model(&a.id_stat_model, id_rows);
 }
 
 /// Rebuild the signal-parse panel for the currently selected message: decode its latest
 /// frame via the DBC and list each signal (raw / physical / unit / range / status).
 /// `a.sig_panel` is kept index-aligned so "add to chart" can map a row back to (id, signal).
 pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    a.selected_key.hash(&mut hasher);
+    a.selected_key
+        .and_then(|key| a.last.get(&key).map(|info| info.count))
+        .hash(&mut hasher);
+    (std::sync::Arc::as_ptr(&a.dbc_snap) as usize).hash(&mut hasher);
+    a.lang_en.hash(&mut hasher);
+    let signature = hasher.finish();
+    if signature == a.sig_panel_cache {
+        return;
+    }
+    a.sig_panel_cache = signature;
+
     let en = a.lang_en;
     let mut sig_rows: Vec<SigRow> = Vec::new();
     a.sig_panel.clear();
@@ -424,9 +456,10 @@ pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
         && let Some(li) = a.last.get(&k)
     {
         let id = (k & 0xFFFF_FFFF) as u32;
+        let ext = ((k >> 38) & 1) == 1;
         let data = li.data.clone();
         let count = li.count;
-        let name = a.dbc_message_name(id).unwrap_or("").to_string();
+        let name = a.dbc_message_name_frame(id, ext).unwrap_or("").to_string();
         sig_title = if en {
             format!(
                 "Current: 0x{id:X} {name} / Len={} / Count={count}",
@@ -445,7 +478,7 @@ pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
                 "未加载 DBC".into()
             };
         } else {
-            let decoded = a.dbc_decode(id, &data);
+            let decoded = a.dbc_decode_frame(id, ext, &data);
             if decoded.is_empty() {
                 sig_title = if en {
                     format!("0x{id:X} message not matched in DBC")
@@ -457,7 +490,7 @@ pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
                 a.sig_panel.push((id, s.name.clone()));
                 sig_rows.push(SigRow {
                     signal: s.name.into(),
-                    raw: s.raw.to_string().into(),
+                    raw: s.raw_text.clone().into(),
                     physical: format!("{:.3}", s.physical).into(),
                     unit: s.unit.into(),
                     min: fmtf(s.min).into(),
@@ -481,5 +514,5 @@ pub(crate) fn build_signal_panel(a: &mut App, ui: &AppWindow) {
         }
     }
     ui.set_sig_title(sig_title.into());
-    ui.set_sigs(ModelRc::from(Rc::new(VecModel::from(sig_rows))));
+    sync_vec_model(&a.sig_model, sig_rows);
 }

@@ -17,6 +17,9 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         a.project_name.hash(&mut h);
         a.connected.hash(&mut h);
+        let mut connected_channels = a.connected_channels.iter().copied().collect::<Vec<_>>();
+        connected_channels.sort_unstable();
+        connected_channels.hash(&mut h);
         a.conn_name.hash(&mut h);
         a.running.hash(&mut h);
         a.baud.hash(&mut h);
@@ -95,11 +98,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         &mut keys,
         &mut dbc_indices,
         0,
-        &format!(
-            "{}: {}",
-            "Project",
-            a.project_name
-        ),
+        &format!("{}: {}", "Project", a.project_name),
         "project",
         false,
         "project",
@@ -122,6 +121,8 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
         );
         if hardware_open {
             for c in &a.channels {
+                let channel_connected = a.connected_channels.contains(&c.sw_channel);
+                let channel_running = channel_connected && a.running;
                 push(
                     &mut t,
                     &mut keys,
@@ -137,8 +138,10 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                         } else {
                             c.baud.clone()
                         },
-                        if a.running {
+                        if channel_running {
                             if en { "Running" } else { "运行中" }
+                        } else if !channel_connected {
+                            if en { "Not connected" } else { "未连接" }
                         } else if en {
                             "Stopped"
                         } else {
@@ -146,7 +149,7 @@ pub(crate) fn build_tree(a: &mut App, ui: &AppWindow) {
                         }
                     ),
                     "channel",
-                    a.running,
+                    channel_running,
                     "",
                     false,
                     false,

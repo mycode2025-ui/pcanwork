@@ -1,21 +1,24 @@
 [package]
 name = "serial-tool"
-version = "0.1.11"
+version = "0.3.2"
 edition = "2024"
+rust-version = "1.88"
 build = "build.rs"
 
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+crossbeam-channel = "0.5"
 dirs = "6"
+encoding_rs = "0.8"
 rfd = "0.15"
 serialport = "4"
-slint = { version = "1.17.0", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-software", "accessibility"] }
+slint = { version = "1.17.1", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "renderer-software", "accessibility"] }
 
 [build-dependencies]
 embed-manifest = "1.5.0"
-slint-build = "1.17.0"
+slint-build = "1.17.1"
 
 [target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
-# 注: [profile.release] 已移到工作区根 (Pcanwork/Cargo.toml), 工作区只认根的 profile。
+winresource = "0.1"
+# 娉? [profile.release] 宸茬Щ鍒板伐浣滃尯鏍?(Pcanwork/Cargo.toml), 宸ヤ綔鍖哄彧璁ゆ牴鐨?profile銆?

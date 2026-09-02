@@ -1,8 +1,8 @@
 // One-window Slint page split from the original monolithic file.
 import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph, ThemedWindow } from "common.slint";
 
-export component ChartWindow inherits Window {
+export component ChartWindow inherits ThemedWindow {
     title: I18n.en ? "PcanWork - Chart Window" : "PcanWork - 独立曲线窗口";
     icon: @image-url("logo.svg");
     preferred-width: 1280px;
@@ -80,8 +80,8 @@ export component ChartWindow inherits Window {
                             Rectangle {
                                 width: 16px; height: 16px; y: (parent.height - 16px) / 2;
                                 border-width: 1px; border-color: Theme.border; border-radius: 3px;
-                                background: ser.visible ? Theme.accent : white;
-                                Text { text: ser.visible ? "v" : ""; color: white; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+                                background: ser.visible ? Theme.accent : Theme.panel;
+                                Text { text: ser.visible ? "v" : ""; color: Theme.on-accent; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
                                 TouchArea { clicked => { root.chart-toggle-series(i); } }
                             }
                             Rectangle { width: 12px; height: 12px; y: (parent.height - 12px) / 2; background: ser.clr; border-radius: 2px; }
@@ -177,7 +177,7 @@ export component ChartWindow inherits Window {
                                 border-radius: 4px;
                                 background: ser.clr;
                                 border-width: 1px;
-                                border-color: white;
+                                border-color: Theme.on-accent;
                             }
                             if root.chart-cursor && ser.cursor-valid: Rectangle {
                                 width: 112px; height: 22px;
@@ -209,7 +209,7 @@ export component ChartWindow inherits Window {
                                 border-radius: 4px;
                                 background: Theme.accent;
                                 border-width: 1px;
-                                border-color: white;
+                                border-color: Theme.on-accent;
                             }
                             // 第二游标的值框（蓝色边，与游标1一样显示实时值）
                             if root.chart-cursor && root.chart-dual && ser.cursor2-valid: Rectangle {

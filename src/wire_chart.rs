@@ -1,6 +1,108 @@
 // Event-wiring for the wire_chart. Included into main.rs via include!(); lives in the
 // crate-root module, sharing main.rs's imports/private items (no use, no vis changes).
 // Windows are passed by reference; app is an owned Rc clone. Unused params are by design.
+type ChartExportSeries = Vec<(String, String, Vec<(f64, f64)>)>;
+
+fn chart_export_snapshot(app: &App) -> ChartExportSeries {
+    app.series
+        .iter()
+        .map(|series| {
+            (
+                series.name.clone(),
+                series.unit.clone(),
+                series.samples.iter().copied().collect(),
+            )
+        })
+        .collect()
+}
+
+fn spawn_chart_export(
+    series: ChartExportSeries,
+    path: std::path::PathBuf,
+    wide: bool,
+    worker: WorkerSender<WorkerEvent>,
+) {
+    std::thread::spawn(move || {
+        let result = (|| -> Result<String, String> {
+            let file = std::fs::File::create(&path)
+                .map_err(|error| format!("导出失败: {error}"))?;
+            let mut writer = std::io::BufWriter::new(file);
+            if !wide {
+                writeln!(writer, "Time,Signal,Value,Unit")
+                    .map_err(|error| format!("写入表头失败: {error}"))?;
+                for (name, unit, samples) in &series {
+                    for &(time, value) in samples {
+                        writeln!(writer, "{time:.6},{name},{value},{unit}")
+                            .map_err(|error| format!("写入曲线数据失败: {error}"))?;
+                    }
+                }
+                writer
+                    .flush()
+                    .map_err(|error| format!("刷新曲线文件失败: {error}"))?;
+                return Ok(format!("曲线数据已导出: {}", path.display()));
+            }
+
+            let mut timestamps: Vec<f64> = series
+                .iter()
+                .flat_map(|(_, _, samples)| samples.iter().map(|&(time, _)| time))
+                .collect();
+            timestamps.sort_by(|left, right| {
+                left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            timestamps.dedup_by(|left, right| (*left - *right).abs() < 1e-9);
+            const MAX_ROWS: usize = 200_000;
+            let truncated = timestamps.len() > MAX_ROWS;
+            timestamps.truncate(MAX_ROWS);
+
+            let mut header = String::from("Time");
+            for (name, unit, _) in &series {
+                if unit.is_empty() {
+                    header.push_str(&format!(",{name}"));
+                } else {
+                    header.push_str(&format!(",{name}({unit})"));
+                }
+            }
+            writeln!(writer, "{header}")
+                .map_err(|error| format!("写入表头失败: {error}"))?;
+            let mut indices = vec![0usize; series.len()];
+            let mut last = vec![None; series.len()];
+            for &time in &timestamps {
+                let mut line = format!("{time:.6}");
+                for (index, (_, _, samples)) in series.iter().enumerate() {
+                    while indices[index] < samples.len()
+                        && samples[indices[index]].0 <= time + 1e-9
+                    {
+                        last[index] = Some(samples[indices[index]].1);
+                        indices[index] += 1;
+                    }
+                    match last[index] {
+                        Some(value) => line.push_str(&format!(",{value}")),
+                        None => line.push(','),
+                    }
+                }
+                writeln!(writer, "{line}")
+                    .map_err(|error| format!("写入曲线数据失败: {error}"))?;
+            }
+            writer
+                .flush()
+                .map_err(|error| format!("刷新曲线文件失败: {error}"))?;
+            let note = if truncated {
+                format!("（已截断至 {MAX_ROWS} 行）")
+            } else {
+                String::new()
+            };
+            Ok(format!(
+                "曲线宽表已导出({}信号 × {}行){note}: {}",
+                series.len(),
+                timestamps.len(),
+                path.display()
+            ))
+        })();
+        let message = result.unwrap_or_else(|error| error);
+        let _ = worker.send(WorkerEvent::Log(message));
+    });
+}
+
 #[allow(unused_variables, clippy::too_many_arguments)]
 fn wire_chart(
     app: Rc<std::cell::RefCell<App>>,
@@ -163,11 +265,12 @@ new_span = new_span.min(data_span);
         let app = app.clone();
         let cww = chart_window.as_weak();
         chart_window.on_chart_export_csv(move || {
-            if app.borrow().series.is_empty() {
+            let snapshot = chart_export_snapshot(&app.borrow());
+            if snapshot.is_empty() {
                 app.borrow_mut().log("曲线为空，无可导出数据".to_string());
                 return;
             }
-            let app = app.clone();
+            let worker = app.borrow().worker_tx.clone();
             let cww = cww.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
@@ -178,20 +281,7 @@ new_span = new_span.min(data_span);
                 }
                 let Some(file) = dlg.save_file().await else { return };
                 let path = file.path().to_path_buf();
-                let mut a = app.borrow_mut();
-                match std::fs::File::create(&path) {
-                    Ok(f) => {
-                        let mut w = std::io::BufWriter::new(f);
-                        let _ = writeln!(w, "Time,Signal,Value,Unit");
-                        for s in &a.series {
-                            for &(t, v) in &s.samples {
-                                let _ = writeln!(w, "{t:.6},{},{v},{}", s.name, s.unit);
-                            }
-                        }
-                        a.log(format!("曲线数据已导出: {}", path.display()));
-                    }
-                    Err(e) => a.log(format!("导出失败: {e}")),
-                }
+                spawn_chart_export(snapshot, path, false, worker);
             });
         });
     }
@@ -200,11 +290,12 @@ new_span = new_span.min(data_span);
         let app = app.clone();
         let cww = chart_window.as_weak();
         chart_window.on_chart_export_wide_csv(move || {
-            if app.borrow().series.is_empty() {
+            let snapshot = chart_export_snapshot(&app.borrow());
+            if snapshot.is_empty() {
                 app.borrow_mut().log("曲线为空，无可导出数据".to_string());
                 return;
             }
-            let app = app.clone();
+            let worker = app.borrow().worker_tx.clone();
             let cww = cww.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
@@ -215,65 +306,7 @@ new_span = new_span.min(data_span);
                 }
                 let Some(file) = dlg.save_file().await else { return };
                 let path = file.path().to_path_buf();
-                let mut a = app.borrow_mut();
-                // 1) 所有信号时间戳的有序并集（去重），上限保护
-                let mut ts: Vec<f64> = a
-                    .series
-                    .iter()
-                    .flat_map(|s| s.samples.iter().map(|&(t, _)| t))
-                    .collect();
-                ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-                ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
-                const MAX_ROWS: usize = 200_000;
-                let truncated = ts.len() > MAX_ROWS;
-                if truncated {
-                    ts.truncate(MAX_ROWS);
-                }
-                match std::fs::File::create(&path) {
-                    Ok(f) => {
-                        let mut w = std::io::BufWriter::new(f);
-                        // 表头：Time + 每个信号名(单位)
-                        let mut header = String::from("Time");
-                        for s in &a.series {
-                            if s.unit.is_empty() {
-                                header.push_str(&format!(",{}", s.name));
-                            } else {
-                                header.push_str(&format!(",{}({})", s.name, s.unit));
-                            }
-                        }
-                        let _ = writeln!(w, "{header}");
-                        // 每个信号一个游标，沿时间前进取最近已知
-let mut idx = vec![0usize; a.series.len()];
-                        let mut last: Vec<Option<f64>> = vec![None; a.series.len()];
-                        for &t in &ts {
-                            let mut line = format!("{t:.6}");
-                            for (si, s) in a.series.iter().enumerate() {
-                                let sm = &s.samples;
-                                while idx[si] < sm.len() && sm[idx[si]].0 <= t + 1e-9 {
-                                    last[si] = Some(sm[idx[si]].1);
-                                    idx[si] += 1;
-                                }
-                                match last[si] {
-                                    Some(v) => line.push_str(&format!(",{v}")),
-                                    None => line.push(','),
-                                }
-                            }
-                            let _ = writeln!(w, "{line}");
-                        }
-                        let note = if truncated {
-                            format!("（已截断至 {MAX_ROWS} 行）")
-                        } else {
-                            String::new()
-                        };
-                        let nsig = a.series.len();
-                        let nrow = ts.len();
-                        a.log(format!(
-                            "曲线宽表已导出({nsig}信号 × {nrow}行){note}: {}",
-                            path.display()
-                        ));
-                    }
-                    Err(e) => a.log(format!("导出失败: {e}")),
-                }
+                spawn_chart_export(snapshot, path, true, worker);
             });
         });
     }
@@ -285,10 +318,13 @@ let mut idx = vec![0usize; a.series.len()];
                 let mut a = app.borrow_mut();
                 if a.sig_log.is_some() {
                     // 停止记录
-                    if let Some(mut w) = a.sig_log.take() {
-                        let _ = w.flush();
+                    let flush_result = a.sig_log.take().map(|mut w| w.flush());
+                    a.sig_log_last_flush = None;
+                    if let Some(Err(error)) = flush_result {
+                        a.log(format!("停止信号记录时刷新文件失败: {error}"));
+                    } else {
+                        a.log("已停止信号记录，数据已刷新到磁盘".to_string());
                     }
-                    a.log("已停止信号记录".to_string());
                     return;
                 }
                 if a.series.is_empty() {
@@ -312,13 +348,21 @@ let mut idx = vec![0usize; a.series.len()];
                 match std::fs::File::create(&path) {
                     Ok(f) => {
                         let mut w = std::io::BufWriter::new(f);
-                        let _ = writeln!(w, "Time,Signal,Value,Unit");
-                        let nsig = a.series.len();
-                        a.sig_log = Some(w);
-                        a.log(format!(
-                            "开始信号记录(流式): {} —— 记录曲线中 {nsig} 个信号",
-                            path.display()
-                        ));
+                        match writeln!(w, "Time,Signal,Value,Unit").and_then(|_| w.flush()) {
+                            Ok(()) => {
+                                let nsig = a.series.len();
+                                a.sig_log = Some(w);
+                                a.sig_log_last_flush = Some(std::time::Instant::now());
+                                a.log(format!(
+                                    "开始信号记录(流式): {} —— 记录曲线中 {nsig} 个信号",
+                                    path.display()
+                                ));
+                            }
+                            Err(error) => a.log(format!(
+                                "初始化信号记录文件失败 {}: {error}",
+                                path.display()
+                            )),
+                        }
                     }
                     Err(e) => a.log(format!("无法创建记录文件: {e}")),
                 }

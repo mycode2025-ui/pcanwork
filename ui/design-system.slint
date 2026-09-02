@@ -1,0 +1,370 @@
+import { Palette } from "std-widgets.slint";
+
+// PcanWork product design system shared by CAN, Modbus and Serial tools.
+// Keep application-specific components local; colors, typography, spacing,
+// control sizing, status semantics and language state belong here.
+
+export global ProductI18n {
+    in-out property <bool> en: false;
+    public pure function t(zh: string, eng: string) -> string {
+        return en ? eng : zh;
+    }
+}
+
+export global ProductDesign {
+    in-out property <bool> dark: false;
+    in-out property <bool> compact: false;
+
+    // Brand and semantic colors.
+    out property <color> window: dark ? #0d1726 : #eef3f9;
+    out property <color> surface: dark ? #132237 : #ffffff;
+    out property <color> surface-raised: dark ? #1a2c44 : #e3ecf6;
+    out property <color> border: dark ? #2a3f5c : #cdd9e8;
+    out property <color> text: dark ? #e4ecf7 : #16243a;
+    out property <color> text-muted: dark ? #93a6c0 : #5a6b85;
+    out property <color> brand: dark ? #5b9bf0 : #1c5aa6;
+    out property <color> brand-hover: dark ? #72a9f3 : #2f6db5;
+    out property <color> brand-soft: dark ? #1e3556 : #dbe7f6;
+    out property <color> brand-header: dark ? #16273d : #1c5aa6;
+    out property <color> on-brand: #ffffff;
+    out property <color> on-brand-muted: #ffffffcc;
+    out property <color> on-brand-strong: #ffffffaa;
+    out property <color> on-brand-subtle: #ffffff66;
+    out property <color> on-brand-border: #ffffff40;
+    out property <color> on-brand-faint: #ffffff22;
+    out property <color> success: dark ? #4ade80 : #16a34a;
+    out property <color> success-soft: dark ? #16301f : #e3f4ea;
+    out property <color> warning: dark ? #fbbf24 : #d97706;
+    out property <color> warning-soft: dark ? #3a2e16 : #fff4e2;
+    out property <color> changed-soft: dark ? #4a4420 : #fff3bf;
+    out property <color> danger: dark ? #f87171 : #dc2626;
+    out property <color> danger-soft: dark ? #3a1f23 : #fdecec;
+    out property <color> info: dark ? #61afef : #2563a6;
+    out property <color> info-soft: dark ? #14253f : #e8f1fc;
+    out property <color> selection: dark ? #21406a : #cfe0f5;
+    out property <color> zebra: dark ? #101c2e : #f6f9fd;
+    out property <color> header-surface: dark ? #16273d : #e0eaf5;
+    out property <color> signal-row: dark ? #122138 : #eef5fd;
+    out property <color> scrim: #00000099;
+    out property <color> shadow: #00000022;
+    out property <color> shadow-strong: #00000055;
+    // Terminals remain dark in both product themes, matching native CMD/SSH tools.
+    out property <color> terminal-surface: #1e1e1e;
+    out property <color> terminal-border: #333333;
+    out property <color> terminal-text: #d4d4d4;
+    out property <color> terminal-selection: #264f78;
+
+    // Typography.
+    out property <string> font-sans: "Segoe UI Variable, Microsoft YaHei UI, Noto Sans CJK SC";
+    out property <string> font-mono: "Cascadia Mono, Consolas, DejaVu Sans Mono";
+    out property <length> font-xs: 11px;
+    out property <length> font-sm: 12px;
+    out property <length> font-md: 14px;
+    out property <length> font-lg: 16px;
+    out property <length> font-xl: 20px;
+    out property <length> product-title-font-size: 18px;
+
+    // Four-pixel spacing grid and shared control geometry.
+    out property <length> space-1: 4px;
+    out property <length> space-2: 8px;
+    out property <length> space-3: 12px;
+    out property <length> space-4: 16px;
+    out property <length> space-6: 24px;
+    out property <length> control-height: compact ? 30px : 36px;
+    out property <length> toolbar-control-height: 30px;
+    out property <length> product-header-height: 42px;
+    out property <length> status-chip-height: 20px;
+    out property <length> header-check-width: 72px;
+    out property <length> row-height: compact ? 26px : 32px;
+    out property <length> radius-sm: 6px;
+    out property <length> radius-md: 10px;
+    out property <length> focus-width: 2px;
+}
+
+export component ProductLanguageSwitch inherits Rectangle {
+    in-out property <bool> en;
+    in property <length> fixed-width: 58px;
+    callback changed(bool);
+    width: root.fixed-width;
+    height: ProductDesign.toolbar-control-height;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-sm;
+    background: hover-area.pressed ? ProductDesign.selection
+        : hover-area.has-hover ? ProductDesign.surface : ProductDesign.surface-raised;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? ProductDesign.warning : ProductDesign.border;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.en ? "切换到中文" : "Switch to English";
+    forward-focus: key-focus;
+    accessible-action-default => { root.toggle(); }
+    animate background { duration: 80ms; }
+
+    function toggle() {
+        root.en = !root.en;
+        ProductI18n.en = root.en;
+        root.changed(root.en);
+    }
+
+    Text {
+        text: root.en ? "中文" : "EN";
+        color: ProductDesign.text;
+        font-family: ProductDesign.font-sans;
+        font-size: ProductDesign.font-md;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+    hover-area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggle(); }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.toggle();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ProductHeaderButton inherits Rectangle {
+    in property <string> text;
+    in property <length> fixed-width: 0px;
+    callback clicked;
+    private property <length> resolved-width: fixed-width > 0px ? fixed-width : label.preferred-width + ProductDesign.space-6;
+    width: root.resolved-width;
+    height: ProductDesign.toolbar-control-height;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-sm;
+    background: hover-area.pressed ? ProductDesign.selection
+        : hover-area.has-hover ? ProductDesign.surface : ProductDesign.surface-raised;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? ProductDesign.warning : ProductDesign.border;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
+    animate background { duration: 80ms; }
+
+    label := Text {
+        text: root.text;
+        color: ProductDesign.text;
+        font-family: ProductDesign.font-sans;
+        font-size: ProductDesign.font-md;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+    }
+    hover-area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ProductHeaderCheck inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <length> fixed-width: ProductDesign.header-check-width;
+    callback toggled(bool);
+    width: root.fixed-width;
+    height: ProductDesign.toolbar-control-height;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-sm;
+    background: hover-area.pressed ? ProductDesign.on-brand-border
+        : hover-area.has-hover ? ProductDesign.on-brand-faint : transparent;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: ProductDesign.warning;
+    accessible-role: AccessibleRole.checkbox;
+    accessible-label: root.text;
+    accessible-checked: root.checked;
+    forward-focus: key-focus;
+    accessible-action-default => { root.toggle(); }
+    animate background { duration: 80ms; }
+
+    function toggle() {
+        root.checked = !root.checked;
+        root.toggled(root.checked);
+    }
+
+    HorizontalLayout {
+        padding-left: ProductDesign.space-1;
+        padding-right: ProductDesign.space-1;
+        spacing: ProductDesign.space-2;
+        Rectangle {
+            width: 16px;
+            height: 100%;
+            Rectangle {
+                width: 16px;
+                height: 16px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 3px;
+                border-width: 1px;
+                border-color: ProductDesign.on-brand-muted;
+                background: root.checked ? ProductDesign.on-brand : transparent;
+                Image {
+                    source: @image-url("icons/check.svg");
+                    visible: root.checked;
+                    x: 2px;
+                    y: 2px;
+                    width: 12px;
+                    height: 12px;
+                    colorize: ProductDesign.brand-header;
+                }
+            }
+        }
+        label := Text {
+            text: root.text;
+            color: ProductDesign.on-brand;
+            font-family: ProductDesign.font-sans;
+            font-size: ProductDesign.font-md;
+            height: 100%;
+            vertical-alignment: center;
+        }
+    }
+    hover-area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.toggle(); }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.toggle();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ProductThemeSwitch inherits Rectangle {
+    in-out property <bool> dark;
+    in property <length> fixed-width: 118px;
+    callback changed(bool);
+    width: root.fixed-width;
+    height: ProductDesign.toolbar-control-height;
+    horizontal-stretch: 0;
+    border-radius: ProductDesign.radius-sm;
+    background: ProductDesign.surface-raised;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? ProductDesign.warning : ProductDesign.border;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.dark
+        ? ProductI18n.t("当前深色主题；切换主题", "Dark theme; switch theme")
+        : ProductI18n.t("当前浅色主题；切换主题", "Light theme; switch theme");
+    forward-focus: key-focus;
+    accessible-action-default => { root.set-dark(!root.dark); }
+
+    function set-dark(value: bool) {
+        root.dark = value;
+        ProductDesign.dark = value;
+        Palette.color-scheme = value ? ColorScheme.dark : ColorScheme.light;
+        root.changed(value);
+    }
+
+    Rectangle {
+        width: parent.width / 2 - ProductDesign.space-1;
+        height: parent.height - 6px;
+        x: root.dark ? parent.width / 2 + 1px : 3px;
+        y: 3px;
+        border-radius: 4px;
+        background: ProductDesign.surface;
+        animate x { duration: 140ms; easing: ease-in-out; }
+    }
+    HorizontalLayout {
+        Rectangle {
+            Text {
+                text: ProductI18n.t("浅色", "Light");
+                width: 100%;
+                height: 100%;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: root.dark ? ProductDesign.text-muted : ProductDesign.brand;
+                font-weight: root.dark ? 500 : 700;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.set-dark(false); }
+            }
+        }
+        Rectangle {
+            Text {
+                text: ProductI18n.t("深色", "Dark");
+                width: 100%;
+                height: 100%;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                color: root.dark ? ProductDesign.brand : ProductDesign.text-muted;
+                font-weight: root.dark ? 700 : 500;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.set-dark(true); }
+            }
+        }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow {
+                root.set-dark(false);
+                return accept;
+            } else if event.text == Key.RightArrow {
+                root.set-dark(true);
+                return accept;
+            } else if event.text == Key.Return || event.text == " " {
+                root.set-dark(!root.dark);
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+export component ProductDivider inherits Rectangle {
+    height: 1px;
+    background: ProductDesign.border;
+}
+
+export component ProductStatusDot inherits Rectangle {
+    in property <bool> active;
+    in property <bool> warning;
+    width: 9px;
+    height: 9px;
+    border-radius: self.width / 2;
+    background: warning ? ProductDesign.danger
+        : active ? ProductDesign.success
+        : ProductDesign.text-muted;
+    accessible-role: AccessibleRole.image;
+    accessible-label: warning
+        ? ProductI18n.t("错误", "Error")
+        : active ? ProductI18n.t("运行中", "Running")
+        : ProductI18n.t("已停止", "Stopped");
+}
+
+export component ProductSectionTitle inherits Text {
+    color: ProductDesign.text;
+    font-family: ProductDesign.font-sans;
+    font-size: ProductDesign.font-md;
+    font-weight: 700;
+}

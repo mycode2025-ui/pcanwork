@@ -77,17 +77,17 @@ pub enum Transport {
         host: String,
         port: u16,
     },
-    /// Modbus/UDP: MBAP 帧走 UDP 数据报(与 TCP 同帧格式，无连接)。仅主站(客户端)用。
+    /// Modbus/UDP: MBAP 帧走 UDP 数据报(与 TCP 同帧格式，无连接)。
     Udp {
         host: String,
         port: u16,
     },
-    /// Modbus RTU over TCP: RTU 帧(unit+PDU+CRC)走 TCP(串口转网关常用)。仅主站用。
+    /// Modbus RTU over TCP: RTU 帧(unit+PDU+CRC)走 TCP(串口转网关常用)。
     RtuOverTcp {
         host: String,
         port: u16,
     },
-    /// Modbus RTU over UDP: RTU 帧走 UDP 数据报。仅主站用。
+    /// Modbus RTU over UDP: RTU 帧走 UDP 数据报。
     RtuOverUdp {
         host: String,
         port: u16,
@@ -260,6 +260,26 @@ impl ValueNames {
     }
 }
 
+/// Backing memory for the slave simulator. The full 16-bit address space of each
+/// table is pre-allocated so any legal address can be served or edited.
+pub struct DataStore {
+    pub coils: Vec<bool>,
+    pub discrete_inputs: Vec<bool>,
+    pub holding: Vec<u16>,
+    pub input: Vec<u16>,
+}
+
+impl DataStore {
+    pub fn new() -> Self {
+        Self {
+            coils: vec![false; 65536],
+            discrete_inputs: vec![false; 65536],
+            holding: vec![0; 65536],
+            input: vec![0; 65536],
+        }
+    }
+}
+
 #[cfg(test)]
 mod value_names_tests {
     use super::ValueNames;
@@ -284,25 +304,5 @@ mod value_names_tests {
 
         // sorted serialisation
         assert_eq!(vn.to_text(), "0=Off\n1=Running\n2=Fault");
-    }
-}
-
-/// Backing memory for the slave simulator. The full 16-bit address space of each
-/// table is pre-allocated so any legal address can be served or edited.
-pub struct DataStore {
-    pub coils: Vec<bool>,
-    pub discrete_inputs: Vec<bool>,
-    pub holding: Vec<u16>,
-    pub input: Vec<u16>,
-}
-
-impl DataStore {
-    pub fn new() -> Self {
-        Self {
-            coils: vec![false; 65536],
-            discrete_inputs: vec![false; 65536],
-            holding: vec![0; 65536],
-            input: vec![0; 65536],
-        }
     }
 }

@@ -1,5 +1,5 @@
 import { LineEdit, TextEdit } from "std-widgets.slint";
-import { Theme, TBtn, I18n } from "common.slint";
+import { Theme, TBtn, I18n, TxByteRow, HexDataField, HexByteEditorOverlay, ThemedWindow } from "common.slint";
 
 component FieldLabel inherits Text {
     color: Theme.text;
@@ -7,7 +7,7 @@ component FieldLabel inherits Text {
     vertical-alignment: center;
 }
 
-export component UdsWindow inherits Window {
+export component UdsWindow inherits ThemedWindow {
     title: "UDS";
     icon: @image-url("logo.svg");
     preferred-width: 980px;
@@ -35,6 +35,18 @@ export component UdsWindow inherits Window {
     in-out property <string> uds-security-key: "";
     in-out property <string> uds-routine-id: "CBA5";
     in-out property <string> uds-custom: "22 F1 90";
+    in-out property <bool> hex-editor-open: false;
+    in-out property <string> hex-editor-field: "";
+    in-out property <string> hex-editor-title: "";
+    in property <[TxByteRow]> hex-editor-rows;
+    in-out property <string> hex-editor-paste: "";
+    in-out property <string> hex-editor-error: "";
+    in-out property <int> hex-editor-length: 0;
+    in-out property <int> hex-editor-max-length: 8;
+    callback hex-editor-show(string, string, int);
+    callback hex-editor-byte-edited(int, string);
+    callback hex-editor-fill(string);
+    callback hex-editor-apply() -> bool;
 
     callback uds-tester-present();
     callback uds-session-send();
@@ -113,7 +125,7 @@ export component UdsWindow inherits Window {
                         FieldLabel { text: I18n.en ? "Lvl" : "等级"; width: 28px; }
                         LineEdit { text: root.uds-security-level; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-security-level = v; } }
                         TBtn { boxed: true; text: I18n.en ? "Seed" : "种子"; clicked => { root.uds-security-seed(); } }
-                        LineEdit { text: root.uds-security-key; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-security-key = v; } }
+                        HexDataField { value: root.uds-security-key; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("security-key", root.uds-security-key, 4); } }
                         TBtn { boxed: true; text: I18n.en ? "Unlock" : "解锁"; clicked => { root.uds-security-key-send(); } }
                     }
 
@@ -126,7 +138,7 @@ export component UdsWindow inherits Window {
                         FieldLabel { text: I18n.en ? "22/2E DID" : "22/2E DID"; width: 80px; }
                         LineEdit { text: root.uds-did; width: 72px; height: Theme.ctrl-h; edited(v) => { root.uds-did = v; } }
                         TBtn { boxed: true; text: I18n.en ? "Read" : "读取"; clicked => { root.uds-read-did(); } }
-                        LineEdit { text: root.uds-write-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-write-data = v; } }
+                        HexDataField { value: root.uds-write-data; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("write-data", root.uds-write-data, 4); } }
                         TBtn { boxed: true; text: I18n.en ? "Write" : "写入"; clicked => { root.uds-write-did(); } }
                     }
                     HorizontalLayout {
@@ -138,7 +150,7 @@ export component UdsWindow inherits Window {
                         FieldLabel { text: I18n.en ? "Len" : "长度"; width: 28px; }
                         LineEdit { text: root.uds-mem-len; width: 48px; height: Theme.ctrl-h; edited(v) => { root.uds-mem-len = v; } }
                         TBtn { boxed: true; text: I18n.en ? "Read" : "读取"; clicked => { root.uds-read-memory(); } }
-                        LineEdit { text: root.uds-mem-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-mem-data = v; } }
+                        HexDataField { value: root.uds-mem-data; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("memory-data", root.uds-mem-data, 4085); } }
                         TBtn { boxed: true; text: I18n.en ? "Write" : "写入"; clicked => { root.uds-write-memory(); } }
                     }
 
@@ -177,7 +189,7 @@ export component UdsWindow inherits Window {
                         TBtn { boxed: true; text: I18n.en ? "Send" : "发送"; clicked => { root.uds-tester-present(); } }
                         Rectangle { width: 12px; }
                         FieldLabel { text: I18n.en ? "Custom" : "自定义"; width: 44px; }
-                        LineEdit { text: root.uds-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.uds-custom = v; } }
+                        HexDataField { value: root.uds-custom; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("custom", root.uds-custom, 7); } }
                         TBtn { primary: true; text: I18n.en ? "Send" : "发送"; clicked => { root.uds-custom-send(); } }
                     }
                     Rectangle { vertical-stretch: 1; }
@@ -202,5 +214,14 @@ export component UdsWindow inherits Window {
                 }
             }
         }
+    }
+
+    HexByteEditorOverlay {
+        open: root.hex-editor-open; editor-title: root.hex-editor-title; rows: root.hex-editor-rows;
+        paste-value <=> root.hex-editor-paste; error-text: root.hex-editor-error;
+        close-requested => { root.hex-editor-open = false; }
+        byte-edited(i, value) => { root.hex-editor-byte-edited(i, value); }
+        paste-requested(value) => { root.hex-editor-fill(value); }
+        apply-requested => { return root.hex-editor-apply(); }
     }
 }

@@ -9,6 +9,14 @@ use slint::{Model, ModelRc, VecModel};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+fn sort_decoded_for_display(signals: &mut [Decoded]) {
+    signals.sort_by(|left, right| {
+        left.start_bit
+            .cmp(&right.start_bit)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+}
+
 /// Build a message-table row from a frame record.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn make_msgrow(
@@ -56,11 +64,7 @@ pub(crate) fn make_msgrow(
         .collect::<Vec<_>>()
         .join("\n");
     MsgRow {
-        no: if can_expand {
-            format!("{} {}", if expanded { "[-]" } else { "[+]" }, r.no).into()
-        } else {
-            r.no.to_string().into()
-        },
+        no: r.no.to_string().into(),
         time: match time_mode {
             1 => match capture_wall_epoch {
                 Some(e) => fmt_wall(e + r.t, false),
@@ -109,9 +113,36 @@ pub(crate) fn make_msgrow(
 }
 
 /// Build an expanded-signal sub-row (shown under its message in grouped mode).
-pub(crate) fn make_signal_row(s: &Decoded) -> MsgRow {
+pub(crate) fn make_signal_row(s: &Decoded, has_valid_value: bool) -> MsgRow {
+    let mut value_text = if has_valid_value {
+        let mut text = format!("{:.3}", s.physical);
+        if !s.unit.is_empty() {
+            text.push(' ');
+            text.push_str(&s.unit);
+        }
+        text.push_str("  (Raw: ");
+        text.push_str(&s.raw_text);
+        text.push(')');
+        if !s.enum_txt.is_empty() {
+            text.push_str("  ");
+            text.push_str(&s.enum_txt);
+        }
+        text
+    } else {
+        "—".to_string()
+    };
+    if let Some(mux) = s.mux_value {
+        if s.mux_active {
+            value_text.push_str(&format!("  [MUX={mux} 当前]"));
+        } else if has_valid_value {
+            value_text.push_str(&format!("  [MUX={mux} 上次值]"));
+        } else {
+            value_text.push_str(&format!("  [MUX={mux} 等待]"));
+        }
+    }
+
     MsgRow {
-        no: "  |".into(),
+        no: "".into(),
         time: "".into(),
         delta: "".into(),
         ch: "".into(),
@@ -121,13 +152,15 @@ pub(crate) fn make_signal_row(s: &Decoded) -> MsgRow {
         kind: "Sig".into(),
         fd: "".into(),
         brs: "".into(),
-        dlc: s.raw.to_string().into(),
-        len: format!("{:.3}", s.physical).into(),
+        dlc: "".into(),
+        len: "".into(),
         data_bytes: ModelRc::from(Rc::new(VecModel::from(Vec::<ByteCell>::new()))),
-        data_text: "".into(),
-        cycle: s.unit.clone().into(),
-        count: format!("{}:{}", s.start_bit, s.size).into(),
-        comment: if s.out_of_range {
+        data_text: value_text.into(),
+        cycle: "".into(),
+        count: format!("Bit {}:{}", s.start_bit, s.size).into(),
+        comment: if !s.mux_active && s.mux_value.is_some() {
+            "MuxInactive"
+        } else if s.out_of_range {
             "OutOfRange"
         } else {
             "Normal"
@@ -202,10 +235,17 @@ pub(crate) fn msg_view_signature(a: &App) -> u64 {
     h.finish()
 }
 
-/// Rebuild the central message table (skipped while paused or when nothing changed).
+fn should_rebuild(paused: bool, current_signature: u64, previous_signature: u64) -> bool {
+    let forced = previous_signature == u64::MAX;
+    forced || (!paused && current_signature != previous_signature)
+}
+
+/// Rebuild the central message table when data changes, or when a UI action explicitly
+/// requests a refresh. Pause freezes incoming-data refreshes but must not block filter/reset
+/// and clear operations.
 pub(crate) fn build_msg_table(a: &mut App, ui: &AppWindow) {
     let msg_sig = msg_view_signature(a);
-    if a.paused || msg_sig == a.last_msg_sig {
+    if !should_rebuild(a.paused, msg_sig, a.last_msg_sig) {
         return;
     }
     a.last_msg_sig = msg_sig;
@@ -274,7 +314,7 @@ pub(crate) fn build_msg_table(a: &mut App, ui: &AppWindow) {
                     .unwrap_or_default()
             };
             // Cheap message-name lookup to decide expandability (avoid full decode per row/frame).
-            let can_expand = !a.mode_trace && a.dbc_message_name(r.id).is_some();
+            let can_expand = !a.mode_trace && a.dbc_message_name_frame(r.id, r.ext).is_some();
             let expanded = can_expand && a.expanded_keys.contains(&r.key);
             rows.push(make_msgrow(
                 r,
@@ -289,13 +329,34 @@ pub(crate) fn build_msg_table(a: &mut App, ui: &AppWindow) {
             items.push(DisplayItem::Message(r.key));
             if expanded {
                 // Only truly-expanded rows are decoded (rare).
-                let decoded = a.dbc_decode(r.id, &r.data);
-                for s in decoded {
+                let mut decoded = a.dbc_decode_all_frame(r.id, r.ext, &r.data);
+                sort_decoded_for_display(&mut decoded);
+                for current in decoded
+                    .iter()
+                    .filter(|signal| signal.mux_active && signal.mux_value.is_some())
+                {
+                    a.expanded_signal_cache
+                        .insert((r.key, current.name.clone()), current.clone());
+                }
+                for current in decoded {
+                    let (display, has_valid_value) = if current.mux_active {
+                        (current, true)
+                    } else if let Some(previous) = a
+                        .expanded_signal_cache
+                        .get(&(r.key, current.name.clone()))
+                        .cloned()
+                    {
+                        let mut previous = previous;
+                        previous.mux_active = false;
+                        (previous, true)
+                    } else {
+                        (current, false)
+                    };
                     items.push(DisplayItem::Signal {
                         key: r.key,
-                        signal: s.name.clone(),
+                        signal: display.name.clone(),
                     });
-                    rows.push(make_signal_row(&s));
+                    rows.push(make_signal_row(&display, has_valid_value));
                 }
             }
         }
@@ -318,5 +379,83 @@ pub(crate) fn build_msg_table(a: &mut App, ui: &AppWindow) {
         } else {
             m.push(row);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expanded_signal_places_value_in_data_column() {
+        let decoded = Decoded {
+            name: "PackCurrent".into(),
+            raw: 125,
+            raw_unsigned: Some(125),
+            raw_text: "125".into(),
+            physical: 12.5,
+            unit: "A".into(),
+            min: -100.0,
+            max: 100.0,
+            start_bit: 16,
+            size: 16,
+            little_endian: true,
+            signed: true,
+            factor: 0.1,
+            offset: 0.0,
+            out_of_range: false,
+            enum_txt: String::new(),
+            mux_active: true,
+            mux_value: None,
+        };
+
+        let row = make_signal_row(&decoded, true);
+        assert!(row.is_signal);
+        assert_eq!(row.no.as_str(), "");
+        assert_eq!(row.data_text.as_str(), "12.500 A  (Raw: 125)");
+        assert_eq!(row.dlc.as_str(), "");
+        assert_eq!(row.len.as_str(), "");
+        assert_eq!(row.count.as_str(), "Bit 16:16");
+    }
+
+    #[test]
+    fn explicit_refresh_is_not_blocked_while_paused() {
+        assert!(should_rebuild(true, 42, u64::MAX));
+        assert!(!should_rebuild(true, 42, 41));
+        assert!(should_rebuild(false, 42, 41));
+        assert!(!should_rebuild(false, 42, 42));
+    }
+
+    #[test]
+    fn expanded_signals_sort_by_start_bit_then_name() {
+        let make = |name: &str, start_bit: u64| Decoded {
+            name: name.into(),
+            raw: 0,
+            raw_unsigned: Some(0),
+            raw_text: "0".into(),
+            physical: 0.0,
+            unit: String::new(),
+            min: 0.0,
+            max: 0.0,
+            start_bit,
+            size: 1,
+            little_endian: true,
+            signed: false,
+            factor: 1.0,
+            offset: 0.0,
+            out_of_range: false,
+            enum_txt: String::new(),
+            mux_active: true,
+            mux_value: None,
+        };
+        let mut signals = vec![make("Z", 24), make("B", 8), make("A", 8), make("M", 0)];
+        sort_decoded_for_display(&mut signals);
+        assert_eq!(
+            signals
+                .iter()
+                .map(|signal| signal.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["M", "A", "B", "Z"]
+        );
     }
 }

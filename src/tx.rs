@@ -3,10 +3,10 @@
 //! Extracted from main.rs. Chinese text below lives only in user-facing string literals.
 
 use crate::{
-    App, AppWindow, TxRow, TxSigRow, TxTask, TxWindow, fmtf, id_str, parse_tx_bytes, parse_u32,
-    vary,
+    App, AppWindow, TxByteCell, TxByteRow, TxRow, TxSigRow, TxTask, TxWindow, fmtf, id_str,
+    parse_tx_bytes, parse_u32, vary,
 };
-use slint::{ModelRc, SharedString, VecModel};
+use slint::{Model, ModelRc, SharedString, VecModel};
 use std::rc::Rc;
 
 /// Build a `TxTask` from the "normal send" form fields.
@@ -109,30 +109,8 @@ pub(crate) fn update_tx_task(a: &mut App, row: i32, field: &str, value: &str) {
             }
         }
         "data" => {
-            let compact = value.replace([',', ';'], " ");
-            let mut data = Vec::new();
-            let parts: Vec<&str> = compact.split_whitespace().collect();
-            if parts.len() == 1 && parts[0].len() > 2 {
-                let s = parts[0].trim_start_matches("0x").trim_start_matches("0X");
-                for chunk in s.as_bytes().chunks(2) {
-                    if chunk.len() == 2
-                        && let Ok(hex) = std::str::from_utf8(chunk)
-                        && let Ok(b) = u8::from_str_radix(hex, 16)
-                    {
-                        data.push(b);
-                    }
-                }
-            } else {
-                for p in parts {
-                    if let Ok(b) =
-                        u8::from_str_radix(p.trim_start_matches("0x").trim_start_matches("0X"), 16)
-                    {
-                        data.push(b);
-                    }
-                }
-            }
             let max_len = if t.fd { 64 } else { 8 };
-            data.truncate(max_len);
+            let data = parse_tx_task_data(value, max_len);
             if !data.is_empty() {
                 t.data = data;
             }
@@ -159,6 +137,114 @@ pub(crate) fn update_tx_task(a: &mut App, row: i32, field: &str, value: &str) {
     }
 }
 
+fn parse_tx_task_data(value: &str, max_len: usize) -> Vec<u8> {
+    let compact = value.replace([',', ';'], " ");
+    let parts: Vec<&str> = compact.split_whitespace().collect();
+    let mut data = Vec::new();
+    if parts.len() == 1 && parts[0].len() > 2 {
+        let s = parts[0].trim_start_matches("0x").trim_start_matches("0X");
+        for chunk in s.as_bytes().chunks(2) {
+            if chunk.len() == 2
+                && let Ok(hex) = std::str::from_utf8(chunk)
+                && let Ok(b) = u8::from_str_radix(hex, 16)
+            {
+                data.push(b);
+            }
+        }
+    } else {
+        for p in parts {
+            // Offset labels from the 8x8 editor end in ':' and are intentionally ignored.
+            if let Ok(b) =
+                u8::from_str_radix(p.trim_start_matches("0x").trim_start_matches("0X"), 16)
+            {
+                data.push(b);
+            }
+        }
+    }
+    data.truncate(max_len);
+    data
+}
+
+pub(crate) fn build_tx_data_editor_rows(data: &[u8], requested_len: usize) -> ModelRc<TxByteRow> {
+    let visible_len = requested_len.max(1);
+    let row_count = visible_len.div_ceil(8);
+    let rows = (0..row_count)
+        .map(|row| {
+            let cells = (0..8)
+                .map(|column| {
+                    let index = row * 8 + column;
+                    TxByteCell {
+                        hex: if index < requested_len {
+                            format!("{:02X}", data.get(index).copied().unwrap_or(0)).into()
+                        } else {
+                            "".into()
+                        },
+                        valid: index < requested_len,
+                        enabled: index < requested_len,
+                    }
+                })
+                .collect::<Vec<_>>();
+            TxByteRow {
+                offset: format!("{:02X}", row * 8).into(),
+                bytes: ModelRc::from(Rc::new(VecModel::from(cells))),
+            }
+        })
+        .collect::<Vec<_>>();
+    ModelRc::from(Rc::new(VecModel::from(rows)))
+}
+
+pub(crate) fn edit_tx_data_editor_byte(
+    rows: &ModelRc<TxByteRow>,
+    index: usize,
+    value: &str,
+) {
+    let row_index = index / 8;
+    let column = index % 8;
+    let Some(row) = rows.row_data(row_index) else {
+        return;
+    };
+    let Some(mut cell) = row.bytes.row_data(column) else {
+        return;
+    };
+    if !cell.enabled {
+        return;
+    }
+    let normalized = value
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(2)
+        .collect::<String>()
+        .to_ascii_uppercase();
+    cell.valid = normalized.len() == 2;
+    cell.hex = normalized.into();
+    row.bytes.set_row_data(column, cell);
+}
+
+pub(crate) fn paste_tx_data_editor(rows: &ModelRc<TxByteRow>, value: &str, dlc: usize) -> usize {
+    let bytes = parse_tx_task_data(value, dlc);
+    for (index, byte) in bytes.iter().enumerate() {
+        edit_tx_data_editor_byte(rows, index, &format!("{byte:02X}"));
+    }
+    bytes.len()
+}
+
+pub(crate) fn collect_tx_data_editor(
+    rows: &ModelRc<TxByteRow>,
+    dlc: usize,
+) -> Result<Vec<u8>, usize> {
+    let mut data = Vec::with_capacity(dlc);
+    for index in 0..dlc {
+        let row = rows.row_data(index / 8).ok_or(index)?;
+        let cell = row.bytes.row_data(index % 8).ok_or(index)?;
+        if !cell.enabled || !cell.valid {
+            return Err(index);
+        }
+        let byte = u8::from_str_radix(&cell.hex, 16).map_err(|_| index)?;
+        data.push(byte);
+    }
+    Ok(data)
+}
+
 /// Resolve the selected task's `sig_idx`-th signal to (name, factor, offset).
 pub(crate) fn selected_signal(a: &App, sig_idx: i32) -> Option<(String, f64, f64)> {
     let sel = a.tx_sel;
@@ -166,7 +252,7 @@ pub(crate) fn selected_signal(a: &App, sig_idx: i32) -> Option<(String, f64, f64
         return None;
     }
     let id = a.txs[sel as usize].dbc_id?;
-    let m = a.dbc_message(id)?;
+    let m = a.dbc_message_frame(id, a.txs[sel as usize].ext)?;
     let s = m.signals.get(sig_idx as usize)?;
     Some((s.name.clone(), s.factor, s.offset))
 }
@@ -304,7 +390,7 @@ pub(crate) fn populate_sig_panel(a: &App, w: &TxWindow, sig_idx: i32) {
     let t = &a.txs[sel as usize];
     let sig = t
         .dbc_id
-        .and_then(|id| a.dbc_message(id))
+        .and_then(|id| a.dbc_message_frame(id, t.ext))
         .and_then(|m| m.signals.get(sig_idx as usize));
     let Some(s) = sig else {
         w.set_tx_sel_sig_name("".into());
@@ -363,7 +449,7 @@ pub(crate) fn build_tx_rows(a: &App) -> Vec<TxRow> {
             name: t.name.clone().into(),
             ch: format!("CAN{}", t.ch).into(),
             id: id_str(t.id, t.ext).into(),
-            dbcname: a.dbc_message_name(t.id).unwrap_or("").into(),
+            dbcname: a.dbc_message_name_frame(t.id, t.ext).unwrap_or("").into(),
             kind: if t.ext { "Ext" } else { "Std" }.into(),
             fd: if t.fd { "Yes" } else { "No" }.into(),
             brs: if t.brs { "Yes" } else { "No" }.into(),
@@ -375,6 +461,7 @@ pub(crate) fn build_tx_rows(a: &App) -> Vec<TxRow> {
                 .collect::<Vec<_>>()
                 .join(" ")
                 .into(),
+            data_summary: format_tx_data_summary(&t.data).into(),
             mode: if t.periodic { "Periodic" } else { "Single" }.into(),
             period: format!("{}", t.period_ms).into(),
             count: if t.repeat < 0 {
@@ -388,6 +475,70 @@ pub(crate) fn build_tx_rows(a: &App) -> Vec<TxRow> {
         });
     }
     rows
+}
+
+fn format_tx_data_summary(data: &[u8]) -> String {
+    if data.len() <= 8 {
+        return data
+            .iter()
+            .map(|b| format!("{b:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+    let head = data[..4]
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let tail = data[data.len() - 2..]
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{head} … {tail} · {}B", data.len())
+}
+
+#[cfg(test)]
+mod tx_data_display_tests {
+    use super::{
+        build_tx_data_editor_rows, collect_tx_data_editor, edit_tx_data_editor_byte,
+        format_tx_data_summary, parse_tx_task_data, paste_tx_data_editor,
+    };
+    use slint::Model;
+
+    #[test]
+    fn classic_can_data_is_shown_in_full() {
+        let data = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
+        assert_eq!(format_tx_data_summary(&data), "00 11 22 33 44 55 66 77");
+    }
+
+    #[test]
+    fn can_fd_data_uses_summary_and_eight_byte_rows() {
+        let data: Vec<u8> = (0..64).collect();
+        assert_eq!(
+            format_tx_data_summary(&data),
+            "00 01 02 03 … 3E 3F · 64B"
+        );
+        let rows = build_tx_data_editor_rows(&data, data.len());
+        assert_eq!(rows.row_count(), 8);
+        assert_eq!(collect_tx_data_editor(&rows, 64).unwrap(), data);
+        edit_tx_data_editor_byte(&rows, 63, "a5");
+        assert_eq!(collect_tx_data_editor(&rows, 64).unwrap()[63], 0xA5);
+    }
+
+    #[test]
+    fn continuous_hex_paste_is_supported_and_clamped() {
+        assert_eq!(
+            parse_tx_task_data("00112233445566778899", 8),
+            [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]
+        );
+        let rows = build_tx_data_editor_rows(&[0; 8], 8);
+        assert_eq!(paste_tx_data_editor(&rows, "0011223344556677", 8), 8);
+        assert_eq!(
+            collect_tx_data_editor(&rows, 8).unwrap(),
+            [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]
+        );
+    }
 }
 
 /// Signature of everything shown in the send-task list (so we only rebuild on change).
@@ -426,22 +577,23 @@ pub(crate) fn push_tx_list(a: &mut App, ui: &AppWindow, tx_window: &TxWindow) {
 pub(crate) fn build_tx_dbc_page(a: &mut App, tx_window: &TxWindow) {
     let en = a.lang_en;
     // Message-picker list: merge messages across all DBCs (dedup by id, first loaded wins).
-    let mut order: Vec<(u32, String)> = Vec::new();
+    let mut order: Vec<(u32, bool, String)> = Vec::new();
     let mut picker: Vec<SharedString> = Vec::new();
     {
-        let mut msgs: Vec<(u32, String, usize)> = Vec::new();
-        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let mut msgs: Vec<(u32, bool, String, usize)> = Vec::new();
+        let mut seen: std::collections::HashSet<(u32, bool)> = std::collections::HashSet::new();
         for d in &a.dbcs {
             for m in d.messages() {
-                if seen.insert(m.id) {
-                    msgs.push((m.id, m.name.clone(), d.message_len(m.id)));
+                if seen.insert((m.id, m.extended)) {
+                    msgs.push((m.id, m.extended, m.name.clone(), m.size as usize));
                 }
             }
         }
-        msgs.sort_by_key(|(id, _, _)| *id);
-        for (id, name, len) in msgs {
-            order.push((id, name.clone()));
-            picker.push(format!("{name}  0x{id:X}  {len}B").into());
+        msgs.sort_by_key(|(id, ext, _, _)| (*id, *ext));
+        for (id, ext, name, len) in msgs {
+            order.push((id, ext, name.clone()));
+            let frame_type = if ext { "Ext" } else { "Std" };
+            picker.push(format!("{name}  0x{id:X}  {frame_type}  {len}B").into());
         }
     }
     a.tx_dbc_order = order;
@@ -485,13 +637,13 @@ pub(crate) fn build_tx_dbc_page(a: &mut App, tx_window: &TxWindow) {
         if sel >= 0 && (sel as usize) < a.txs.len() {
             let t = &a.txs[sel as usize];
             if let Some(id) = t.dbc_id {
-                let name = a.dbc_message_name(id).unwrap_or("");
+                let name = a.dbc_message_name_frame(id, t.ext).unwrap_or("");
                 title = if en {
                     format!("Current: 0x{id:X} {name}")
                 } else {
                     format!("当前: 0x{id:X} {name}")
                 };
-                if let Some(m) = a.dbc_message(id) {
+                if let Some(m) = a.dbc_message_frame(id, t.ext) {
                     for s in &m.signals {
                         let phys = t
                             .sig_values

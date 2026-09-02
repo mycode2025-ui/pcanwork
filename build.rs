@@ -1,7 +1,7 @@
 fn main() {
-    // Rust build entry: compile app.slint, not main.slint.
-    // main.slint is only for slint-viewer / live preview.
-    slint_build::compile("ui/app.slint").unwrap();
+    // Compile only the frequently edited shell plus the two windows that share
+    // live row models with it. Other dialogs live in pcanwork-ui-features.
+    slint_build::compile("ui/MainWindows.slint").unwrap();
 
     // Windows target only: embed an application manifest that declares System DPI awareness.
     // When moving the window across monitors with different scaling factors, Windows performs
@@ -24,48 +24,22 @@ fn main() {
         }
     }
 
-    // Copy the Python client library pcanwork.py and example scripts to the executable directory.
-    // The script runner adds PCANWORK_CLIENT_DIR, which points to current_exe().parent(),
-    // to PYTHONPATH so that `import pcanwork` works.
-    // OUT_DIR = target/<profile>/build/<pkg-hash>/out.
-    // Going up three levels reaches the executable directory: target/<profile>.
-    if let Ok(out_dir) = std::env::var("OUT_DIR") {
-        let exe_dir = std::path::Path::new(&out_dir)
-            .join("..")
-            .join("..")
-            .join("..");
-        let _ = std::fs::copy("pcanwork.py", exe_dir.join("pcanwork.py"));
-
-        let tdir = exe_dir.join("templates");
-        let _ = std::fs::create_dir_all(&tdir);
-
-        // Copy all .py example scripts under templates/.
-        if let Ok(entries) = std::fs::read_dir("templates") {
-            for e in entries.flatten() {
-                let p = e.path();
-                if p.extension().and_then(|x| x.to_str()) == Some("py")
-                    && let Some(name) = p.file_name()
-                {
-                    let _ = std::fs::copy(&p, tdir.join(name));
-                }
-            }
-        }
-    }
-
-    println!("cargo:rerun-if-changed=pcanwork.py");
-    println!("cargo:rerun-if-changed=templates");
     println!("cargo:rerun-if-changed=app.ico");
 
-    // Rust compile entry.
-    println!("cargo:rerun-if-changed=ui/app.slint");
-
-    // Also track all split UI files.
-    if let Ok(entries) = std::fs::read_dir("ui") {
+    for path in [
+        "ui/MainWindows.slint",
+        "ui/AppWindow.slint",
+        "ui/ChartWindow.slint",
+        "ui/TxWindow.slint",
+        "ui/common.slint",
+        "ui/design-system.slint",
+        "ui/logo.svg",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    if let Ok(entries) = std::fs::read_dir("ui/icons") {
         for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|x| x.to_str()) == Some("slint") {
-                println!("cargo:rerun-if-changed={}", path.display());
-            }
+            println!("cargo:rerun-if-changed={}", entry.path().display());
         }
     }
 }

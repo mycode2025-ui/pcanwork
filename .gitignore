@@ -1,4 +1,5 @@
 /target/
+/vendor/slint/i-slint-core/target/
 /bak/
 /__pycache__/
 *.py[cod]
@@ -11,6 +12,21 @@
 
 # Packaged installer outputs
 /installer/dist/
+/artifacts/
+/.codex-release-v020/
+/SerialForge/
+/SerialForge-v0.2.0-source.zip
+/installer/verify-driver-package/
+/promotional/
+/redesign-proto/
+/tools/system-monitor-tray/
+/scripts/build-promo-deck.js
+
+# Local TLS and code-signing identities
+/modbus/certs/*
+!/modbus/certs/README.md
+*.pfx
+*.p12
 
 # OS/editor noise
 .DS_Store

@@ -1,6 +1,6 @@
 // One-window Slint page split from the original monolithic file.
-import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit, Palette } from "std-widgets.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, RecentProjectRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
 
 export component AppWindow inherits Window {
     title: I18n.en ? "PcanWork - CAN/CAN FD Analyzer" : "PcanWork - CAN/CAN FD 分析工具";
@@ -10,7 +10,42 @@ export component AppWindow inherits Window {
     min-width: 900px;   // 防止 ribbon/筛选条/状态栏被挤压
     min-height: 560px;
     background: Theme.bg;
+    default-font-family: Theme.sans;
 
+    // Expose the shared globals for deterministic theme/language render gates.
+    in-out property <bool> dark: Theme.dark;
+    changed dark => {
+        Theme.dark = dark;
+        Palette.color-scheme = dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    init => {
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    in-out property <bool> lang-en: I18n.en;
+    changed lang-en => { I18n.en = lang-en; }
+
+    in property <string> app-version;
+    in-out property <bool> license-open: false;
+    in-out property <bool> license-unlocked: false;
+    in-out property <int> license-seconds: 31536000;
+    in-out property <string> license-remaining: "365d 00h";
+    in property <string> license-machine-code;
+    in-out property <string> license-info;
+    in-out property <string> license-validity-zh;
+    in-out property <string> license-validity-en;
+    in-out property <string> license-error;
+    in-out property <bool> project-open: false;
+    in property <[RecentProjectRow]> recent-projects;
+    in-out property <bool> about-open: false;
+    // 更新状态：0=尚未检查，1=检查中，2=已是最新，3=发现更新，4=检查失败
+    in-out property <int> update-state: 0;
+    in-out property <bool> update-toast-open: false;
+    in-out property <string> update-version;
+    in-out property <string> update-notes;
+    in-out property <string> update-error;
+    in-out property <string> update-gitee-url;
+    in-out property <string> update-github-url;
     in property <[TreeRow]> tree;
     in property <[MsgRow]> msgs;
     in property <[SigRow]> sigs;
@@ -36,7 +71,6 @@ export component AppWindow inherits Window {
     in property <bool> paused: false;
     in property <bool> auto-scroll: true;
     in-out property <bool> col-panel-visible: false;
-    in-out property <int> settings-tab: 0;
     in-out property <int> frame-id-format: 0;
     in-out property <length> settings-panel-x: 760px;
     in-out property <length> settings-panel-y: 76px;
@@ -48,13 +82,16 @@ export component AppWindow inherits Window {
     in property <string> bus-load: "0%";
     in property <string> chan-load: ""; // 多卡时各通道负载明细, 如 "CAN1 84%  CAN2 83%"; 单通道为空
     in property <bool> load-high: false;
-    in-out property <int> ribbon: 1;
+    in-out property <int> ribbon: 0;
     in-out property <int> left-tab: 0;
+    in-out property <int> bottom-tab: 0; // 0=运行日志 1=CAN 文本日志
     in-out property <length> bottom-h: 192px;
     in-out property <length> left-w: 232px;
     in property <string> rx-count: "0";
     in property <string> tx-count: "0";
     in property <string> err-count: "0";
+    in property <string> capture-health: "Q 0/0  H 0  Drop 0";
+    in property <bool> capture-loss: false;
     in property <string> total-count: "0";
     in property <string> shown-count: "0";
     in property <string> baud: "500K";
@@ -88,6 +125,7 @@ export component AppWindow inherits Window {
     callback load-dbc();
     callback reload-dbc();
     callback clear-dbc();
+    callback open-dbc-diagnostics();
     callback clear-msgs();
     callback set-mode(bool);
     callback set-time-mode(int);
@@ -135,14 +173,22 @@ export component AppWindow inherits Window {
     callback open-script-runner();
     callback new-project();
     callback open-project();
+    callback open-recent-project(int);
     callback save-project();
     callback toggle-dark();
     callback toggle-big();
     callback toggle-lang();
+    callback open-website();
+    callback check-update();
+    callback open-update-gitee();
+    callback open-update-github();
+    callback license-import();
+    callback license-copy-machine-code();
     in-out property <string> renderer-mode: "auto"; // 渲染器: auto/gpu/cpu(重启生效)
-    callback cycle-renderer();
+    in-out property <bool> renderer-confirm-open: false;
+    in-out property <string> pending-renderer-mode: "auto";
+    callback apply-renderer(string);
     callback tx-update(int, string, string);
-    callback quit-app();
     callback menu-info(string);
     callback sort-by(int);
     callback ctx-only-id(int);
@@ -181,10 +227,10 @@ export component AppWindow inherits Window {
                         Image { source: @image-url("logo.svg"); width: 22px; height: 22px; y: (parent.height - 22px) / 2; }
                         Text { text: "PcanWork"; vertical-alignment: center; font-weight: 700; font-size: Theme.fs; color: Theme.accent; }
                         Rectangle { width: 8px; }
-                        RibbonTab { text: I18n.en ? "File" : "文件"; active: root.ribbon == 0; clicked => { root.ribbon = 0; } }
-                        RibbonTab { text: I18n.en ? "Home" : "主页"; active: root.ribbon == 1; clicked => { root.ribbon = 1; } }
-                        RibbonTab { text: I18n.en ? "View" : "视图"; active: root.ribbon == 2; clicked => { root.ribbon = 2; } }
-                        RibbonTab { text: I18n.en ? "Tools" : "工具"; active: root.ribbon == 3; clicked => { root.ribbon = 3; } }
+                        RibbonTab { text: I18n.en ? "Home" : "主页"; active: root.ribbon == 0; clicked => { root.ribbon = 0; } }
+                        RibbonTab { text: I18n.en ? "Functions" : "功能"; active: root.ribbon == 1; clicked => { root.ribbon = 1; } }
+                        RibbonTab { text: I18n.en ? "Tools" : "工具"; active: root.ribbon == 2; clicked => { root.ribbon = 2; } }
+                        RibbonTab { text: I18n.en ? "View" : "视图"; active: root.ribbon == 3; clicked => { root.ribbon = 3; } }
                     }
                 }
                 // ribbon band
@@ -198,18 +244,13 @@ export component AppWindow inherits Window {
                             RibbonBtn { icon: "folder"; label: I18n.en ? "Open" : "打开"; clicked => { root.open-project(); } }
                             RibbonBtn { icon: "save"; label: I18n.en ? "Save" : "保存"; clicked => { root.save-project(); } }
                         }
-                        RibbonGroup {
-                            caption: I18n.en ? "App" : "程序";
-                            RibbonBtn { icon: "clear"; label: I18n.en ? "Exit" : "退出"; icon-clr: Theme.bad; clicked => { root.quit-app(); } }
-                        }
-                    } }
-                    if root.ribbon == 1: ScrollView { HorizontalLayout {
-                        padding: 4px; spacing: 0px; alignment: start;
+
                         RibbonGroup {
                             caption: I18n.en ? "Manage" : "管理";
                             RibbonBtn { icon: "channel"; label: I18n.en ? "Device" : "设备"; clicked => { root.open-channel-config(); } }
                             RibbonBtn { icon: "database"; label: I18n.en ? "Load DBC" : "加载DBC"; clicked => { root.load-dbc(); } }
                             RibbonBtn { icon: "database"; label: I18n.en ? "Reload DBC" : "重载DBC"; clicked => { root.reload-dbc(); } }
+                            RibbonBtn { icon: "info"; label: I18n.en ? "DBC Check" : "DBC诊断"; clicked => { root.open-dbc-diagnostics(); } }
                             RibbonBtn { icon: "clear"; label: I18n.en ? "Clear DBC" : "清除DBC"; clicked => { root.clear-dbc(); } }
                         }
                         RibbonGroup {
@@ -217,25 +258,57 @@ export component AppWindow inherits Window {
                             RibbonBtn { icon: "start"; label: I18n.en ? "Start" : "启动"; icon-clr: Theme.ok; active: root.running; clicked => { root.start-rx(); } }
                             RibbonBtn { icon: "stop"; label: I18n.en ? "Stop" : "停止"; icon-clr: Theme.bad; clicked => { root.stop-rx(); } }
                             RibbonBtn { icon: "disconnect"; label: I18n.en ? "Disconnect" : "断开"; clicked => { root.disconnect(); } }
+                            RibbonBtn { icon: "database"; label: I18n.en ? "Cache" : "缓存设置"; clicked => { root.open-cache-config(); } }
                         }
                         RibbonGroup {
                             caption: I18n.en ? "Analysis" : "数据分析";
                             RibbonBtn { icon: "send"; label: I18n.en ? "Send" : "发送"; clicked => { root.open-tx-window(); } }
-                            RibbonBtn { icon: "curve"; label: I18n.en ? "Chart" : "曲线"; clicked => { root.open-chart-window(); } }
                         }
                         RibbonGroup {
                             caption: I18n.en ? "Record/Play" : "记录与回放";
                             RibbonBtn { icon: "record"; label: root.recording ? (I18n.en ? "Stop Rec" : "停止保存") : (I18n.en ? "Record" : "保存报文"); icon-clr: Theme.bad; active: root.recording; clicked => { root.toggle-record(); } }
-                            RibbonBtn { icon: "playback"; label: I18n.en ? "Playback" : "数据回放"; clicked => { root.open-playback-window(); } }
-                            RibbonBtn { icon: "record"; label: I18n.en ? "Convert" : "记录转换"; clicked => { root.open-convert-window(); } }
+                            RibbonBtn { icon: "file"; label: I18n.en ? "CAN Console" : "CAN日志"; active: root.bottom-tab == 1; clicked => { root.bottom-tab = 1; } }
                         }
                         RibbonGroup {
                             caption: I18n.en ? "Display" : "显示";
                             RibbonBtn { icon: "clear"; label: I18n.en ? "Clear" : "清空"; clicked => { root.clear-msgs(); } }
                             RibbonBtn { icon: "pause"; label: root.paused ? (I18n.en ? "Resume" : "继续") : (I18n.en ? "Pause" : "暂停"); active: root.paused; clicked => { root.toggle-pause(); } }
                         }
+                        RibbonGroup {
+                            caption: I18n.en ? "App" : "程序";
+                            RibbonBtn { icon: "info"; label: I18n.en ? "About" : "关于"; clicked => { root.about-open = true; } }
+                        }
+                    } }
+                    if root.ribbon == 1: ScrollView { HorizontalLayout {
+                        padding: 4px; spacing: 0px; alignment: start;
+                        RibbonGroup {
+                            caption: I18n.en ? "Analysis" : "分析";
+                            RibbonBtn { icon: "curve"; label: I18n.en ? "Chart" : "曲线"; clicked => { root.open-chart-window(); } }
+                            RibbonBtn { icon: "playback"; label: I18n.en ? "Playback" : "数据回放"; clicked => { root.open-playback-window(); } }
+                            RibbonBtn { icon: "convert"; label: I18n.en ? "Convert" : "记录转换"; clicked => { root.open-convert-window(); } }
+                        }
+                        RibbonGroup {
+                            caption: I18n.en ? "Automation" : "自动化与仿真";
+                            RibbonBtn { icon: "trigger"; label: I18n.en ? "Trigger" : "触发器"; icon-clr: Theme.bad; active: root.trigger-armed; clicked => { root.open-trigger-window(); } }
+                            RibbonBtn { icon: "layout"; label: I18n.en ? "Sim Panel" : "仿真面板"; clicked => { root.open-sim-panel-window(); } }
+                            RibbonBtn { icon: "start"; label: I18n.en ? "Py Test" : "Py测试"; clicked => { root.open-script-runner(); } }
+                        }
+                        RibbonGroup {
+                            caption: I18n.en ? "Diagnostics" : "诊断";
+                            RibbonBtn { icon: "start"; label: "UDS"; clicked => { root.open-uds-window(); } }
+                            RibbonBtn { icon: "start"; label: "XCP"; clicked => { root.open-xcp-window(); } }
+                        }
                     } }
                     if root.ribbon == 2: ScrollView { HorizontalLayout {
+                        padding: 4px; spacing: 0px; alignment: start;
+                        RibbonGroup {
+                            caption: I18n.en ? "External Tools" : "外部工具";
+                            RibbonBtn { icon: "file"; label: I18n.en ? "CAN Console" : "CAN日志"; active: root.bottom-tab == 1; clicked => { root.bottom-tab = 1; } }
+                            RibbonBtn { icon: "channel"; label: I18n.en ? "Serial" : "串口工具"; clicked => { root.open-serial-tool(); } }
+                            RibbonBtn { icon: "modbus"; label: "Modbus"; clicked => { root.open-modbus-tool(); } }
+                        }
+                    } }
+                    if root.ribbon == 3: ScrollView { HorizontalLayout {
                         padding: 4px; spacing: 0px; alignment: start;
                         RibbonGroup {
                             caption: I18n.en ? "Theme" : "主题";
@@ -250,34 +323,12 @@ export component AppWindow inherits Window {
                                 label: root.renderer-mode == "gpu" ? (I18n.en ? "GPU" : "GPU")
                                     : root.renderer-mode == "cpu" ? (I18n.en ? "CPU" : "CPU")
                                     : (I18n.en ? "Auto" : "自动");
-                                clicked => { root.cycle-renderer(); }
+                                clicked => {
+                                    root.pending-renderer-mode = root.renderer-mode == "auto" ? "gpu"
+                                        : root.renderer-mode == "gpu" ? "cpu" : "auto";
+                                    root.renderer-confirm-open = true;
+                                }
                             }
-                        }
-                        RibbonGroup {
-                            caption: I18n.en ? "Cache" : "缓存";
-                            RibbonBtn { icon: "database"; label: I18n.en ? "Cache" : "缓存设置"; clicked => { root.open-cache-config(); } }
-                        }
-                        RibbonGroup {
-                            caption: I18n.en ? "Windows" : "窗口";
-                            RibbonBtn { icon: "curve"; label: I18n.en ? "Chart" : "曲线窗"; clicked => { root.open-chart-window(); } }
-                            RibbonBtn { icon: "send"; label: I18n.en ? "Send" : "发送窗"; clicked => { root.open-tx-window(); } }
-                            RibbonBtn { icon: "playback"; label: I18n.en ? "Playback" : "回放窗"; clicked => { root.open-playback-window(); } }
-                            RibbonBtn { icon: "record"; label: I18n.en ? "Trigger" : "触发器"; icon-clr: Theme.bad; active: root.trigger-armed; clicked => { root.open-trigger-window(); } }
-                            RibbonBtn { icon: "layout"; label: I18n.en ? "Sim Panel" : "仿真面板"; clicked => { root.open-sim-panel-window(); } }
-                            RibbonBtn { icon: "start"; label: I18n.en ? "Py Test" : "Py测试"; clicked => { root.open-script-runner(); } }
-                        }
-                        RibbonGroup {
-                            caption: I18n.en ? "Diagnostics" : "诊断";
-                            RibbonBtn { icon: "start"; label: "UDS"; clicked => { root.open-uds-window(); } }
-                            RibbonBtn { icon: "start"; label: "XCP"; clicked => { root.open-xcp-window(); } }
-                        }
-                    } }
-                    if root.ribbon == 3: ScrollView { HorizontalLayout {
-                        padding: 4px; spacing: 0px; alignment: start;
-                        RibbonGroup {
-                            caption: I18n.en ? "External Tools" : "外部工具";
-                            RibbonBtn { icon: "channel"; label: I18n.en ? "Serial" : "串口工具"; clicked => { root.open-serial-tool(); } }
-                            RibbonBtn { icon: "modbus"; label: "Modbus"; clicked => { root.open-modbus-tool(); } }
                         }
                     } }
                 }
@@ -435,11 +486,19 @@ export component AppWindow inherits Window {
                         TBtn { text: "Trace"; active: root.mode-trace; clicked => { root.set-mode(true); } }
                         TBtn { text: I18n.en ? "Group" : "分组"; active: !root.mode-trace; clicked => { root.set-mode(false); } }
                         Rectangle { width: 1px; background: Theme.border; }
-                        TBtn { text: root.paused ? (I18n.en ? "Resume" : "继续") : (I18n.en ? "Pause" : "暂停"); active: root.paused; clicked => { root.toggle-pause(); } }
                         TBtn { text: I18n.en ? "Auto-scroll" : "自动滚动"; active: root.auto-scroll; clicked => { root.toggle-autoscroll(); } }
+                        Text { text: I18n.en ? "Time:" : "时间:"; vertical-alignment: center; font-size: Theme.fs; color: Theme.text-dim; }
+                        ComboBox {
+                            width: 90px; height: Theme.ctrl-h;
+                            model: I18n.en ? ["Relative", "Absolute", "System"] : ["相对", "绝对", "系统"];
+                            current-index <=> root.time-mode;
+                            selected => { root.set-time-mode(self.current-index); }
+                        }
+                        TBtn { boxed: true; text: I18n.en ? "Columns" : "列设置"; active: root.col-panel-visible; clicked => { root.col-panel-visible = !root.col-panel-visible; } }
                         Rectangle { width: 1px; background: Theme.border; }
+                        Text { text: I18n.en ? "Filter" : "筛选"; vertical-alignment: center; font-size: Theme.fs; font-weight: 600; color: Theme.text-dim; }
                         Text { text: "ID:"; vertical-alignment: center; font-size: Theme.fs; }
-                        LineEdit { width: 90px; height: Theme.ctrl-h; placeholder-text: I18n.en ? "0x180/range" : "0x180/范围"; text <=> root.f-id; }
+                        LineEdit { width: 132px; height: Theme.ctrl-h; placeholder-text: "180,100-1FF,!200"; text <=> root.f-id; }
                         Text { text: "Name:"; vertical-alignment: center; font-size: Theme.fs; }
                         LineEdit { width: 90px; height: Theme.ctrl-h; placeholder-text: "BMS"; text <=> root.f-name; }
                         Text { text: "Data:"; vertical-alignment: center; font-size: Theme.fs; }
@@ -451,16 +510,8 @@ export component AppWindow inherits Window {
                             current-index <=> root.dir-filter;
                             selected => { root.set-dir-filter(self.current-index); }
                         }
-                        Text { text: I18n.en ? "Time:" : "时间:"; vertical-alignment: center; font-size: Theme.fs; }
-                        ComboBox {
-                            width: 90px; height: Theme.ctrl-h;
-                            model: I18n.en ? ["Relative", "Absolute", "System"] : ["相对", "绝对", "系统"];
-                            current-index <=> root.time-mode;
-                            selected => { root.set-time-mode(self.current-index); }
-                        }
-                        TBtn { text: I18n.en ? "Apply" : "应用"; clicked => { root.apply-filter(); } }
-                        TBtn { text: I18n.en ? "Clear" : "清除"; clicked => { root.clear-filter(); } }
-                        TBtn { boxed: true; text: I18n.en ? "Columns" : "列设置"; active: root.col-panel-visible; clicked => { root.col-panel-visible = !root.col-panel-visible; } }
+                        TBtn { text: I18n.en ? "Apply" : "应用筛选"; primary: true; clicked => { root.apply-filter(); } }
+                        TBtn { text: I18n.en ? "Reset filter" : "重置筛选"; clicked => { root.clear-filter(); } }
                     } }
                 }
 
@@ -483,7 +534,7 @@ export component AppWindow inherits Window {
                         Rectangle { width: 1px; background: Theme.border; }
                         TBtn { text: I18n.en ? "Clear data" : "清除数据"; clicked => { root.clear-msgs(); } }
                         Rectangle { width: 16px; }
-                        Text { text: I18n.en ? "Tip: click=select row (see Signals tab below) · dbl-click=add all signals to chart" : "提示: 单击选中行(底部'信号解析'看解码) · 双击行=加全部信号到曲线"; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; }
+                        Text { text: I18n.en ? "Tip: double-click a frame to expand/collapse · right-click to add signals to chart" : "提示: 双击报文展开/折叠信号 · 右键添加信号到曲线"; vertical-alignment: center; font-size: Theme.fs-sm; color: Theme.text-dim; }
                     } }
                 }
 
@@ -498,22 +549,26 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 height: 26px;
                                 HorizontalLayout {
-                                    SortHeader { text: "No."; w: ColW.no; cidx: 0; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Time"; w: ColW.time; cidx: 1; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Delta"; w: ColW.delta; cidx: 2; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Ch"; w: ColW.ch; cidx: 3; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Dir"; w: ColW.dir; cidx: 4; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "ID"; w: ColW.id; cidx: 5; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Name"; w: ColW.name; cidx: 6; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Type"; w: ColW.kind; cidx: 7; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    HCell { text: "FD"; w: ColW.fd; }
-                                    HCell { text: "BRS"; w: ColW.brs; }
-                                    SortHeader { text: "DLC"; w: ColW.dlc; cidx: 10; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    SortHeader { text: "Len"; w: ColW.len; cidx: 11; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    HCell { text: "Data"; w: ColW.data; }
-                                    HCell { text: "Cycle"; w: ColW.cycle; }
-                                    SortHeader { text: "Count"; w: ColW.count; cidx: 14; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
-                                    HCell { text: "Comment"; w: ColW.comment; }
+                                    Rectangle {
+                                        width: ColW.expander;
+                                        background: Theme.header;
+                                        Rectangle { width: 1px; x: parent.width - 1px; background: Theme.border; }
+                                    }
+                                    SortHeader { text: I18n.en ? "No." : "序号"; w <=> ColW.no; resizable: true; min-w: 40px; cidx: 0; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: I18n.en ? "Time" : "时间"; w <=> ColW.time; resizable: true; min-w: 64px; cidx: 1; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    HCell { text: I18n.en ? "Cycle" : "周期"; w <=> ColW.cycle; resizable: true; min-w: 52px; }
+                                    SortHeader { text: I18n.en ? "Ch" : "通道"; w <=> ColW.ch; resizable: true; min-w: 42px; cidx: 3; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: I18n.en ? "Dir" : "方向"; w <=> ColW.dir; resizable: true; min-w: 36px; cidx: 4; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: "ID"; w <=> ColW.id; resizable: true; min-w: 64px; cidx: 5; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: I18n.en ? "Name" : "名称"; w <=> ColW.name; resizable: true; min-w: 88px; cidx: 6; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    HCell { text: I18n.en ? "Data / Signal Value" : "数据 / 信号值"; w <=> ColW.data; resizable: true; min-w: 120px; }
+                                    SortHeader { text: I18n.en ? "Type" : "类型"; w <=> ColW.kind; resizable: true; min-w: 42px; cidx: 7; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    HCell { text: "FD"; w <=> ColW.fd; resizable: true; min-w: 32px; }
+                                    HCell { text: "BRS"; w <=> ColW.brs; resizable: true; min-w: 36px; }
+                                    SortHeader { text: "DLC"; w <=> ColW.dlc; resizable: true; min-w: 36px; cidx: 10; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: I18n.en ? "Len" : "长度"; w <=> ColW.len; resizable: true; min-w: 36px; cidx: 11; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    SortHeader { text: I18n.en ? "Count" : "计数"; w <=> ColW.count; resizable: true; min-w: 52px; cidx: 14; sort-col: root.sort-col; sort-desc: root.sort-desc; clicked(c) => { root.sort-by(c); } }
+                                    HCell { text: I18n.en ? "Comment" : "备注"; w <=> ColW.comment; resizable: true; min-w: 72px; }
                                 }
                             }
                             msglist := ListView {
@@ -571,10 +626,8 @@ export component AppWindow inherits Window {
                                             clicked => { root.select-row(i); }
                                             double-clicked => {
                                                 root.select-row(i);
-                                                if (row.is-signal) {
-                                                    root.msg-sig-to-chart(i);
-                                                } else {
-                                                    root.sel-add-all-signals();
+                                                if (row.can-expand) {
+                                                    root.toggle-expand(i);
                                                 }
                                             }
                                             pointer-event(event) => {
@@ -592,21 +645,69 @@ export component AppWindow inherits Window {
                                             width: 100%; height: 100%;
                                             HorizontalLayout {
                                         Rectangle {
-                                            width: ColW.no;
+                                            width: ColW.expander;
                                             clip: true;
-                                            background: row.can-expand && no-ta.has-hover ? Theme.panel2 : transparent;
-                                            no-ta := TouchArea {
-                                                clicked => {
-                                                    if (row.can-expand) {
-                                                        root.toggle-expand(i);
-                                                    } else {
-                                                        root.select-row(i);
-                                                    }
+                                            background: row.can-expand && expand-ta.has-hover ? Theme.panel2 : transparent;
+                                            accessible-role: AccessibleRole.button;
+                                            accessible-label: row.can-expand
+                                                ? (row.expanded
+                                                    ? (I18n.en ? "Collapse signals" : "折叠信号")
+                                                    : (I18n.en ? "Expand signals" : "展开信号"))
+                                                : "";
+                                            accessible-enabled: row.can-expand;
+                                            forward-focus: expand-focus;
+                                            accessible-action-default => {
+                                                if (row.can-expand) {
+                                                    root.toggle-expand(i);
                                                 }
                                             }
+                                            if row.is-signal: Rectangle {
+                                                width: 1px;
+                                                height: 100%;
+                                                x: (parent.width - self.width) / 2;
+                                                background: Theme.border;
+                                            }
+                                            if row.can-expand: Icon {
+                                                name: row.expanded ? "collapse" : "expand";
+                                                clr: Theme.accent;
+                                                width: 16px;
+                                                height: 16px;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                            }
+                                            expand-ta := TouchArea {
+                                                enabled: row.can-expand;
+                                                mouse-cursor: pointer;
+                                                clicked => {
+                                                    root.select-row(i);
+                                                    root.toggle-expand(i);
+                                                }
+                                            }
+                                            expand-focus := FocusScope {
+                                                x: 0px;
+                                                width: 0px;
+                                                key-pressed(event) => {
+                                                    if ((event.text == Key.Return || event.text == " ") && row.can-expand) {
+                                                        root.toggle-expand(i);
+                                                        return accept;
+                                                    } else if (event.text == Key.RightArrow && row.can-expand && !row.expanded) {
+                                                        root.toggle-expand(i);
+                                                        return accept;
+                                                    } else if (event.text == Key.LeftArrow && row.can-expand && row.expanded) {
+                                                        root.toggle-expand(i);
+                                                        return accept;
+                                                    }
+                                                    return reject;
+                                                }
+                                            }
+                                        }
+                                        Rectangle {
+                                            width: ColW.no;
+                                            visible: ColW.no > 0px;
+                                            clip: true;
                                             Text {
                                                 text: row.no;
-                                                color: row.can-expand ? Theme.accent : Theme.text;
+                                                color: Theme.text;
                                                 font-family: Theme.mono;
                                                 font-size: 12px;
                                                 vertical-alignment: center;
@@ -616,21 +717,26 @@ export component AppWindow inherits Window {
                                             }
                                         }
                                         Cell { text: row.time; w: ColW.time; mono: true; align: right; }
-                                        Cell { text: row.delta; w: ColW.delta; mono: true; align: right; txt-clr: Theme.text-dim; }
+                                        Cell { text: row.cycle; w: ColW.cycle; mono: true; align: right; }
                                         Cell { text: row.ch; w: ColW.ch; }
                                         Cell { text: row.dir; w: ColW.dir; txt-clr: row.is-tx ? Theme.accent : Theme.text; }
                                         Cell { text: row.id; w: ColW.id; mono: true; txt-clr: row.fd == "Yes" ? Theme.accent : Theme.text; }
                                         Cell { text: row.name; w: ColW.name; txt-clr: row.is-signal ? Theme.accent : (row.name == "" ? Theme.text-dim : Theme.text); }
-                                        Cell { text: row.kind; w: ColW.kind; }
-                                        Cell { text: row.fd; w: ColW.fd; }
-                                        Cell { text: row.brs; w: ColW.brs; }
-                                        Cell { text: row.dlc; w: ColW.dlc; align: right; }
-                                        Cell { text: row.len; w: ColW.len; align: right; }
                                         Rectangle {
                                             width: ColW.data;
                                             clip: true;
-                                            // short frames (<=16 bytes): per-byte cells with changed-byte highlight
-                                            if (row.data-bytes.length <= 16): HorizontalLayout {
+                                            if row.is-signal: Text {
+                                                x: 5px;
+                                                width: parent.width - 10px;
+                                                text: row.data-text;
+                                                font-family: Theme.mono;
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: row.signal-out-of-range ? Theme.bad : Theme.text;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                            if (!row.is-signal && row.data-bytes.length <= 16): HorizontalLayout {
                                                 padding-left: 5px; spacing: 3px; alignment: start;
                                                 for bc in row.data-bytes: Rectangle {
                                                     background: bc.hot ? Theme.changed-bg : transparent;
@@ -643,8 +749,7 @@ export component AppWindow inherits Window {
                                                     }
                                                 }
                                             }
-                                            // long CAN FD payloads: wrapped multi-line hex (16 bytes per line)
-                                            if (row.data-bytes.length > 16): Text {
+                                            if (!row.is-signal && row.data-bytes.length > 16): Text {
                                                 x: 5px;
                                                 text: row.data-text;
                                                 font-family: Theme.mono;
@@ -653,7 +758,11 @@ export component AppWindow inherits Window {
                                                 vertical-alignment: center;
                                             }
                                         }
-                                        Cell { text: row.cycle; w: ColW.cycle; mono: true; align: right; }
+                                        Cell { text: row.kind; w: ColW.kind; }
+                                        Cell { text: row.fd; w: ColW.fd; }
+                                        Cell { text: row.brs; w: ColW.brs; }
+                                        Cell { text: row.dlc; w: ColW.dlc; align: right; }
+                                        Cell { text: row.len; w: ColW.len; align: right; }
                                         Cell { text: row.count; w: ColW.count; mono: true; align: right; }
                                         Cell { text: row.comment; w: ColW.comment; txt-clr: row.signal-out-of-range || row.is-error ? Theme.bad : Theme.text-dim; }
                                             }
@@ -688,23 +797,95 @@ export component AppWindow inherits Window {
                     }
                 }
 
-                // ===================== 底部面板：运行日志 / 报文统计 =====================
+                // ===================== 底部面板：运行日志 / CAN 文本日志 =====================
                 Rectangle {
                     height: root.bottom-h;
                     background: Theme.panel;
                     VerticalLayout {
-                        // 运日志
                         Rectangle { height: 26px; background: Theme.header;
                             Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
                             HorizontalLayout {
                                 padding-left: 6px; spacing: 2px; alignment: start;
-                                RibbonTab { text: I18n.en ? "Log" : "运行日志"; active: true; }
+                                RibbonTab { text: I18n.en ? "Runtime Log" : "运行日志"; active: root.bottom-tab == 0; clicked => { root.bottom-tab = 0; } }
+                                RibbonTab { text: I18n.en ? "CAN Text Log" : "CAN 文本日志"; active: root.bottom-tab == 1; clicked => { root.bottom-tab = 1; } }
                             }
                         }
-                        ListView {
+                        if root.bottom-tab == 0: ListView {
                             for line[i] in root.logs: Rectangle {
                                 height: 20px; background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra;
                                 Text { text: line; x: 6px; vertical-alignment: center; font-family: Theme.mono; font-size: 11px; color: Theme.text; }
+                            }
+                        }
+                        if root.bottom-tab == 1: VerticalLayout {
+                            Rectangle {
+                                height: Theme.ctrl-h + 10px;
+                                background: Theme.panel2;
+                                Rectangle { width: 100%; height: 1px; y: parent.height - 1px; background: Theme.border; }
+                                ScrollView {
+                                    HorizontalLayout {
+                                        padding: 4px;
+                                        spacing: 6px;
+                                        alignment: start;
+                                        CheckBox {
+                                            text: I18n.en ? "Capture" : "捕获";
+                                            checked <=> root.console-enabled;
+                                            toggled => { root.console-set-enabled(self.checked); }
+                                        }
+                                        Text { text: "ID:"; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; }
+                                        LineEdit {
+                                            width: 100px;
+                                            height: Theme.ctrl-h;
+                                            placeholder-text: I18n.en ? "blank = all" : "留空=全部";
+                                            text <=> root.console-id;
+                                            edited(value) => { root.console-set-id(value); }
+                                        }
+                                        Text { text: I18n.en ? "Channel:" : "通道:"; vertical-alignment: center; font-size: Theme.fs; color: Theme.text; }
+                                        ComboBox {
+                                            width: 100px;
+                                            height: Theme.ctrl-h;
+                                            model: I18n.en
+                                                ? ["All", "CAN1", "CAN2", "CAN3", "CAN4", "CAN5", "CAN6", "CAN7", "CAN8"]
+                                                : ["全部", "CAN1", "CAN2", "CAN3", "CAN4", "CAN5", "CAN6", "CAN7", "CAN8"];
+                                            current-index <=> root.console-ch;
+                                            selected => { root.console-set-ch(self.current-index); }
+                                        }
+                                        TBtn {
+                                            text: I18n.en ? "Auto-scroll" : "自动滚动";
+                                            active: root.console-autoscroll;
+                                            clicked => { root.console-autoscroll = !root.console-autoscroll; }
+                                        }
+                                        TBtn { text: I18n.en ? "Clear" : "清空"; clicked => { root.console-clear(); } }
+                                        TBtn { text: I18n.en ? "Export" : "导出"; clicked => { root.console-export(); } }
+                                        TBtn { boxed: true; text: I18n.en ? "MCU Guide" : "单片机接入帮助"; clicked => { root.console-help(); } }
+                                    }
+                                }
+                            }
+                            console-list := ListView {
+                                changed viewport-height => {
+                                    if (root.console-autoscroll) {
+                                        self.viewport-y = min(0px, self.visible-height - self.viewport-height);
+                                    }
+                                }
+                                property <bool> autoscroll-trigger: root.console-autoscroll;
+                                changed autoscroll-trigger => {
+                                    if (self.autoscroll-trigger) {
+                                        self.viewport-y = min(0px, self.visible-height - self.viewport-height);
+                                    }
+                                }
+                                for line[i] in root.console-lines: Rectangle {
+                                    height: 21px;
+                                    background: Math.mod(i, 2) == 0 ? Theme.panel : Theme.zebra;
+                                    Text {
+                                        x: 8px;
+                                        width: parent.width - 16px;
+                                        text: line;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                        font-family: Theme.mono;
+                                        font-size: 12px;
+                                        color: Theme.text;
+                                    }
+                                }
                             }
                         }
                     }
@@ -724,6 +905,16 @@ export component AppWindow inherits Window {
                 Text { text: (I18n.en ? "Mode: " : "模式: ") + (root.mode-trace ? "Trace" : (I18n.en ? "Group" : "分组")); font-size: Theme.fs-sm; color: Theme.text-dim; vertical-alignment: center; }
                 Text { text: (I18n.en ? "Shown " : "显示 ") + root.shown-count + (I18n.en ? " / total " : " / 总 ") + root.total-count; font-size: Theme.fs-sm; color: Theme.text-dim; vertical-alignment: center; }
                 Text { text: (I18n.en ? "Sel: " : "选中: ") + root.sel-id; font-size: Theme.fs-sm; color: Theme.text-dim; vertical-alignment: center; }
+                Text {
+                    text: root.capture-health;
+                    accessible-label: root.capture-health;
+                    max-width: 430px;
+                    overflow: elide;
+                    font-size: Theme.fs-sm;
+                    font-family: Theme.mono;
+                    color: root.capture-loss ? Theme.bad : Theme.text-dim;
+                    vertical-alignment: center;
+                }
                 Rectangle { horizontal-stretch: 1; }
                 Text { text: "Rx " + root.rx-count + "  Tx " + root.tx-count + "  Err " + root.err-count; font-size: Theme.fs-sm; color: Theme.text-dim; vertical-alignment: center; }
                 Text { text: "FPS " + root.fps + (I18n.en ? "  Load " : "  负载 ") + root.bus-load; font-size: Theme.fs-sm; color: Theme.accent; vertical-alignment: center; }
@@ -731,20 +922,21 @@ export component AppWindow inherits Window {
             }
         }
     }
+    // Compact column overlay; filtering remains in the toolbar because it changes the data set.
     if root.col-panel-visible: Rectangle {
         x: Math.max(12px, Math.min(root.width - self.width - 12px, root.settings-panel-x));
         y: Math.max(42px, Math.min(root.height - self.height - 12px, root.settings-panel-y));
-        width: min(root.width - 24px, 560px);
-        height: min(root.height - 70px, 330px);
+        width: min(root.width - 24px, 460px);
+        height: min(root.height - 70px, 224px);
         background: Theme.panel;
-        border-width: 2px;
-        border-color: #8899aa;
+        border-width: 1px;
+        border-color: Theme.border;
 
         VerticalLayout {
             spacing: 0px;
 
             Rectangle {
-                height: 28px;
+                height: 26px;
                 background: Theme.header;
                 drag-settings := TouchArea {
                     width: 100%;
@@ -766,12 +958,12 @@ export component AppWindow inherits Window {
                     }
                 }
                 Text {
-                    text: I18n.en ? "Settings" : "设置";
-                    x: 14px;
+                    text: I18n.en ? "Column Settings" : "列设置";
+                    x: 12px;
                     y: 0px;
                     height: 100%;
                     vertical-alignment: center;
-                    font-size: 14px;
+                    font-size: Theme.fs;
                     font-weight: 700;
                     color: Theme.text;
                 }
@@ -782,51 +974,29 @@ export component AppWindow inherits Window {
                 background: transparent;
 
                 VerticalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    padding-top: 10px;
-                    padding-bottom: 8px;
-                    spacing: 8px;
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 6px;
+                    padding-bottom: 4px;
+                    spacing: 4px;
 
                     Rectangle {
-                        height: Theme.ctrl-h;
-                        HorizontalLayout {
-                            spacing: 4px;
-                            TBtn { text: I18n.en ? "Display" : "显示设置"; active: root.settings-tab == 0; boxed: true; clicked => { root.settings-tab = 0; } }
-                            TBtn { text: I18n.en ? "Filter" : "过滤设置"; active: root.settings-tab == 1; boxed: true; clicked => { root.settings-tab = 1; } }
-                            Rectangle { horizontal-stretch: 1; }
-                        }
-                    }
-
-                    if root.settings-tab == 0: Rectangle {
-							height: 185px;
+							height: 158px;
                         background: transparent;
 
                         VerticalLayout {
-                            spacing: 6px;
+                            spacing: 3px;
 
                             Rectangle {
                                 height: 30px;
                                 HorizontalLayout {
-                                    spacing: 16px;
+                                    spacing: 8px;
 
                                     HorizontalLayout {
-                                        spacing: 10px;
-                                        Text { text: I18n.en ? "Time:" : "时间格式:"; width: 70px; font-size: 14px; vertical-alignment: center; }
+                                        spacing: 6px;
+                                        Text { text: I18n.en ? "Frame ID:" : "帧ID格式:"; width: 66px; font-size: Theme.fs; vertical-alignment: center; }
                                         ComboBox {
-                                            width: 174px;
-                                            height: 30px;
-                                            model: I18n.en ? ["Relative (s)", "Absolute", "System"] : ["相对时间(秒)", "绝对时间", "系统时间"];
-                                            current-index <=> root.time-mode;
-                                            selected => { root.set-time-mode(self.current-index); }
-                                        }
-                                    }
-
-                                    HorizontalLayout {
-                                        spacing: 10px;
-                                        Text { text: I18n.en ? "Frame ID:" : "帧ID格式:"; width: 78px; font-size: 14px; vertical-alignment: center; }
-                                        ComboBox {
-                                            width: 164px;
+                                            width: 112px;
                                             height: 30px;
                                             model: I18n.en ? ["Hex", "Decimal"] : ["十六进制", "十进制"];
                                             current-index <=> root.frame-id-format;
@@ -836,94 +1006,855 @@ export component AppWindow inherits Window {
                                 }
                             }
 
-                            Rectangle { height: 8px; }
-                            Text { text: I18n.en ? "Visible columns:" : "列表显示项:"; font-size: 15px; color: Theme.text; }
+                            Rectangle { height: 4px; }
+                            Text { text: I18n.en ? "Visible columns:" : "列表显示项:"; font-size: Theme.fs; color: Theme.text; }
 
                             Rectangle {
                                 height: 96px;
                                 HorizontalLayout {
-                                    spacing: 24px;
+                                    spacing: 8px;
                                     VerticalLayout {
-                                        spacing: 6px;
-                                        CheckBox { text: I18n.en ? "No." : "序号"; checked: ColW.no > 0px; toggled => { root.toggle-col("no"); } }
-                                        CheckBox { text: "ID"; checked: ColW.id > 0px; toggled => { root.toggle-col("id"); } }
-                                        CheckBox { text: I18n.en ? "Direction" : "方向"; checked: ColW.dir > 0px; toggled => { root.toggle-col("dir"); } }
-                                        CheckBox { text: I18n.en ? "Name" : "名称"; checked: ColW.name > 0px; toggled => { root.toggle-col("name"); } }
+                                        width: 94px; spacing: 4px;
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "No." : "序号"; checked: ColW.no > 0px; toggled => { root.toggle-col("no"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Time" : "时间"; checked: ColW.time > 0px; toggled => { root.toggle-col("time"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Cycle" : "周期"; checked: ColW.cycle > 0px; toggled => { root.toggle-col("cycle"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Ch" : "通道"; checked: ColW.ch > 0px; toggled => { root.toggle-col("ch"); } }
                                     }
                                     VerticalLayout {
-                                        spacing: 6px;
-                                        CheckBox { text: I18n.en ? "Time" : "时间标识"; checked: ColW.time > 0px; toggled => { root.toggle-col("time"); } }
-                                        CheckBox { text: I18n.en ? "Length" : "长度"; checked: ColW.len > 0px; toggled => { root.toggle-col("len"); } }
-                                        CheckBox { text: I18n.en ? "Type" : "帧类型"; checked: ColW.kind > 0px; toggled => { root.toggle-col("kind"); } }
-                                        CheckBox { text: I18n.en ? "Cycle" : "周期"; checked: ColW.cycle > 0px; toggled => { root.toggle-col("cycle"); } }
+                                        width: 112px; spacing: 4px;
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Dir" : "方向"; checked: ColW.dir > 0px; toggled => { root.toggle-col("dir"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: "ID"; checked: ColW.id > 0px; toggled => { root.toggle-col("id"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Name" : "名称"; checked: ColW.name > 0px; toggled => { root.toggle-col("name"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Data / Value" : "数据 / 信号值"; checked: ColW.data > 0px; toggled => { root.toggle-col("data"); } }
                                     }
                                     VerticalLayout {
-                                        spacing: 6px;
-                                        CheckBox { text: I18n.en ? "Data" : "数据"; checked: ColW.data > 0px; toggled => { root.toggle-col("data"); } }
-                                        CheckBox { text: "DLC"; checked: ColW.dlc > 0px; toggled => { root.toggle-col("dlc"); } }
-                                        CheckBox { text: I18n.en ? "Channel" : "源通道"; checked: ColW.ch > 0px; toggled => { root.toggle-col("ch"); } }
-                                        CheckBox { text: I18n.en ? "Count" : "计数"; checked: ColW.count > 0px; toggled => { root.toggle-col("count"); } }
+                                        width: 82px; spacing: 4px;
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Type" : "类型"; checked: ColW.kind > 0px; toggled => { root.toggle-col("kind"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: "FD"; checked: ColW.fd > 0px; toggled => { root.toggle-col("fd"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: "BRS"; checked: ColW.brs > 0px; toggled => { root.toggle-col("brs"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: "DLC"; checked: ColW.dlc > 0px; toggled => { root.toggle-col("dlc"); } }
                                     }
                                     VerticalLayout {
-                                        spacing: 6px;
-                                        CheckBox { text: "FD"; checked: ColW.fd > 0px; toggled => { root.toggle-col("fd"); } }
-                                        CheckBox { text: "BRS"; checked: ColW.brs > 0px; toggled => { root.toggle-col("brs"); } }
-                                        CheckBox { text: I18n.en ? "Comment" : "备注"; checked: ColW.comment > 0px; toggled => { root.toggle-col("comment"); } }
+                                        width: 112px; spacing: 4px;
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Len" : "长度"; checked: ColW.len > 0px; toggled => { root.toggle-col("len"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Count" : "计数"; checked: ColW.count > 0px; toggled => { root.toggle-col("count"); } }
+                                        CheckBox { font-size: Theme.fs-sm; text: I18n.en ? "Comment" : "备注"; checked: ColW.comment > 0px; toggled => { root.toggle-col("comment"); } }
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    if root.settings-tab == 1: Rectangle {
-                        vertical-stretch: 1;
-                        background: transparent;
-                        VerticalLayout {
-                            spacing: 10px;
-                            HorizontalLayout {
-                                spacing: 10px;
-                                Text { text: "ID:"; width: 70px; font-size: 15px; vertical-alignment: center; }
-                                LineEdit { width: 220px; height: 30px; placeholder-text: I18n.en ? "0x180/range" : "0x180/范围"; text <=> root.f-id; }
-                            }
-                            HorizontalLayout {
-                                spacing: 10px;
-                                Text { text: "Name:"; width: 70px; font-size: 15px; vertical-alignment: center; }
-                                LineEdit { width: 220px; height: 30px; placeholder-text: "BMS"; text <=> root.f-name; }
-                            }
-                            HorizontalLayout {
-                                spacing: 10px;
-                                Text { text: "Data:"; width: 70px; font-size: 15px; vertical-alignment: center; }
-                                LineEdit { width: 220px; height: 30px; placeholder-text: "01 02"; text <=> root.f-data; }
-                            }
-                            HorizontalLayout {
-                                spacing: 10px;
-                                Text { text: I18n.en ? "Direction:" : "方向:"; width: 70px; font-size: 15px; vertical-alignment: center; }
-                                ComboBox {
-                                    width: 160px;
-                                    height: 30px;
-                                    model: I18n.en ? ["All", "Rx", "Tx"] : ["全部", "Rx", "Tx"];
-                                    current-index <=> root.dir-filter;
-                                    selected => { root.set-dir-filter(self.current-index); }
-                                }
-                            }
-                            Rectangle { height: 8px; }
-                            HorizontalLayout {
-                                spacing: 8px;
-                                TBtn { text: I18n.en ? "Apply" : "应用"; primary: true; clicked => { root.apply-filter(); } }
-                                TBtn { text: I18n.en ? "Clear" : "清除"; boxed: true; clicked => { root.clear-filter(); } }
                             }
                         }
                     }
 
                     Rectangle {
-                        height: 40px;
+                        height: 30px;
                         TBtn {
                             x: (parent.width - self.width) / 2;
-                            y: 4px;
-                            height: 32px;
+                            y: 0px;
+                            height: 28px;
                             text: I18n.en ? "OK" : "确定";
                             boxed: true;
                             clicked => { root.col-panel-visible = false; }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !root.project-open: Rectangle {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        background: Theme.bg;
+        TouchArea { }
+
+        VerticalLayout {
+            spacing: 0px;
+            Rectangle {
+                height: 78px;
+                background: Theme.brand-header;
+                Rectangle { height: 3px; width: 100%; y: parent.height - 3px; background: Theme.accent; }
+                Rectangle { width: 180px; height: 180px; x: parent.width - 126px; y: -96px; border-radius: 90px; background: Theme.on-accent-faint; }
+                Rectangle { width: 90px; height: 90px; x: parent.width - 188px; y: 42px; border-radius: 45px; background: Theme.on-accent-faint; }
+                HorizontalLayout {
+                    padding-left: 30px; padding-right: 34px; spacing: 14px;
+                    Rectangle {
+                        width: 44px; height: 44px; y: (parent.height - self.height) / 2;
+                        border-radius: 10px; background: Theme.on-accent;
+                        Image { source: @image-url("logo.svg"); width: 32px; height: 32px; x: 6px; y: 6px; }
+                    }
+                    VerticalLayout {
+                        padding-top: 16px; padding-bottom: 15px; spacing: 0px;
+                        Text { text: "PcanWork"; color: Theme.on-accent; font-size: 21px; font-weight: 800; vertical-alignment: center; }
+                        Text { text: I18n.en ? "CAN / CAN FD ENGINEERING WORKSPACE" : "CAN / CAN FD 工程工作台"; color: Theme.on-accent.with-alpha(0.66); font-size: 11px; font-weight: 600; vertical-alignment: center; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        width: 78px; height: 30px; y: (parent.height - self.height) / 2;
+                        border-radius: 15px; background: Theme.on-accent-faint;
+                        border-width: 1px; border-color: Theme.on-accent-border;
+                        Text { text: root.app-version; color: Theme.on-accent.with-alpha(0.82); font-family: Theme.mono; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                padding-left: Math.max(46px, (root.width - 1080px) / 2);
+                padding-right: Math.max(46px, (root.width - 1080px) / 2);
+                padding-top: 34px; padding-bottom: 34px;
+                spacing: 24px;
+
+                Rectangle {
+                    height: 204px;
+                    border-radius: 14px;
+                    background: Theme.panel;
+                    border-width: 1px; border-color: Theme.border;
+                    drop-shadow-blur: 16px; drop-shadow-color: Theme.shadow; drop-shadow-offset-y: 5px;
+                    Rectangle { width: 5px; height: 92px; x: 0px; y: 30px; background: Theme.accent; border-radius: 3px; }
+                    HorizontalLayout {
+                        padding-left: root.width < 1050px ? 22px : 34px;
+                        padding-right: root.width < 1050px ? 20px : 28px;
+                        padding-top: 26px; padding-bottom: 26px;
+                        spacing: root.width < 1050px ? 18px : 34px;
+                        VerticalLayout {
+                            width: root.width < 1050px ? 224px : 286px;
+                            horizontal-stretch: 0;
+                            spacing: 8px;
+                            Rectangle {
+                                width: 112px; height: 26px; border-radius: 13px; background: Theme.accent-soft;
+                                Text { text: I18n.en ? "PROJECT CENTER" : "工程中心"; color: Theme.accent; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                            Text {
+                                text: I18n.en ? "Ready for your next CAN project" : "开始新的 CAN 工程";
+                                color: Theme.text;
+                                font-size: root.width < 1050px ? 23px : 26px;
+                                font-weight: 800;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: I18n.en ? "Create a clean workspace, or open an existing .pcprj project with its DBC, transmit tasks and simulation layout."
+                                    : "创建干净的工作区，或打开已有 .pcprj 工程，继续使用 DBC、发送任务与仿真布局。";
+                                color: Theme.text-dim; font-size: Theme.fs; wrap: word-wrap; vertical-alignment: top;
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                            Text { text: "CAN 2.0  ·  CAN FD  ·  DBC  ·  UDS  ·  XCP"; color: Theme.text-dim; font-family: Theme.mono; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        }
+
+                        Rectangle {
+                            width: 1px; background: Theme.border;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        VerticalLayout {
+                            width: root.width < 1050px ? 240px : 340px;
+                            spacing: 12px;
+                            welcome-new := Rectangle {
+                                height: 66px; border-radius: 10px;
+                                background: welcome-new-area.pressed ? Theme.accent.darker(0.18)
+                                    : welcome-new-area.has-hover ? Theme.accent.darker(0.06) : Theme.accent;
+                                border-width: welcome-new-focus.has-focus ? 2px : 1px;
+                                border-color: welcome-new-focus.has-focus ? Theme.warn : Theme.accent;
+                                drop-shadow-blur: welcome-new-area.has-hover ? 10px : 5px;
+                                drop-shadow-color: Theme.accent.with-alpha(0.25); drop-shadow-offset-y: 3px;
+                                animate background { duration: 100ms; }
+                                accessible-role: AccessibleRole.button; accessible-label: I18n.en ? "New project" : "新建工程";
+                                forward-focus: welcome-new-focus; accessible-action-default => { root.new-project(); }
+                                HorizontalLayout {
+                                    padding-left: root.width < 1050px ? 12px : 18px;
+                                    padding-right: root.width < 1050px ? 12px : 18px;
+                                    spacing: root.width < 1050px ? 10px : 14px;
+                                    Rectangle {
+                                        width: root.width < 1050px ? 32px : 38px;
+                                        height: root.width < 1050px ? 32px : 38px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 8px; background: Theme.on-accent-faint;
+                                        Icon { name: "file"; clr: Theme.on-accent; width: 21px; height: 21px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                                    }
+                                    VerticalLayout {
+                                        padding-top: 10px; padding-bottom: 9px; spacing: 0px;
+                                        Text { text: I18n.en ? "New Project" : "新建工程"; color: Theme.on-accent; font-size: Theme.fs; font-weight: 800; vertical-alignment: center; }
+                                        Text { visible: root.width >= 1050px; text: I18n.en ? "Create an empty workspace" : "创建空白工程工作区"; color: Theme.on-accent.with-alpha(0.72); font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    }
+                                    Icon { name: "playback"; clr: Theme.on-accent; width: 18px; height: 18px; y: (parent.height - self.height) / 2; }
+                                }
+                                welcome-new-area := TouchArea { mouse-cursor: pointer; clicked => { root.new-project(); } }
+                                welcome-new-focus := FocusScope { x: 0px; width: 0px; key-pressed(event) => { if event.text == Key.Return || event.text == " " { root.new-project(); return accept; } return reject; } }
+                            }
+                            welcome-open := Rectangle {
+                                height: 66px; border-radius: 10px;
+                                background: welcome-open-area.pressed ? Theme.panel2.darker(0.07)
+                                    : welcome-open-area.has-hover ? Theme.accent-soft : Theme.panel2;
+                                border-width: welcome-open-focus.has-focus ? 2px : 1px;
+                                border-color: welcome-open-focus.has-focus ? Theme.warn : welcome-open-area.has-hover ? Theme.accent : Theme.border;
+                                animate background { duration: 100ms; }
+                                accessible-role: AccessibleRole.button; accessible-label: I18n.en ? "Open project" : "打开工程";
+                                forward-focus: welcome-open-focus; accessible-action-default => { root.open-project(); }
+                                HorizontalLayout {
+                                    padding-left: root.width < 1050px ? 12px : 18px;
+                                    padding-right: root.width < 1050px ? 12px : 18px;
+                                    spacing: root.width < 1050px ? 10px : 14px;
+                                    Rectangle {
+                                        width: root.width < 1050px ? 32px : 38px;
+                                        height: root.width < 1050px ? 32px : 38px;
+                                        y: (parent.height - self.height) / 2;
+                                        border-radius: 8px; background: Theme.panel;
+                                        Icon { name: "folder"; clr: Theme.accent; width: 21px; height: 21px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                                    }
+                                    VerticalLayout {
+                                        padding-top: 10px; padding-bottom: 9px; spacing: 0px;
+                                        Text { text: I18n.en ? "Open Project" : "打开工程"; color: Theme.text; font-size: Theme.fs; font-weight: 800; vertical-alignment: center; }
+                                        Text { visible: root.width >= 1050px; text: I18n.en ? "Browse for a project file" : "选择已有工程文件"; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; }
+                                    }
+                                    Icon { name: "playback"; clr: Theme.accent; width: 18px; height: 18px; y: (parent.height - self.height) / 2; }
+                                }
+                                welcome-open-area := TouchArea { mouse-cursor: pointer; clicked => { root.open-project(); } }
+                                welcome-open-focus := FocusScope { x: 0px; width: 0px; key-pressed(event) => { if event.text == Key.Return || event.text == " " { root.open-project(); return accept; } return reject; } }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    min-height: 260px;
+                    border-radius: 14px; background: Theme.panel;
+                    border-width: 1px; border-color: Theme.border;
+                    drop-shadow-blur: 10px; drop-shadow-color: Theme.shadow; drop-shadow-offset-y: 3px;
+                    VerticalLayout {
+                        padding-left: 24px; padding-right: 24px; padding-top: 18px; padding-bottom: 20px; spacing: 12px;
+                        HorizontalLayout {
+                            height: 38px; spacing: 10px;
+                            Text { text: I18n.en ? "Recent projects" : "最近工程"; color: Theme.text; font-size: 18px; font-weight: 800; vertical-alignment: center; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: root.recent-projects.length > 0 ? (root.recent-projects.length + (I18n.en ? " projects" : " 个工程")) : ""; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; }
+                        }
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        if root.recent-projects.length == 0: Rectangle {
+                            vertical-stretch: 1; min-height: 150px;
+                            border-radius: 10px; background: Theme.bg;
+                            border-width: 1px; border-color: Theme.border;
+                            VerticalLayout {
+                                padding: 24px; spacing: 8px;
+                                Rectangle {
+                                    height: 50px;
+                                    Rectangle {
+                                        width: 48px; height: 48px; x: (parent.width - self.width) / 2;
+                                        border-radius: 24px; background: Theme.accent-soft;
+                                        Icon { name: "folder"; clr: Theme.accent; width: 25px; height: 25px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                                    }
+                                }
+                                Text { text: I18n.en ? "Your recent projects will appear here" : "最近打开的工程将显示在这里"; color: Theme.text; font-size: Theme.fs; font-weight: 700; horizontal-alignment: center; vertical-alignment: center; }
+                                Text { text: I18n.en ? "Create a project above or open an existing .pcprj file." : "从上方新建工程，或打开已有 .pcprj 文件。"; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
+                            }
+                        }
+
+                        if root.recent-projects.length > 0: ListView {
+                            for project[i] in root.recent-projects: Rectangle {
+                                height: 68px; border-radius: 9px;
+                                background: recent-area.pressed ? Theme.accent-soft.darker(0.05) : recent-area.has-hover ? Theme.accent-soft : Theme.panel;
+                                border-width: recent-focus.has-focus ? 2px : 1px;
+                                border-color: recent-focus.has-focus ? Theme.warn : recent-area.has-hover ? Theme.accent : Theme.border;
+                                animate background { duration: 100ms; }
+                                accessible-role: AccessibleRole.button; accessible-label: project.name + " " + project.path; accessible-enabled: project.available;
+                                forward-focus: recent-focus; accessible-action-default => { if project.available { root.open-recent-project(i); } }
+                                HorizontalLayout {
+                                    padding-left: 14px; padding-right: 16px; spacing: 13px;
+                                    Rectangle {
+                                        width: 40px; height: 40px; y: (parent.height - self.height) / 2;
+                                        border-radius: 8px; background: project.available ? Theme.accent-soft : Theme.panel2;
+                                        Icon { name: "folder"; clr: project.available ? Theme.accent : Theme.text-dim; width: 22px; height: 22px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                                    }
+                                    VerticalLayout {
+                                        padding-top: 10px; padding-bottom: 9px; spacing: 1px;
+                                        Text { text: project.name; color: project.available ? Theme.text : Theme.text-dim; font-size: Theme.fs; font-weight: 700; vertical-alignment: center; overflow: elide; }
+                                        Text { text: project.path; color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide; }
+                                    }
+                                    Text { text: project.available ? project.modified : (I18n.en ? "File unavailable" : "文件不存在"); width: 146px; color: Theme.text-dim; font-size: Theme.fs-sm; horizontal-alignment: right; vertical-alignment: center; }
+                                    Rectangle { width: 30px; height: 30px; y: (parent.height - self.height) / 2; border-radius: 15px; background: recent-area.has-hover ? Theme.panel : transparent; Icon { name: "playback"; clr: project.available ? Theme.accent : Theme.text-dim; width: 15px; height: 15px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; } }
+                                }
+                                recent-area := TouchArea { enabled: project.available; mouse-cursor: pointer; clicked => { root.open-recent-project(i); } }
+                                recent-focus := FocusScope { x: 0px; width: 0px; enabled: project.available; key-pressed(event) => { if event.text == Key.Return || event.text == " " { root.open-recent-project(i); return accept; } return reject; } }
+                            }
+                        }
+                    }
+                }
+
+            }
+        }
+    }
+
+    license-chip := Rectangle {
+        visible: !root.license-open && !root.about-open;
+        width: 142px;
+        height: root.project-open ? 24px : 30px;
+        x: root.width - self.width - (root.project-open ? 10px : 126px);
+        y: root.project-open ? 2px : 24px;
+        border-radius: root.project-open ? 6px : 15px;
+        background: root.license-unlocked
+            ? Theme.ok.with-alpha(root.project-open ? 0.16 : 0.26)
+            : root.license-seconds <= 600
+                ? Theme.warn.with-alpha(root.project-open ? 0.18 : 0.28)
+                : root.project-open ? Theme.accent-soft : Theme.on-accent-faint;
+        border-width: license-chip-focus.has-focus ? 2px : 1px;
+        border-color: license-chip-focus.has-focus ? Theme.warn
+            : root.license-unlocked ? Theme.ok
+            : root.license-seconds <= 600 ? Theme.warn
+            : root.project-open ? Theme.border : Theme.on-accent-border;
+        accessible-role: AccessibleRole.button;
+        accessible-label: root.license-unlocked
+            ? (I18n.en ? "Licensed" : "已授权")
+            : (I18n.en ? "Trial remaining " : "剩余试用时间 ") + root.license-remaining;
+        forward-focus: license-chip-focus;
+        accessible-action-default => { root.license-error = ""; root.license-open = true; }
+        Text {
+            text: root.license-unlocked
+                ? (I18n.en ? "Licensed" : "已授权")
+                : (I18n.en ? "Trial " : "试用 ") + root.license-remaining;
+            color: root.project-open ? Theme.text : Theme.on-accent;
+            font-size: Theme.fs-sm;
+            font-weight: 700;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        license-chip-area := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.license-error = ""; root.license-open = true; }
+        }
+        license-chip-focus := FocusScope {
+            x: 0px; width: 0px;
+            key-pressed(event) => {
+                if event.text == Key.Return || event.text == " " {
+                    root.license-error = "";
+                    root.license-open = true;
+                    return accept;
+                }
+                return reject;
+            }
+        }
+    }
+
+    if root.update-toast-open && root.update-state == 3 && !root.license-open && !root.about-open: Rectangle {
+        x: root.width - self.width - 18px;
+        y: root.height - self.height - 30px;
+        width: Math.min(400px, root.width - 36px);
+        height: Math.min(260px, root.height - 60px);
+        border-radius: 12px;
+        background: Theme.shadow;
+
+        Rectangle {
+            x: -4px;
+            y: -5px;
+            width: parent.width;
+            height: parent.height;
+            border-radius: 12px;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+
+            Rectangle { x: 0px; y: 0px; width: 5px; height: parent.height; background: Theme.ok; border-radius: 12px; }
+            VerticalLayout {
+                padding-left: 14px;
+                padding-right: 12px;
+                padding-top: 10px;
+                padding-bottom: 10px;
+                spacing: 5px;
+                HorizontalLayout {
+                    height: 30px;
+                    spacing: 7px;
+                    Rectangle {
+                        width: 25px; height: 25px; border-radius: 13px; background: Theme.ok.with-alpha(0.16);
+                        Icon { x: 5px; y: 5px; width: 15px; height: 15px; name: "info"; clr: Theme.ok; }
+                    }
+                    Text {
+                        text: (I18n.en ? "New version available  " : "发现新版本  ") + "v" + root.update-version;
+                        color: Theme.text; font-size: Theme.fs; font-weight: 800; vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    close-update := Rectangle {
+                        width: 34px;
+                        height: 30px;
+                        border-radius: Theme.radius;
+                        accessible-role: AccessibleRole.button;
+                        accessible-label: I18n.en ? "Close update notification" : "关闭更新提示";
+                        background: close-update-area.pressed ? Theme.panel2.darker(0.10)
+                            : close-update-area.has-hover ? Theme.panel2 : transparent;
+                        animate background { duration: 90ms; }
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 18px;
+                            height: 18px;
+                            name: "clear";
+                            clr: Theme.text;
+                        }
+                        close-update-area := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => { root.update-toast-open = false; }
+                        }
+                    }
+                }
+                Text { text: I18n.en ? "What's new" : "更新内容"; color: Theme.text; font-size: Theme.fs-sm; font-weight: 800; }
+                Rectangle {
+                    vertical-stretch: 1;
+                    min-height: 110px;
+                    background: Theme.panel2;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    border-radius: 6px;
+                    ScrollView {
+                        x: 0px; y: 0px; width: parent.width; height: parent.height;
+                        viewport-width: 350px;
+                        VerticalLayout {
+                            width: 350px;
+                            padding: 8px;
+                            Text {
+                                text: root.update-notes == ""
+                                    ? (I18n.en ? "A newer installer is ready to download." : "新版安装包已发布，可选择下载源。")
+                                    : root.update-notes;
+                                color: Theme.text-dim;
+                                font-size: Theme.fs-sm;
+                                wrap: word-wrap;
+                                vertical-alignment: top;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    height: Theme.ctrl-h; spacing: 9px;
+                    Rectangle { horizontal-stretch: 1; }
+                    TBtn { width: 105px; text: I18n.en ? "Gitee download" : "Gitee 下载"; boxed: true; clicked => { root.open-update-gitee(); } }
+                    TBtn { width: 112px; text: I18n.en ? "GitHub download" : "GitHub 下载"; primary: true; clicked => { root.open-update-github(); } }
+                }
+            }
+        }
+    }
+
+    if root.license-open: Rectangle {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        background: Theme.scrim;
+        TouchArea { clicked => { root.license-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2 + 4px;
+            y: (parent.height - self.height) / 2 + 6px;
+            width: 540px; height: 430px;
+            border-radius: 12px; background: Theme.shadow;
+        }
+
+        license-card := Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 540px; height: 430px;
+            border-radius: 12px; background: Theme.panel;
+            border-width: 1px; border-color: Theme.border;
+            TouchArea { }
+            VerticalLayout {
+                spacing: 0px;
+                Rectangle {
+                    height: 88px; background: Theme.brand-header; border-radius: 11px;
+                    Rectangle { y: parent.height - 11px; width: 100%; height: 11px; background: Theme.brand-header; }
+                    Rectangle { y: parent.height - 1px; width: 100%; height: 1px; background: Theme.on-accent-border; }
+                    Text {
+                        x: 24px; y: 14px; width: 340px; height: 30px;
+                        text: I18n.en ? "PcanWork License" : "PcanWork 使用授权";
+                        color: Theme.on-accent; font-size: 20px; font-weight: 800; vertical-alignment: center;
+                    }
+                    Text {
+                        x: 24px; y: 45px; width: 380px; height: 24px;
+                        text: root.license-unlocked
+                            ? (I18n.en ? "Time limit removed for this session" : "本次运行已解除时间限制")
+                            : (I18n.en ? "Time remaining" : "剩余使用时间");
+                        color: Theme.on-accent.with-alpha(0.72); font-size: Theme.fs-sm; vertical-alignment: center;
+                    }
+                    Rectangle {
+                        x: parent.width - 132px; y: 23px; width: 104px; height: 40px;
+                        border-radius: 8px; background: Theme.on-accent-faint;
+                        Text {
+                            text: root.license-unlocked ? (I18n.en ? "Licensed" : "已授权") : root.license-remaining;
+                            color: Theme.on-accent; font-family: Theme.mono; font-size: 18px; font-weight: 800;
+                            horizontal-alignment: center; vertical-alignment: center;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    padding-left: 24px; padding-right: 24px; padding-top: 18px; padding-bottom: 18px; spacing: 12px;
+                    Text {
+                        height: 42px;
+                        text: I18n.en
+                            ? "The unlicensed edition runs for one year. Send the machine code to the licensor, then import the signed Ed25519 .pcanlic file."
+                            : "未授权版本可试用一年。将机器码提供给授权方，并导入收到的 Ed25519 签名 .pcanlic 文件。";
+                        color: Theme.text-dim; font-size: Theme.fs-sm; wrap: word-wrap; vertical-alignment: center;
+                    }
+                    Text { height: 20px; text: I18n.en ? "Machine code" : "机器码"; color: Theme.text; font-size: Theme.fs-sm; font-weight: 700; vertical-alignment: center; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h; spacing: 8px;
+                        LineEdit { text: root.license-machine-code; read-only: true; font-family: Theme.mono; }
+                        TBtn { width: 112px; text: I18n.en ? "Copy code" : "复制机器码"; boxed: true; clicked => { root.license-copy-machine-code(); } }
+                    }
+                    Text { height: 20px; text: I18n.en ? "Offline license file" : "离线授权文件"; color: Theme.text; font-size: Theme.fs-sm; font-weight: 700; vertical-alignment: center; }
+                    Rectangle {
+                        height: 54px; border-radius: Theme.radius; background: Theme.panel2;
+                        border-width: 1px; border-color: Theme.border;
+                        HorizontalLayout {
+                            padding-left: 12px; padding-right: 12px; spacing: 10px;
+                            Icon { name: "file"; clr: root.license-unlocked ? Theme.ok : Theme.accent; width: 22px; height: 22px; y: (parent.height - self.height) / 2; }
+                            VerticalLayout {
+                                padding-top: 6px; padding-bottom: 6px; spacing: 1px;
+                                Text {
+                                    text: root.license-info != "" ? root.license-info
+                                        : (I18n.en ? "Select an Ed25519-signed .pcanlic file" : "选择使用 Ed25519 签名的 .pcanlic 文件");
+                                    color: Theme.text-dim; font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide;
+                                }
+                                Text {
+                                    visible: root.license-unlocked;
+                                    text: I18n.en ? root.license-validity-en : root.license-validity-zh;
+                                    color: Theme.ok; font-size: 11px; vertical-alignment: center; overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                    Text {
+                        height: 22px; text: root.license-error;
+                        color: root.license-unlocked ? Theme.ok : Theme.bad;
+                        font-size: Theme.fs-sm; vertical-alignment: center; overflow: elide;
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    HorizontalLayout {
+                        height: Theme.ctrl-h; spacing: 10px;
+                        TBtn { width: 86px; text: I18n.en ? "Close" : "关闭"; boxed: true; clicked => { root.license-open = false; } }
+                        Rectangle { horizontal-stretch: 1; }
+                        TBtn {
+                            width: 148px; text: root.license-unlocked
+                                ? (I18n.en ? "License installed" : "授权已安装")
+                                : (I18n.en ? "Import license" : "导入授权文件");
+                            primary: true; btn-enabled: !root.license-unlocked;
+                            clicked => { root.license-import(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 渲染器切换使用应用内确认层，避免原生模态框在远程桌面下被遮挡后锁住主窗口。
+    if root.renderer-confirm-open: Rectangle {
+        x: 0px; y: 0px; width: root.width; height: root.height;
+        background: Theme.scrim;
+        TouchArea { clicked => { root.renderer-confirm-open = false; } }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2 + 4px;
+            y: (parent.height - self.height) / 2 + 6px;
+            width: 430px; height: 224px;
+            border-radius: 12px; background: Theme.shadow;
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 430px; height: 224px;
+            border-radius: 12px; background: Theme.panel;
+            border-width: 1px; border-color: Theme.border;
+            TouchArea { }
+            VerticalLayout {
+                padding: 22px; spacing: 14px;
+                Text {
+                    text: I18n.en ? "Switch renderer" : "切换渲染模式";
+                    color: Theme.text; font-size: Theme.fs + 4px; font-weight: 800;
+                }
+                Text {
+                    text: I18n.en
+                        ? "Switch to " + (root.pending-renderer-mode == "gpu" ? "GPU" : root.pending-renderer-mode == "cpu" ? "CPU" : "Auto") + " renderer? The application will save the setting and restart."
+                        : "切换到 " + (root.pending-renderer-mode == "gpu" ? "GPU" : root.pending-renderer-mode == "cpu" ? "CPU" : "自动") + " 渲染模式？程序将保存设置并重启。";
+                    color: Theme.text-dim; font-size: Theme.fs; wrap: word-wrap;
+                    vertical-stretch: 1;
+                }
+                HorizontalLayout {
+                    height: Theme.ctrl-h; spacing: 10px;
+                    Rectangle { horizontal-stretch: 1; }
+                    TBtn { width: 88px; boxed: true; text: I18n.en ? "Cancel" : "取消"; clicked => { root.renderer-confirm-open = false; } }
+                    TBtn {
+                        width: 126px; primary: true; text: I18n.en ? "Save & restart" : "保存并重启";
+                        clicked => {
+                            root.renderer-confirm-open = false;
+                            root.apply-renderer(root.pending-renderer-mode);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if root.about-open: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: Theme.scrim;
+
+        close-about-backdrop := TouchArea {
+            clicked => { root.about-open = false; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2 + 4px;
+            y: (parent.height - self.height) / 2 + 6px;
+            width: 448px;
+            height: 430px;
+            border-radius: 12px;
+            background: Theme.shadow;
+        }
+
+        about-card := Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 448px;
+            height: 430px;
+            border-radius: 12px;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+
+            TouchArea { }
+
+            VerticalLayout {
+                spacing: 0px;
+
+                Rectangle {
+                    height: 104px;
+                    background: Theme.header;
+                    border-radius: 11px;
+
+                    Rectangle {
+                        x: 0px;
+                        y: parent.height - 11px;
+                        width: parent.width;
+                        height: 11px;
+                        background: Theme.header;
+                    }
+                    Rectangle {
+                        x: 0px;
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                    Rectangle {
+                        x: 0px;
+                        width: 5px;
+                        height: 100%;
+                        background: Theme.accent;
+                        border-radius: 11px;
+                    }
+
+                    Image {
+                        source: @image-url("logo.svg");
+                        x: 28px;
+                        y: 24px;
+                        width: 56px;
+                        height: 56px;
+                    }
+                    Text {
+                        x: 104px;
+                        y: 22px;
+                        width: 270px;
+                        height: 34px;
+                        text: "PcanWork";
+                        color: Theme.text;
+                        font-size: 24px;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        x: 104px;
+                        y: 56px;
+                        width: 280px;
+                        height: 26px;
+                        text: I18n.en ? "CAN / CAN FD Engineering Tool" : "CAN / CAN FD 工程分析工具";
+                        color: Theme.text-dim;
+                        font-size: Theme.fs;
+                        vertical-alignment: center;
+                    }
+
+                    close-about := Rectangle {
+                        x: parent.width - 44px;
+                        y: 12px;
+                        width: 30px;
+                        height: 30px;
+                        border-radius: 6px;
+                        background: close-about-area.pressed ? Theme.panel2.darker(0.10)
+                            : close-about-area.has-hover ? Theme.panel2 : transparent;
+                        accessible-role: AccessibleRole.button;
+                        accessible-label: I18n.en ? "Close" : "关闭";
+                        Text {
+                            text: "×";
+                            color: Theme.text-dim;
+                            font-size: 20px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        close-about-area := TouchArea {
+                            clicked => { root.about-open = false; }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        padding-left: 30px;
+                        padding-right: 30px;
+                        padding-top: 20px;
+                        padding-bottom: 16px;
+                        spacing: 14px;
+
+                        Rectangle {
+                            height: 44px;
+                            border-radius: Theme.radius;
+                            background: Theme.panel2;
+                            border-width: 1px;
+                            border-color: Theme.border;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                spacing: 12px;
+                                Text {
+                                    height: 100%;
+                                    text: I18n.en ? "Version" : "版本";
+                                    color: Theme.text-dim;
+                                    font-size: Theme.fs;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text {
+                                    height: 100%;
+                                    text: root.app-version;
+                                    color: Theme.accent;
+                                    font-family: Theme.mono;
+                                    font-size: Theme.fs;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                                Rectangle {
+                                    width: 104px;
+                                    TBtn {
+                                        x: 0px;
+                                        y: (parent.height - self.height) / 2;
+                                        width: 104px;
+                                        h: 30px;
+                                        text: root.update-state == 1
+                                            ? (I18n.en ? "Checking..." : "检查中...")
+                                            : (I18n.en ? "Check update" : "检查更新");
+                                        boxed: true;
+                                        btn-enabled: root.update-state != 1;
+                                        clicked => { root.check-update(); }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: root.update-state == 3 ? 78px : 52px;
+                            border-radius: Theme.radius;
+                            background: root.update-state == 3 ? Theme.new-bg : Theme.panel2;
+                            border-width: 1px;
+                            border-color: root.update-state == 3 ? Theme.ok : Theme.border;
+                            VerticalLayout {
+                                padding-left: 14px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; spacing: 6px;
+                                HorizontalLayout {
+                                    height: 30px; spacing: 8px;
+                                    Text {
+                                        text: root.update-state == 0 ? (I18n.en ? "Updates are checked automatically at startup." : "启动时会自动检查新版本。")
+                                            : root.update-state == 1 ? (I18n.en ? "Checking Gitee, then GitHub..." : "正在检查 Gitee，失败后切换 GitHub...")
+                                            : root.update-state == 2 ? (I18n.en ? "You are using the latest version." : "当前已是最新版本。")
+                                            : root.update-state == 3 ? ((I18n.en ? "Available: " : "可用版本：") + "v" + root.update-version)
+                                            : (I18n.en ? "Check failed. Please try again later." : "检查失败，请稍后重试。");
+                                        color: root.update-state == 3 ? Theme.ok : root.update-state == 4 ? Theme.bad : Theme.text-dim;
+                                        font-size: Theme.fs-sm; font-weight: root.update-state == 3 ? 700 : 400;
+                                        vertical-alignment: center; overflow: elide;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                if root.update-state == 3: HorizontalLayout {
+                                    height: 30px; spacing: 8px;
+                                    Rectangle { horizontal-stretch: 1; }
+                                    TBtn { width: 112px; h: 30px; text: I18n.en ? "Gitee download" : "Gitee 下载"; boxed: true; clicked => { root.open-update-gitee(); } }
+                                    TBtn { width: 122px; h: 30px; text: I18n.en ? "GitHub download" : "GitHub 下载"; primary: true; clicked => { root.open-update-github(); } }
+                                }
+                            }
+                        }
+
+                        website-link := Rectangle {
+                            height: 40px;
+                            border-radius: Theme.radius;
+                            background: website-area.pressed ? Theme.accent-soft.darker(0.06)
+                                : website-area.has-hover ? Theme.accent-soft : transparent;
+                            border-width: website-focus.has-focus ? 2px : 1px;
+                            border-color: website-focus.has-focus ? Theme.warn
+                                : website-area.has-hover ? Theme.accent : Theme.border;
+                            accessible-role: AccessibleRole.button;
+                            accessible-label: I18n.en ? "Open www.hexbyte.cn" : "打开官网 www.hexbyte.cn";
+                            forward-focus: website-focus;
+                            accessible-action-default => { root.open-website(); }
+                            Text {
+                                text: I18n.en ? "Website" : "官方网站";
+                                x: 14px;
+                                width: 90px;
+                                height: 100%;
+                                color: Theme.text-dim;
+                                font-size: Theme.fs;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "www.hexbyte.cn  ↗";
+                                x: 104px;
+                                width: parent.width - 118px;
+                                height: 100%;
+                                color: Theme.accent;
+                                font-size: Theme.fs;
+                                font-weight: 700;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
+                            website-area := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.open-website(); }
+                            }
+                            website-focus := FocusScope {
+                                x: 0px;
+                                width: 0px;
+                                key-pressed(event) => {
+                                    if event.text == Key.Return || event.text == " " {
+                                        root.open-website();
+                                        return accept;
+                                    }
+                                    return reject;
+                                }
+                            }
+                        }
+
+                        Text {
+                            height: 24px;
+                            text: I18n.en ? "Professional CAN bus analysis, simulation and diagnostics."
+                                : "面向 CAN 总线分析、仿真与诊断的专业工具。";
+                            color: Theme.text-dim;
+                            font-size: Theme.fs-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle { vertical-stretch: 1; }
+
+                        Rectangle {
+                            height: Theme.ctrl-h;
+                            TBtn {
+                                width: 96px;
+                                x: (parent.width - self.width) / 2;
+                                text: I18n.en ? "Close" : "关闭";
+                                primary: true;
+                                clicked => { root.about-open = false; }
+                            }
                         }
                     }
                 }

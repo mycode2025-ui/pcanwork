@@ -1,4 +1,13 @@
 import { Button, ComboBox, LineEdit, SpinBox, ListView, ScrollView, CheckBox, TextEdit, Palette } from "std-widgets.slint";
+import { ProductDesign, ProductHeaderCheck, ProductI18n, ProductLanguageSwitch, ProductStatusDot, ProductThemeSwitch } from "../../ui/design-system.slint";
+
+export global I18n {
+    in-out property <bool> en: ProductI18n.en;
+    changed en => { ProductI18n.en = en; }
+    public pure function t(zh: string, eng: string) -> string {
+        return ProductI18n.t(zh, eng);
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Shared data structures (generated into Rust as RegRow / LogLine / MiniChart)
@@ -81,13 +90,25 @@ global Fmt {
 
 // Scientific-blue theme palette (overrides the OS accent colour).
 global Theme {
-    out property <color> accent: #1668b8;
-    out property <color> accent-2: #2f86d6;
-    out property <color> accent-soft: #e8f1fb;
-    out property <color> accent-fg: #ffffff;
-    out property <color> ok: #2ea043;
-    out property <color> warn: #d29922;
-    out property <color> err: #e5534b;
+    in-out property <bool> dark: ProductDesign.dark;
+    changed dark => { ProductDesign.dark = dark; }
+    out property <color> window: ProductDesign.window;
+    out property <color> toolbar: ProductDesign.surface;
+    out property <color> header: ProductDesign.brand-header;
+    out property <color> accent: ProductDesign.brand;
+    out property <color> accent-2: ProductDesign.brand-hover;
+    out property <color> accent-soft: ProductDesign.brand-soft;
+    out property <color> accent-fg: ProductDesign.on-brand;
+    out property <color> accent-fg-muted: ProductDesign.on-brand-muted;
+    out property <color> accent-fg-strong: ProductDesign.on-brand-strong;
+    out property <color> accent-fg-subtle: ProductDesign.on-brand-subtle;
+    out property <color> ok: ProductDesign.success;
+    out property <color> warn: ProductDesign.warning;
+    out property <color> err: ProductDesign.danger;
+    out property <color> info: ProductDesign.info;
+    out property <color> text-muted: ProductDesign.text-muted;
+    out property <color> scrim: ProductDesign.scrim;
+    out property <color> shadow: ProductDesign.shadow-strong;
 }
 
 // A filled accent (blue) action button, independent of the OS accent colour.
@@ -95,9 +116,16 @@ component AccentButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
     callback clicked;
-    height: 32px;
+    height: ProductDesign.control-height;
     horizontal-stretch: 0;
     border-radius: 6px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    forward-focus: key-focus;
+    accessible-action-default => { if (root.enabled) { root.clicked(); } }
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: ProductDesign.warning;
     opacity: root.enabled ? 1.0 : 0.4;
     background: ta.has-hover && root.enabled ? Theme.accent-2 : Theme.accent;
     Text {
@@ -119,19 +147,103 @@ component AccentButton inherits Rectangle {
             }
         }
     }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
+}
+
+component ToolBar inherits Rectangle {
+    height: 44px;
+    border-radius: ProductDesign.radius-sm;
+    background: ProductDesign.header-surface;
+    border-width: 1px;
+    border-color: ProductDesign.border;
+    @children
+}
+
+// Shared master/server toolbar action. Fixed geometry avoids native-style
+// preferred-height differences and keeps both role toolbars visually identical.
+component ToolAction inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <length> action-width: 92px;
+    callback clicked;
+
+    width: root.action-width;
+    height: ProductDesign.toolbar-control-height;
+    horizontal-stretch: 0;
+    y: ta.pressed && root.enabled ? 1px : 0px;
+    border-radius: ProductDesign.radius-sm;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? ProductDesign.warning : ProductDesign.border;
+    background: !root.enabled
+        ? ProductDesign.surface-raised
+        : ta.pressed
+            ? ProductDesign.selection
+            : ta.has-hover ? ProductDesign.brand-soft : ProductDesign.window;
+    opacity: root.enabled ? 1.0 : 0.52;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.text;
+    accessible-enabled: root.enabled;
+    forward-focus: key-focus;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    animate background { duration: 140ms; }
+    animate y { duration: 80ms; }
+
+    label := Text {
+        text: root.text;
+        color: root.enabled ? ProductDesign.text : ProductDesign.text-muted;
+        font-family: ProductDesign.font-sans;
+        font-size: ProductDesign.font-md;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: 100%;
+        height: 100%;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { if root.enabled { root.clicked(); } }
+    }
+    key-focus := FocusScope {
+        x: 0px; width: 0px;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 // A modern segmented switch (sliding white thumb on a translucent track).
 component ModeSwitch inherits Rectangle {
     in property <string> left-text;
     in property <string> right-text;
+    in property <length> fixed-width: 280px;
     in-out property <int> selected; // 0 = left, 1 = right
-    width: 280px;
+    width: root.fixed-width;
     height: 38px;
     border-radius: self.height / 2;
-    background: #ffffff22;
-    border-width: 1px;
-    border-color: #ffffff40;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.selected == 0 ? root.left-text : root.right-text;
+    forward-focus: key-focus;
+    accessible-action-default => { root.selected = root.selected == 0 ? 1 : 0; }
+    background: Theme.dark ? ProductDesign.brand-soft : ProductDesign.on-brand-faint;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 1px;
+    border-color: key-focus.has-focus ? Theme.warn : (Theme.dark ? ProductDesign.border : ProductDesign.on-brand-border);
 
     // sliding highlight thumb
     Rectangle {
@@ -140,7 +252,7 @@ component ModeSwitch inherits Rectangle {
         y: 4px;
         x: root.selected == 0 ? 4px : (parent.width / 2 + 4px);
         border-radius: self.height / 2;
-        background: Theme.accent-fg;
+        background: Theme.dark ? ProductDesign.selection : Theme.accent-fg;
         animate x { duration: 160ms; easing: ease-in-out; }
     }
 
@@ -157,7 +269,9 @@ component ModeSwitch inherits Rectangle {
             vertical-alignment: center;
             font-size: 14px;
             font-weight: 700;
-            color: root.selected == 0 ? Theme.accent : Theme.accent-fg;
+            color: Theme.dark
+                ? (root.selected == 0 ? Theme.accent-fg : Theme.accent-fg-muted)
+                : (root.selected == 0 ? Theme.accent : Theme.accent-fg);
         }
         TouchArea {
             width: 100%;
@@ -180,13 +294,32 @@ component ModeSwitch inherits Rectangle {
             vertical-alignment: center;
             font-size: 14px;
             font-weight: 700;
-            color: root.selected == 1 ? Theme.accent : Theme.accent-fg;
+            color: Theme.dark
+                ? (root.selected == 1 ? Theme.accent-fg : Theme.accent-fg-muted)
+                : (root.selected == 1 ? Theme.accent : Theme.accent-fg);
         }
         TouchArea {
             width: 100%;
             height: 100%;
             mouse-cursor: pointer;
             clicked => { root.selected = 1; }
+        }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow {
+                root.selected = 0;
+                return accept;
+            } else if event.text == Key.RightArrow {
+                root.selected = 1;
+                return accept;
+            } else if event.text == Key.Return || event.text == " " {
+                root.selected = root.selected == 0 ? 1 : 0;
+                return accept;
+            }
+            return reject;
         }
     }
 }
@@ -196,7 +329,7 @@ component Field inherits HorizontalLayout {
     height: 32px;
     spacing: 4px;
     Text {
-        width: 78px;
+        width: 92px;
         text: root.label;
         vertical-alignment: center;
         horizontal-alignment: left;
@@ -256,7 +389,7 @@ component DataGrid inherits Rectangle {
                 padding-left: 10px;
                 padding-right: 10px;
                 spacing: 10px;
-                Text { width: 132px; text: "Name"; vertical-alignment: center; font-weight: 700; }
+                Text { width: 132px; text: I18n.t("名称", "Name"); vertical-alignment: center; font-weight: 700; }
                 Rectangle {
                     width: 70px;
                     addr-hdr-ta := TouchArea {
@@ -269,8 +402,8 @@ component DataGrid inherits Rectangle {
                         color: addr-hdr-ta.has-hover ? Theme.accent : Palette.foreground;
                     }
                 }
-                Text { horizontal-stretch: 1; text: "Value"; vertical-alignment: center; font-weight: 700; }
-                Text { width: 92px; text: "Raw (hex)"; vertical-alignment: center; font-weight: 700; }
+                Text { horizontal-stretch: 1; text: I18n.t("数值", "Value"); vertical-alignment: center; font-weight: 700; }
+                Text { width: 92px; text: I18n.t("原始值（十六进制）", "Raw (hex)"); vertical-alignment: center; font-weight: 700; }
             }
         }
         ListView {
@@ -362,7 +495,7 @@ component DataGrid inherits Rectangle {
         border-width: 1px;
         border-color: Palette.border;
         drop-shadow-blur: 12px;
-        drop-shadow-color: #00000055;
+        drop-shadow-color: Theme.shadow;
         clip: true;
         VerticalLayout {
             spacing: 0;
@@ -430,7 +563,7 @@ component LogPanel inherits Rectangle {
                     width: 34px;
                     text: l.dir;
                     font-weight: 800;
-                    color: l.dir == "ERR" ? #e06c75 : (l.dir == "Tx" || l.dir == "TX" ? #61afef : (l.dir == "…" ? #c0a060 : #98c379));
+                    color: l.dir == "ERR" ? Theme.err : (l.dir == "Tx" || l.dir == "TX" ? Theme.info : (l.dir == "…" ? Theme.warn : Theme.ok));
                 }
                 Text { horizontal-stretch: 1; text: l.text; overflow: elide; }
             }
@@ -492,7 +625,7 @@ component ChartGrid inherits Rectangle {
     if !root.has-data: Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        text: "No chart data yet — connect and poll numeric registers.";
+        text: I18n.t("暂无曲线数据——请连接并轮询数值寄存器。", "No chart data yet — connect and poll numeric registers.");
         opacity: 0.5;
     }
     ScrollView {
@@ -528,7 +661,7 @@ component OverlayChart inherits Rectangle {
     if root.series.length == 0: Text {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
-        text: "No chart data yet — connect and poll numeric registers.";
+        text: I18n.t("暂无曲线数据——请连接并轮询数值寄存器。", "No chart data yet — connect and poll numeric registers.");
         opacity: 0.5;
     }
 
@@ -554,33 +687,39 @@ component OverlayChart inherits Rectangle {
                     root.view-span = Math.min(1.0, root.view-span / 0.7);
                 }
             }
-            Button { text: "Reset"; clicked => { root.view-start = 0; root.view-span = 1.0; } }
-            Button { text: "Latest"; clicked => { root.view-start = 1 - root.view-span; } }
-            Text { text: "drag = pan · wheel = zoom · click legend = swap axis"; font-size: 11px; opacity: 0.55; vertical-alignment: center; }
+            Button { text: I18n.t("复位", "Reset"); clicked => { root.view-start = 0; root.view-span = 1.0; } }
+            Button { text: I18n.t("最新", "Latest"); clicked => { root.view-start = 1 - root.view-span; } }
+            Text { text: I18n.t("拖动平移 · 滚轮缩放 · 点击图例切换坐标轴", "drag = pan · wheel = zoom · click legend = swap axis"); font-size: 11px; opacity: 0.55; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
         }
 
         // ---- legend ----
-        HorizontalLayout {
-            height: 22px;
-            spacing: 6px;
-            for s in root.series: Rectangle {
-                width: chip-row.preferred-width + 12px;
-                border-radius: 4px;
-                background: chip-ta.has-hover ? Theme.accent-soft : Palette.alternate-background;
-                chip-ta := TouchArea {
-                    mouse-cursor: pointer;
-                    clicked => { root.axis-toggle(s.addr, s.axis == 0 ? 1 : 0); }
+        ScrollView {
+            height: 28px;
+            vertical-scrollbar-policy: ScrollBarPolicy.always-off;
+            horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
+            viewport-height: 22px;
+            HorizontalLayout {
+                height: 22px;
+                spacing: 6px;
+                for s in root.series: Rectangle {
+                    width: chip-row.preferred-width + 12px;
+                    border-radius: 4px;
+                    background: chip-ta.has-hover ? Theme.accent-soft : Palette.alternate-background;
+                    chip-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { root.axis-toggle(s.addr, s.axis == 0 ? 1 : 0); }
+                    }
+                    chip-row := HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        spacing: 5px;
+                        Rectangle { width: 10px; height: 10px; border-radius: 2px; background: s.color; y: (parent.height - self.height) / 2; }
+                        Text { text: s.name + " (" + (s.axis == 1 ? "R" : "L") + ")"; font-size: 11px; vertical-alignment: center; }
+                    }
                 }
-                chip-row := HorizontalLayout {
-                    padding-left: 6px;
-                    padding-right: 6px;
-                    spacing: 5px;
-                    Rectangle { width: 10px; height: 10px; border-radius: 2px; background: s.color; y: (parent.height - self.height) / 2; }
-                    Text { text: s.name + " (" + (s.axis == 1 ? "R" : "L") + ")"; font-size: 11px; vertical-alignment: center; }
-                }
+                Rectangle { horizontal-stretch: 1; }
             }
-            Rectangle { horizontal-stretch: 1; }
         }
 
         // ---- plot row: left axis | plot | right axis ----
@@ -655,8 +794,14 @@ component Tab inherits Rectangle {
     callback clicked;
     width: txt.preferred-width + 24px;
     height: 30px;
+    accessible-role: AccessibleRole.button;
+    accessible-label: root.label;
+    forward-focus: key-focus;
+    accessible-action-default => { root.clicked(); }
     border-radius: 6px;
     background: root.active ? Theme.accent : transparent;
+    border-width: key-focus.has-focus ? ProductDesign.focus-width : 0px;
+    border-color: Theme.warn;
     txt := Text {
         text: root.label;
         x: 12px;
@@ -665,7 +810,23 @@ component Tab inherits Rectangle {
         color: root.active ? Theme.accent-fg : Palette.foreground;
         font-weight: root.active ? 700 : 400;
     }
-    TouchArea { width: 100%; height: 100%; mouse-cursor: pointer; clicked => { root.clicked(); } }
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    key-focus := FocusScope {
+        x: 0px;
+        width: 0px;
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            return reject;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -690,9 +851,12 @@ export component MasterChartWindow inherits Window {
     in property <string> axis-rmin;
     in property <string> axis-rmax;
     in property <string> ident;       // 识别信息: Client · 连接目标 · Slave ID
+    in property <int> page-start: 0;
+    in property <int> series-total: 0;
     in-out property <bool> overlay: true;
 
     callback axis-toggle(int, int);
+    callback page-change(int);
     callback export-chart();
     callback open-derived();
     callback open-scaling();
@@ -712,7 +876,7 @@ export component MasterChartWindow inherits Window {
                 Rectangle {
                     width: 46px; height: 18px; border-radius: 4px; background: Theme.accent;
                     y: (parent.height - self.height) / 2;
-                    Text { text: "CLIENT"; color: #ffffff; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
+                    Text { text: "CLIENT"; color: Theme.accent-fg; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Text { text: root.ident; vertical-alignment: center; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
             }
@@ -724,11 +888,20 @@ export component MasterChartWindow inherits Window {
                 Button { text: root.overlay ? "● Overlay" : "Overlay"; clicked => { root.overlay = true; } }
                 Button { text: !root.overlay ? "● Grid" : "Grid"; clicked => { root.overlay = false; } }
                 Rectangle { width: 16px; }
-                Button { text: "Derived…"; clicked => { root.open-derived(); } }
-                Button { text: "Scaling…"; clicked => { root.open-scaling(); } }
-                Button { text: "Colors…"; clicked => { root.open-colors(); } }
-                Button { text: "Value Names…"; clicked => { root.open-value-names(); } }
-                Button { text: "Export Chart"; clicked => { root.export-chart(); } }
+                Button { text: I18n.t("派生量…", "Derived…"); clicked => { root.open-derived(); } }
+                Button { text: I18n.t("缩放…", "Scaling…"); clicked => { root.open-scaling(); } }
+                Button { text: I18n.t("颜色…", "Colors…"); clicked => { root.open-colors(); } }
+                Button { text: I18n.t("数值名称…", "Value Names…"); clicked => { root.open-value-names(); } }
+                Rectangle { width: 12px; }
+                Button { text: "<"; enabled: root.page-start > 0; clicked => { root.page-change(-1); } }
+                Text {
+                    text: root.series-total == 0 ? "0 / 0" : "\{root.page-start + 1}-\{Math.min(root.page-start + 12, root.series-total)} / \{root.series-total}";
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    min-width: 96px;
+                }
+                Button { text: ">"; enabled: root.page-start + 12 < root.series-total; clicked => { root.page-change(1); } }
+                Button { text: I18n.t("导出曲线", "Export Chart"); clicked => { root.export-chart(); } }
             }
         }
         if root.overlay: OverlayChart {
@@ -781,7 +954,7 @@ export component SlaveChartWindow inherits Window {
                 Rectangle {
                     width: 50px; height: 18px; border-radius: 4px; background: Theme.ok;
                     y: (parent.height - self.height) / 2;
-                    Text { text: "SERVER"; color: #ffffff; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
+                    Text { text: "SERVER"; color: Theme.accent-fg; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Text { text: root.ident; vertical-alignment: center; font-weight: 600; overflow: elide; horizontal-stretch: 1; }
             }
@@ -790,9 +963,9 @@ export component SlaveChartWindow inherits Window {
             height: 40px;
             HorizontalLayout {
                 spacing: 8px;
-                Button { text: "Scaling…"; clicked => { root.open-scaling(); } }
-                Button { text: "Colors…"; clicked => { root.open-colors(); } }
-                Button { text: "Value Names…"; clicked => { root.open-value-names(); } }
+                Button { text: I18n.t("缩放…", "Scaling…"); clicked => { root.open-scaling(); } }
+                Button { text: I18n.t("颜色…", "Colors…"); clicked => { root.open-colors(); } }
+                Button { text: I18n.t("数值名称…", "Value Names…"); clicked => { root.open-value-names(); } }
             }
         }
         ChartGrid {
@@ -813,9 +986,19 @@ export component AppWindow inherits Window {
     preferred-height: 800px;
     min-width: 1000px;
     min-height: 660px;
+    background: Theme.window;
+    default-font-family: ProductDesign.font-sans;
+    always-on-top: root.topmost-enabled;
 
     in-out property <int> active-mode: 0;
     in-out property <bool> dark: false;
+    in-out property <bool> lang-en: false;
+    in-out property <bool> topmost-enabled: false;
+    changed dark => {
+        Theme.dark = root.dark;
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+    }
+    changed lang-en => { I18n.en = root.lang-en; }
 
     // ---- Master config ----
     in-out property <int> m-transport: 0;
@@ -851,6 +1034,13 @@ export component AppWindow inherits Window {
         if i == 6 { return "FC 15 · Write Multiple Coils"; }
         return "FC 16 · Write Multiple Registers";
     }
+    pure function quantity-limit(i: int) -> int {
+        if i <= 1 { return 2000; }
+        if i <= 3 { return 125; }
+        if i <= 5 { return 1; }
+        if i == 6 { return 1968; }
+        return 123;
+    }
     in-out property <int> m-address: 0;
     in-out property <int> m-quantity: 10;
     in-out property <int> m-scanrate: 1000;
@@ -864,10 +1054,12 @@ export component AppWindow inherits Window {
     in-out property <[RegRow]> m-rows;
     in-out property <[string]> m-names;
     in-out property <bool> m-connected: false;
-    in-out property <string> m-status: "Not connected";
+    in-out property <string> m-status: I18n.t("未连接", "Not connected");
     in-out property <int> m-tx: 0;
     in-out property <int> m-rx: 0;
     in-out property <int> m-err: 0;
+    in property <string> runtime-health: "CMD 0/512 H0 R0";
+    in property <bool> runtime-loss: false;
     in-out property <[LogLine]> m-log;
     in-out property <[LogLine]> m-traffic;
     in-out property <int> m-bottom-tab: 0;
@@ -881,8 +1073,11 @@ export component AppWindow inherits Window {
     in-out property <string> m-axis-rmin;
     in-out property <string> m-axis-rmax;
     in-out property <bool> m-chart-has-right: false;
+    in-out property <int> m-chart-page-start: 0;
+    in-out property <int> m-chart-total: 0;
     in-out property <bool> m-chart-overlay: true;   // overlay vs per-register grid
     callback master-chart-axis(int, int);            // (addr, axis 0=left/1=right)
+    callback master-chart-page(int);
 
     // ---- Poll windows (MDI) ----
     in-out property <[WinTab]> windows;
@@ -952,7 +1147,7 @@ export component AppWindow inherits Window {
     in-out property <int> sc-fromid: 1;
     in-out property <int> sc-toid: 32;
     in-out property <[LogLine]> scan-rows;
-    in-out property <string> scan-status: "Idle";
+    in-out property <string> scan-status: I18n.t("空闲", "Idle");
     in-out property <bool> scan-running: false;
 
     // ---- Scaling dialog ----
@@ -1013,7 +1208,7 @@ export component AppWindow inherits Window {
     in-out property <[RegRow]> s-rows;
     in-out property <[string]> s-names;
     in-out property <bool> s-running: false;
-    in-out property <string> s-status: "Stopped";
+    in-out property <string> s-status: I18n.t("已停止", "Stopped");
     in-out property <int> s-requests: 0;
     in-out property <[LogLine]> s-log;
     in-out property <[LogLine]> s-traffic;
@@ -1042,6 +1237,19 @@ export component AppWindow inherits Window {
     // ---- Connection info popup ----
     in-out property <bool> conn-info-open: false;
     in-out property <string> conn-info-text: "";
+
+    // ---- One-hour offline authorization ----
+    in-out property <bool> license-open: false;
+    in-out property <bool> license-unlocked: false;
+    in-out property <int> license-seconds: 31536000;
+    in-out property <string> license-remaining: "365d 00h";
+    in property <string> license-machine-code;
+    in-out property <string> license-info;
+    in-out property <string> license-validity-zh;
+    in-out property <string> license-validity-en;
+    in-out property <string> license-error;
+    callback license-import();
+    callback license-copy-machine-code();
 
     // ---- Callbacks ----
     callback master-connect();
@@ -1119,7 +1327,12 @@ export component AppWindow inherits Window {
         width: 100%;
         height: 100%;
         // Grab focus on startup so the Ctrl shortcuts work before any field is clicked.
-        init => { self.focus(); }
+        init => {
+            Theme.dark = root.dark;
+            I18n.en = root.lang-en;
+            Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+            self.focus();
+        }
         key-pressed(event) => {
             if event.modifiers.control && event.text == "s" {
                 root.key-save();
@@ -1142,58 +1355,112 @@ export component AppWindow inherits Window {
         height: 100%;
 
         Rectangle {
-            height: 50px;
-            background: Theme.accent;
-            // Title group, anchored left and vertically centred (绝对定位保证 logo 与文字同轴居中)。
-            Image {
-                source: @image-url("logo.svg");
-                x: 18px;
-                width: 30px;
-                height: 30px;
-                y: (parent.height - self.height) / 2;
-            }
-            Text {
-                text: "Modbus Tools";
-                x: 56px;
-                y: (parent.height - self.height) / 2;
-                color: Theme.accent-fg;
-                font-size: 21px;
-                font-weight: 800;
-            }
-            // Dark/light toggle, left of the mode switch.
-            Rectangle {
-                width: 84px;
-                height: 30px;
-                x: parent.width - 260px - 14px - 10px - self.width;
-                y: (parent.height - self.height) / 2;
-                border-radius: 15px;
-                background: dta.has-hover ? #ffffff40 : #ffffff22;
-                border-width: 1px;
-                border-color: #ffffff40;
-                Text {
-                    text: root.dark ? "Light" : "Dark";
-                    width: 100%; height: 100%;
-                    horizontal-alignment: center; vertical-alignment: center;
-                    color: Theme.accent-fg; font-weight: 700; font-size: 13px;
-                }
-                dta := TouchArea {
-                    width: 100%; height: 100%;
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.dark = !root.dark;
-                        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+            height: ProductDesign.product-header-height;
+            background: Theme.header;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 14px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 10px;
+                Rectangle {
+                    min-width: 26px;
+                    preferred-width: 26px;
+                    max-width: 26px;
+                    horizontal-stretch: 0;
+                    Image {
+                        source: @image-url("logo.svg");
+                        width: 26px;
+                        height: 26px;
+                        y: (parent.height - self.height) / 2;
                     }
                 }
-            }
-            // Mode switch, anchored right and explicitly vertically centred.
-            ModeSwitch {
-                width: 260px;
-                height: 46px;
-                x: parent.width - self.width - 14px;
-                y: (parent.height - self.height) / 2;
-                left-text: "Client";
-                right-text: "Server";
-                selected <=> root.active-mode;
+                Text {
+                    text: "Modbus Tools";
+                    color: Theme.accent-fg;
+                    font-size: ProductDesign.product-title-font-size;
+                    font-weight: 800;
+                    vertical-alignment: center;
+                    horizontal-stretch: 0;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                license-chip := Rectangle {
+                    min-width: 104px;
+                    preferred-width: 104px;
+                    max-width: 104px;
+                    height: ProductDesign.toolbar-control-height;
+                    horizontal-stretch: 0;
+                    border-radius: ProductDesign.radius-sm;
+                    background: license-chip-area.pressed ? ProductDesign.on-brand-border
+                        : root.license-unlocked ? Theme.ok.with-alpha(0.24)
+                        : root.license-seconds <= 600 ? Theme.warn.with-alpha(0.26)
+                        : ProductDesign.on-brand-faint;
+                    border-width: license-chip-focus.has-focus ? ProductDesign.focus-width : 1px;
+                    border-color: license-chip-focus.has-focus ? Theme.warn
+                        : root.license-unlocked ? Theme.ok
+                        : root.license-seconds <= 600 ? Theme.warn
+                        : ProductDesign.on-brand-border;
+                    accessible-role: AccessibleRole.button;
+                    accessible-label: root.license-unlocked
+                        ? I18n.t("已授权", "Licensed")
+                        : I18n.t("剩余试用时间 ", "Trial remaining ") + root.license-remaining;
+                    forward-focus: license-chip-focus;
+                    accessible-action-default => { root.license-open = true; }
+                    animate background { duration: 80ms; }
+                    Text {
+                        width: 100%;
+                        height: 100%;
+                        text: root.license-unlocked
+                            ? I18n.t("已授权", "Licensed")
+                            : I18n.t("试用 ", "Trial ") + root.license-remaining;
+                        color: Theme.accent-fg;
+                        font-size: ProductDesign.font-sm;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    license-chip-area := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.license-error = "";
+                            root.license-open = true;
+                        }
+                    }
+                    license-chip-focus := FocusScope {
+                        x: 0px;
+                        width: 0px;
+                        key-pressed(event) => {
+                            if event.text == Key.Return || event.text == " " {
+                                root.license-error = "";
+                                root.license-open = true;
+                                return accept;
+                            }
+                            return reject;
+                        }
+                    }
+                }
+                Rectangle {
+                    min-width: 62px; preferred-width: 62px; max-width: 62px;
+                    ProductHeaderCheck { fixed-width: 62px; text: I18n.t("置顶", "Pin"); checked <=> root.topmost-enabled; }
+                }
+                Rectangle {
+                    min-width: 62px; preferred-width: 62px; max-width: 62px;
+                    ProductLanguageSwitch { fixed-width: 62px; en <=> root.lang-en; }
+                }
+                Rectangle {
+                    min-width: 88px; preferred-width: 88px; max-width: 88px;
+                    ProductThemeSwitch { fixed-width: 88px; dark <=> root.dark; }
+                }
+                Rectangle {
+                    min-width: 220px; preferred-width: 220px; max-width: 220px;
+                    ModeSwitch {
+                        fixed-width: 220px;
+                        height: ProductDesign.toolbar-control-height;
+                        left-text: I18n.t("主站", "Client");
+                        right-text: I18n.t("从站", "Server");
+                        selected <=> root.active-mode;
+                    }
+                }
             }
         }
 
@@ -1219,51 +1486,83 @@ export component AppWindow inherits Window {
                         padding-bottom: 14px;
                         spacing: 6px;
 
-                        Text { text: "Connection"; font-weight: 800; font-size: 15px; }
-                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU", "Modbus UDP", "Modbus RTU over TCP", "Modbus RTU over UDP"]; current-index <=> root.m-transport; } }
-                        if root.m-transport != 1: Field { label: "Host:"; LineEdit { text <=> root.m-host; } }
-                        if root.m-transport != 1: Field { label: "Port:"; SpinBox { value <=> root.m-port; minimum: 1; maximum: 65535; } }
-                        if root.m-transport == 0: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.m-tls; } Rectangle { horizontal-stretch: 1; } } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "CA file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-ca; placeholder-text: "server/CA PEM (blank = system roots)"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-ca(); } } } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "Domain:"; LineEdit { text <=> root.m-tls-domain; placeholder-text: "SNI (blank = host)"; } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "Version:"; ComboBox { model: ["Auto (1.2 + 1.3)", "TLS 1.2 only", "TLS 1.3 only"]; current-index <=> root.m-tls-version; } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "Cipher:"; ComboBox { model: ["Auto (strongest)", "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.m-tls-cipher; } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: ""; CheckBox { text: "Skip cert verify"; checked <=> root.m-tls-skip; } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "Client cert:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-cert; placeholder-text: "PEM (blank = no mutual TLS)"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-cert(); } } } }
-                        if root.m-transport == 0 && root.m-tls: Field { label: "Client key:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-key; placeholder-text: "PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-key(); } } } }
-                        if root.m-transport == 1: Field { label: "Serial:"; LineEdit { text <=> root.m-serial; placeholder-text: "COM1"; } }
-                        if root.m-transport == 1: Field { label: "Baud:"; ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.m-baud-index; } }
-                        if root.m-transport == 1: Field { label: "Data bits:"; ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.m-databits-index; } }
-                        if root.m-transport == 1: Field { label: "Parity:"; ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.m-parity; } }
-                        if root.m-transport == 1: Field { label: "Stop bits:"; ComboBox { model: ["1", "2"]; current-index <=> root.m-stopbits; } }
+                        Text { text: I18n.t("连接", "Connection"); font-weight: 800; font-size: 15px; }
+                        Field { label: I18n.t("模式：", "Mode:"); ComboBox { model: ["Modbus RTU", "Modbus TCP", "Modbus UDP", "Modbus RTU over TCP", "Modbus RTU over UDP"]; current-index <=> root.m-transport; } }
+                        if root.m-transport != 0: Field { label: I18n.t("主机：", "Host:"); LineEdit { text <=> root.m-host; } }
+                        if root.m-transport != 0: Field { label: I18n.t("端口：", "Port:"); SpinBox { value <=> root.m-port; minimum: 1; maximum: 65535; } }
+                        if root.m-transport == 1: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.m-tls; } Rectangle { horizontal-stretch: 1; } } }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("CA 文件：", "CA file:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-ca; placeholder-text: I18n.t("服务器/CA PEM（空白=系统信任库）", "server/CA PEM (blank = system roots)"); } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-ca(); } } } }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("域名：", "Domain:"); LineEdit { text <=> root.m-tls-domain; placeholder-text: I18n.t("SNI（空白=主机）", "SNI (blank = host)"); } }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("版本：", "Version:"); ComboBox { model: [I18n.t("自动（1.2 + 1.3）", "Auto (1.2 + 1.3)"), I18n.t("仅 TLS 1.2", "TLS 1.2 only"), I18n.t("仅 TLS 1.3", "TLS 1.3 only")]; current-index <=> root.m-tls-version; } }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("密码套件：", "Cipher:"); ComboBox { model: [I18n.t("自动（最强）", "Auto (strongest)"), "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.m-tls-cipher; } }
+                        if root.m-transport == 1 && root.m-tls: Field {
+                            label: "";
+                            CheckBox {
+                                text: I18n.t("不安全：跳过证书验证", "Insecure: skip certificate verification");
+                                checked <=> root.m-tls-skip;
+                                accessible-description: I18n.t(
+                                    "仅用于隔离测试环境；服务器身份不会被验证",
+                                    "For isolated test environments only; server identity will not be verified"
+                                );
+                            }
+                        }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("客户端证书：", "Client cert:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-cert; placeholder-text: I18n.t("PEM（空白=不启用双向 TLS）", "PEM (blank = no mutual TLS)"); } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-cert(); } } } }
+                        if root.m-transport == 1 && root.m-tls: Field { label: I18n.t("客户端私钥：", "Client key:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.m-tls-key; placeholder-text: "PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-m-tls-key(); } } } }
+                        if root.m-transport == 0: Field { label: I18n.t("串口：", "Serial:"); LineEdit { text <=> root.m-serial; placeholder-text: "COM1"; } }
+                        if root.m-transport == 0: Field { label: I18n.t("波特率：", "Baud:"); ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.m-baud-index; } }
+                        if root.m-transport == 0: Field { label: I18n.t("数据位：", "Data bits:"); ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.m-databits-index; } }
+                        if root.m-transport == 0: Field { label: I18n.t("校验：", "Parity:"); ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.m-parity; } }
+                        if root.m-transport == 0: Field { label: I18n.t("停止位：", "Stop bits:"); ComboBox { model: ["1", "2"]; current-index <=> root.m-stopbits; } }
 
                         Rectangle { height: 8px; }
-                        Text { text: "Read definition"; font-weight: 800; font-size: 15px; }
-                        Field { label: "Slave ID:"; SpinBox { value <=> root.m-slave-id; minimum: 0; maximum: 247; } }
-                        Field { label: "Function:"; ComboBox {
+                        Text { text: I18n.t("读写定义", "Read definition"); font-weight: 800; font-size: 15px; }
+                        Field { label: I18n.t("从站 ID：", "Slave ID:"); SpinBox { value <=> root.m-slave-id; minimum: 0; maximum: 247; } }
+                        Field { label: I18n.t("功能码：", "Function:"); ComboBox {
                             model: ["01 Read Coils", "02 Read Discrete Inputs", "03 Read Holding Registers", "04 Read Input Registers", "05 Write Single Coil", "06 Write Single Register", "15 Write Multiple Coils", "16 Write Multiple Registers"];
                             current-index <=> root.m-function;
-                            selected => { root.wl-resize(root.m-quantity); root.master-readdef-changed(); }
+                            selected => {
+                                root.m-quantity = min(root.m-quantity, min(root.quantity-limit(root.m-function), 65536 - root.m-address));
+                                if root.m-function == 4 || root.m-function == 5 {
+                                    root.m-quantity = 1;
+                                }
+                                root.wl-resize(root.m-quantity);
+                                root.master-readdef-changed();
+                            }
                         } }
-                        Field { label: "Address:"; SpinBox { value <=> root.m-address; minimum: 0; maximum: 65535; edited => { root.master-readdef-changed(); } } }
-                        Field { label: "Quantity:"; SpinBox { value <=> root.m-quantity; minimum: 1; maximum: 2000; edited => { root.wl-resize(self.value); root.master-readdef-changed(); } } }
-                        Field { label: "Scan ms:"; SpinBox { value <=> root.m-scanrate; minimum: 20; maximum: 60000; step-size: 100; edited => { root.master-readdef-changed(); } } }
-                        Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.m-format; selected => { root.master-format-changed(); } } }
+                        Field { label: I18n.t("地址：", "Address:"); SpinBox {
+                            value <=> root.m-address;
+                            minimum: 0;
+                            maximum: 65535;
+                            edited => {
+                                root.m-quantity = min(root.m-quantity, min(root.quantity-limit(root.m-function), 65536 - self.value));
+                                root.wl-resize(root.m-quantity);
+                                root.master-readdef-changed();
+                            }
+                        } }
+                        Field { label: I18n.t("数量：", "Quantity:"); SpinBox {
+                            value <=> root.m-quantity;
+                            minimum: 1;
+                            maximum: min(root.quantity-limit(root.m-function), 65536 - root.m-address);
+                            enabled: root.m-function != 4 && root.m-function != 5;
+                            edited => { root.wl-resize(self.value); root.master-readdef-changed(); }
+                        } }
+                        Field { label: I18n.t("扫描周期 ms：", "Scan ms:"); SpinBox { value <=> root.m-scanrate; minimum: 20; maximum: 60000; step-size: 100; edited => { root.master-readdef-changed(); } } }
+                        Field { label: I18n.t("格式：", "Format:"); ComboBox { model: Fmt.list; current-index <=> root.m-format; selected => { root.master-format-changed(); } } }
                         // 连接鲁棒性(下次连接时生效)
-                        Field { label: "Timeout ms:"; SpinBox { value <=> root.m-timeout; minimum: 20; maximum: 60000; step-size: 100; } }
-                        Field { label: "Reconnect:"; CheckBox { checked <=> root.m-reconnect; text: root.m-reconnect ? "auto" : "off"; } }
-                        Field { label: "Reconn ms:"; SpinBox { value <=> root.m-reconnect-ms; minimum: 200; maximum: 60000; step-size: 500; } }
+                        Field { label: I18n.t("超时 ms：", "Timeout ms:"); SpinBox { value <=> root.m-timeout; minimum: 20; maximum: 60000; step-size: 100; } }
+                        Field { label: I18n.t("自动重连：", "Reconnect:"); CheckBox { checked <=> root.m-reconnect; text: root.m-reconnect ? I18n.t("开启", "auto") : I18n.t("关闭", "off"); } }
+                        Field { label: I18n.t("重连间隔 ms：", "Reconn ms:"); SpinBox { value <=> root.m-reconnect-ms; minimum: 200; maximum: 60000; step-size: 500; } }
 
                         Rectangle { height: 10px; }
                         AccentButton {
-                            text: root.m-connected ? "Disconnect" : (root.m-function < 4 ? "Connect & Poll" : "Connect (write)");
+                            text: root.m-connected ? I18n.t("断开", "Disconnect") : (root.m-function < 4 ? I18n.t("连接并轮询", "Connect & Poll") : I18n.t("连接（写入）", "Connect (write)"));
                             height: 36px;
                             clicked => { root.m-connected ? root.master-disconnect() : root.master-connect(); }
                         }
                         HorizontalLayout {
                             spacing: 8px;
-                            Button { text: "Write…"; horizontal-stretch: 1; clicked => { root.wd-func = root.m-function == 0 ? 0 : 1; root.wd-open = true; } }
-                            Button { text: "Scan…"; horizontal-stretch: 1; clicked => { root.scan-open = true; } }
+                            Button { text: I18n.t("写入…", "Write…"); horizontal-stretch: 1; clicked => { root.wd-func = root.m-function == 0 ? 0 : 1; root.wd-open = true; } }
+                            Button { text: I18n.t("扫描…", "Scan…"); horizontal-stretch: 1; clicked => { root.scan-open = true; } }
                         }
                         Rectangle { vertical-stretch: 1; min-height: 8px; }
 
@@ -1277,11 +1576,11 @@ export component AppWindow inherits Window {
                             stats-vl := VerticalLayout {
                                 padding: 10px;
                                 spacing: 5px;
-                                Text { text: "Statistics"; font-weight: 800; font-size: 14px; }
-                                HorizontalLayout { Text { text: "Polls"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-tx}"; font-weight: 600; } }
-                                HorizontalLayout { Text { text: "Responses"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-rx}"; font-weight: 600; } }
-                                HorizontalLayout { Text { text: "Errors"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-err}"; font-weight: 600; color: root.m-err > 0 ? Theme.err : Palette.foreground; } }
-                                HorizontalLayout { Text { text: "Success"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.m-tx > 0 ? "\{Math.round(root.m-rx / root.m-tx * 100)}%" : "—"; font-weight: 600; color: Theme.ok; } }
+                                Text { text: I18n.t("统计", "Statistics"); font-weight: 800; font-size: 14px; }
+                                HorizontalLayout { Text { text: I18n.t("轮询", "Polls"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-tx}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: I18n.t("响应", "Responses"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-rx}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: I18n.t("错误", "Errors"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.m-err}"; font-weight: 600; color: root.m-err > 0 ? Theme.err : Palette.foreground; } }
+                                HorizontalLayout { Text { text: I18n.t("成功率", "Success"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.m-tx > 0 ? "\{Math.round(root.m-rx / root.m-tx * 100)}%" : "—"; font-weight: 600; color: Theme.ok; } }
                             }
                         }
                     }
@@ -1311,7 +1610,7 @@ export component AppWindow inherits Window {
                             Rectangle {
                                 width: 8px; height: 8px; border-radius: 4px;
                                 y: (parent.height - self.height) / 2;
-                                background: w.connected ? #98c379 : #888888;
+                                background: w.connected ? Theme.ok : Theme.text-muted;
                             }
                             wtxt := Text {
                                 text: w.title;
@@ -1336,23 +1635,29 @@ export component AppWindow inherits Window {
                         }
                     }
                     } } // close tab HorizontalLayout + ScrollView
-                    Button { text: "+ New"; clicked => { root.new-window(); } }
-                    Button { text: "Float"; clicked => { root.float-window(); } }
+                    Button { text: I18n.t("+ 新建", "+ New"); clicked => { root.new-window(); } }
+                    Button { text: I18n.t("浮动", "Float"); clicked => { root.float-window(); } }
                 }
 
                 // 工具栏：横向 ScrollView 包裹，窄窗口下可横向滚动到全部按钮(不再挤出/裁剪)
-                ScrollView {
-                    height: 40px;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Button { text: "Save Workspace"; clicked => { root.save-workspace(); } }
-                        Button { text: "Open Workspace"; clicked => { root.open-workspace(); } }
-                        Button { text: "Import"; clicked => { root.import-csv(); } }
-                        Button { text: "Export"; clicked => { root.export-csv(); } }
-                        Rectangle { width: 16px; }
-                        Button { text: "Log…"; clicked => { root.log-open = true; } }
-                        Button { text: "View…"; clicked => { root.vw-open = true; } }
-                        Button { text: "FC22/23…"; enabled: root.m-connected; clicked => { root.adv-open = true; } }
+                ToolBar {
+                    ScrollView {
+                        width: 100%; height: 100%;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: 8px;
+                            ToolAction { text: I18n.t("保存工作区", "Save Workspace"); action-width: 132px; clicked => { root.save-workspace(); } }
+                            ToolAction { text: I18n.t("打开工作区", "Open Workspace"); action-width: 132px; clicked => { root.open-workspace(); } }
+                            ToolAction { text: I18n.t("导入", "Import"); action-width: 88px; clicked => { root.import-csv(); } }
+                            ToolAction { text: I18n.t("导出", "Export"); action-width: 88px; clicked => { root.export-csv(); } }
+                            ToolAction { text: I18n.t("视图…", "View…"); action-width: 92px; clicked => { root.vw-open = true; } }
+                            Rectangle { width: 8px; }
+                            ToolAction { text: I18n.t("记录…", "Log…"); action-width: 92px; clicked => { root.log-open = true; } }
+                            ToolAction { text: "FC22/23…"; action-width: 116px; enabled: root.m-connected; clicked => { root.adv-open = true; } }
+                        }
                     }
                 }
 
@@ -1373,7 +1678,7 @@ export component AppWindow inherits Window {
                             height: 20px;
                             Text {
                                 text: root.m-function >= 4 ? "WRITE" : "READ";
-                                color: #ffffff; font-size: 11px; font-weight: 800;
+                                color: Theme.accent-fg; font-size: 11px; font-weight: 800;
                                 horizontal-alignment: center; vertical-alignment: center;
                             }
                         }
@@ -1420,9 +1725,9 @@ export component AppWindow inherits Window {
                                 padding-left: 10px;
                                 padding-right: 10px;
                                 spacing: 10px;
-                                Text { width: 110px; text: "Address"; vertical-alignment: center; font-weight: 700; }
-                                Text { horizontal-stretch: 1; text: "Value to write"; vertical-alignment: center; font-weight: 700; }
-                                Text { width: 80px; text: "Auto-inc"; vertical-alignment: center; font-weight: 700; }
+                                Text { width: 110px; text: I18n.t("地址", "Address"); vertical-alignment: center; font-weight: 700; }
+                                Text { horizontal-stretch: 1; text: I18n.t("写入值", "Value to write"); vertical-alignment: center; font-weight: 700; }
+                                Text { width: 80px; text: I18n.t("自增", "Auto-inc"); vertical-alignment: center; font-weight: 700; }
                             }
                         }
                         ListView {
@@ -1455,7 +1760,7 @@ export component AppWindow inherits Window {
                             height: 40px;
                             padding: 6px;
                             spacing: 10px;
-                            Button { text: "Write Once"; enabled: root.m-connected; clicked => { root.master-write-once(); } }
+                            Button { text: I18n.t("写入一次", "Write Once"); enabled: root.m-connected; clicked => { root.master-write-once(); } }
                             Button {
                                 text: root.wl-active ? "Stop Auto" : "Start Auto";
                                 enabled: root.m-connected;
@@ -1465,12 +1770,12 @@ export component AppWindow inherits Window {
                                 }
                             }
                             Rectangle { horizontal-stretch: 1; }
-                            Text { text: "Auto ms"; vertical-alignment: center; }
+                            Text { text: I18n.t("自动周期 ms", "Auto ms"); vertical-alignment: center; }
                             SpinBox { value <=> root.wl-interval; minimum: 50; maximum: 60000; step-size: 100; width: 100px; }
                             Text {
                                 text: root.wl-active ? "running" : "stopped";
                                 vertical-alignment: center;
-                                color: root.wl-active ? #98c379 : Palette.foreground;
+                                color: root.wl-active ? Theme.ok : Palette.foreground;
                                 font-weight: 700;
                             }
                         }
@@ -1478,10 +1783,10 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     spacing: 6px;
-                    Tab { label: "Event Log"; active: root.m-bottom-tab == 0; clicked => { root.m-bottom-tab = 0; } }
-                    Tab { label: "Communication Traffic"; active: root.m-bottom-tab == 1; clicked => { root.m-bottom-tab = 1; } }
+                    Tab { label: I18n.t("事件日志", "Event Log"); active: root.m-bottom-tab == 0; clicked => { root.m-bottom-tab = 0; } }
+                    Tab { label: I18n.t("通信流量", "Communication Traffic"); active: root.m-bottom-tab == 1; clicked => { root.m-bottom-tab = 1; } }
                     Rectangle { horizontal-stretch: 1; }
-                    Button { text: "Chart Window ↗"; clicked => { root.open-master-chart(); } }
+                    Button { text: I18n.t("曲线窗口 ↗", "Chart Window ↗"); clicked => { root.open-master-chart(); } }
                 }
                 if root.m-bottom-tab == 0: LogPanel { height: 190px; lines: root.m-log; }
                 if root.m-bottom-tab == 1: LogPanel { height: 190px; lines: root.m-traffic; }
@@ -1498,15 +1803,16 @@ export component AppWindow inherits Window {
                         padding-left: 12px;
                         padding-right: 12px;
                         spacing: 18px;
-                        Rectangle {
-                            width: 9px; height: 9px; border-radius: 4px;
+                        ProductStatusDot {
                             y: (parent.height - self.height) / 2;
-                            background: root.m-connected ? #5fb85f : #b0b0b0;
+                            active: root.m-connected;
+                            warning: root.m-err > 0 || root.runtime-loss;
                         }
                         Text { horizontal-stretch: 1; text: root.m-status; vertical-alignment: center; overflow: elide; font-size: 12px; }
+                        Text { text: root.runtime-health; color: root.runtime-loss ? Theme.err : Palette.foreground; vertical-alignment: center; font-size: 11px; }
                         Text { text: "Tx: \{root.m-tx}"; vertical-alignment: center; font-size: 12px; }
                         Text { text: "Rx: \{root.m-rx}"; vertical-alignment: center; font-size: 12px; }
-                        Text { text: "Err: \{root.m-err}"; vertical-alignment: center; font-size: 12px; color: root.m-err > 0 ? #e06c75 : Palette.foreground; }
+                        Text { text: "Err: \{root.m-err}"; vertical-alignment: center; font-size: 12px; color: root.m-err > 0 ? Theme.err : Palette.foreground; }
                     }
                 }
             }
@@ -1534,40 +1840,49 @@ export component AppWindow inherits Window {
                         padding-bottom: 14px;
                         spacing: 6px;
 
-                        Text { text: "Server connection"; font-weight: 800; font-size: 15px; }
-                        Field { label: "Mode:"; ComboBox { model: ["Modbus TCP", "Modbus RTU"]; current-index <=> root.s-transport; } }
-                        if root.s-transport == 0: Field { label: "Bind addr:"; LineEdit { text <=> root.s-host; } }
-                        if root.s-transport == 0: Field { label: "Port:"; SpinBox { value <=> root.s-port; minimum: 1; maximum: 65535; } }
-                        if root.s-transport == 0: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.s-tls; } Rectangle { horizontal-stretch: 1; } } }
-                        if root.s-transport == 0 && root.s-tls: Field { label: "Cert file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cert; placeholder-text: "server cert PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cert(); } } } }
-                        if root.s-transport == 0 && root.s-tls: Field { label: "Key file:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-key; placeholder-text: "private key PEM"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-key(); } } } }
-                        if root.s-transport == 0 && root.s-tls: Field { label: "Version:"; ComboBox { model: ["Auto (1.2 + 1.3)", "TLS 1.2 only", "TLS 1.3 only"]; current-index <=> root.s-tls-version; } }
-                        if root.s-transport == 0 && root.s-tls: Field { label: "Cipher:"; ComboBox { model: ["Auto (strongest)", "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.s-tls-cipher; } }
-                        if root.s-transport == 0 && root.s-tls: Field { label: ""; CheckBox { text: "Require client cert"; checked <=> root.s-tls-require; } }
-                        if root.s-transport == 0 && root.s-tls && root.s-tls-require: Field { label: "Client CA:"; HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cacert; placeholder-text: "CA PEM to verify clients"; } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cacert(); } } } }
-                        if root.s-transport == 1: Field { label: "Serial:"; LineEdit { text <=> root.s-serial; placeholder-text: "COM1"; } }
-                        if root.s-transport == 1: Field { label: "Baud:"; ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.s-baud-index; } }
-                        if root.s-transport == 1: Field { label: "Data bits:"; ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.s-databits-index; } }
-                        if root.s-transport == 1: Field { label: "Parity:"; ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.s-parity; } }
-                        if root.s-transport == 1: Field { label: "Stop bits:"; ComboBox { model: ["1", "2"]; current-index <=> root.s-stopbits; } }
-                        Field { label: "Unit ID:"; SpinBox { value <=> root.s-unit-id; minimum: 0; maximum: 247; } }
-                        if root.s-transport == 0: Field { label: ""; CheckBox { text: "Ignore Unit ID"; checked <=> root.s-ignore-unit-id; } }
+                        Text { text: I18n.t("从站连接", "Server connection"); font-weight: 800; font-size: 15px; }
+                        Field { label: I18n.t("模式：", "Mode:"); ComboBox { model: ["Modbus RTU", "Modbus TCP", "Modbus UDP", "Modbus RTU over TCP", "Modbus RTU over UDP"]; current-index <=> root.s-transport; } }
+                        if root.s-transport != 0: Field {
+                            label: I18n.t("本机监听地址：", "Local listen:");
+                            LineEdit {
+                                text <=> root.s-host;
+                                placeholder-text: I18n.t("0.0.0.0（监听全部本机网卡）", "0.0.0.0 (all local interfaces)");
+                            }
+                        }
+                        if root.s-transport != 0: Field { label: I18n.t("端口：", "Port:"); SpinBox { value <=> root.s-port; minimum: 1; maximum: 65535; } }
+                        if root.s-transport == 1: Field { label: "TLS:"; HorizontalLayout { spacing: 8px; CheckBox { text: "Modbus/TCP TLS"; checked <=> root.s-tls; } Rectangle { horizontal-stretch: 1; } } }
+                        if root.s-transport == 1 && root.s-tls: Field { label: I18n.t("证书文件：", "Cert file:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cert; placeholder-text: I18n.t("服务器证书 PEM", "server cert PEM"); } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cert(); } } } }
+                        if root.s-transport == 1 && root.s-tls: Field { label: I18n.t("私钥文件：", "Key file:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-key; placeholder-text: I18n.t("私钥 PEM", "private key PEM"); } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-key(); } } } }
+                        if root.s-transport == 1 && root.s-tls: Field { label: I18n.t("版本：", "Version:"); ComboBox { model: [I18n.t("自动（1.2 + 1.3）", "Auto (1.2 + 1.3)"), I18n.t("仅 TLS 1.2", "TLS 1.2 only"), I18n.t("仅 TLS 1.3", "TLS 1.3 only")]; current-index <=> root.s-tls-version; } }
+                        if root.s-transport == 1 && root.s-tls: Field { label: I18n.t("密码套件：", "Cipher:"); ComboBox { model: [I18n.t("自动（最强）", "Auto (strongest)"), "AES-128-GCM", "AES-256-GCM", "ChaCha20-256"]; current-index <=> root.s-tls-cipher; } }
+                        if root.s-transport == 1 && root.s-tls: Field { label: ""; CheckBox { text: I18n.t("要求客户端证书", "Require client cert"); checked <=> root.s-tls-require; } }
+                        if root.s-transport == 1 && root.s-tls && root.s-tls-require: Field { label: I18n.t("客户端 CA：", "Client CA:"); HorizontalLayout { spacing: 4px; LineEdit { text <=> root.s-tls-cacert; placeholder-text: I18n.t("用于验证客户端的 CA PEM", "CA PEM to verify clients"); } Button { text: "…"; width: 30px; clicked => { root.pick-s-tls-cacert(); } } } }
+                        if root.s-transport == 0: Field { label: I18n.t("串口：", "Serial:"); LineEdit { text <=> root.s-serial; placeholder-text: "COM1"; } }
+                        if root.s-transport == 0: Field { label: I18n.t("波特率：", "Baud:"); ComboBox { model: ["9600", "19200", "38400", "57600", "115200"]; current-index <=> root.s-baud-index; } }
+                        if root.s-transport == 0: Field { label: I18n.t("数据位：", "Data bits:"); ComboBox { model: ["8", "7", "6", "5"]; current-index <=> root.s-databits-index; } }
+                        if root.s-transport == 0: Field { label: I18n.t("校验：", "Parity:"); ComboBox { model: ["None", "Even", "Odd"]; current-index <=> root.s-parity; } }
+                        if root.s-transport == 0: Field { label: I18n.t("停止位：", "Stop bits:"); ComboBox { model: ["1", "2"]; current-index <=> root.s-stopbits; } }
+                        Field { label: I18n.t("单元 ID：", "Unit ID:"); SpinBox { value <=> root.s-unit-id; minimum: 0; maximum: 247; } }
+                        if root.s-transport == 1 || root.s-transport == 2: Field { label: ""; CheckBox { text: I18n.t("忽略单元 ID", "Ignore Unit ID"); checked <=> root.s-ignore-unit-id; } }
 
                         Rectangle { height: 8px; }
-                        Text { text: "Memory view"; font-weight: 800; font-size: 15px; }
-                        Field { label: "Table:"; ComboBox { model: ["01/05/15 Coils", "02 Discrete Inputs", "03/06/16 Holding Registers", "04 Input Registers"]; current-index <=> root.s-area; selected => { root.slave-view-changed(); } } }
-                        Field { label: "Address:"; SpinBox { value <=> root.s-address; minimum: 0; maximum: 65535; edited => { root.slave-view-changed(); } } }
-                        Field { label: "Quantity:"; SpinBox { value <=> root.s-quantity; minimum: 1; maximum: 2000; edited => { root.slave-view-changed(); } } }
-                        Field { label: "Format:"; ComboBox { model: Fmt.list; current-index <=> root.s-format; selected => { root.slave-view-changed(); } } }
+                        Text { text: I18n.t("内存视图", "Memory view"); font-weight: 800; font-size: 15px; }
+                        Field { label: I18n.t("数据表：", "Table:"); ComboBox { model: ["01/05/15 Coils", "02 Discrete Inputs", "03/06/16 Holding Registers", "04 Input Registers"]; current-index <=> root.s-area; selected => { root.slave-view-changed(); } } }
+                        Field { label: I18n.t("地址：", "Address:"); SpinBox { value <=> root.s-address; minimum: 0; maximum: 65535; edited => { root.slave-view-changed(); } } }
+                        Field { label: I18n.t("数量：", "Quantity:"); SpinBox { value <=> root.s-quantity; minimum: 1; maximum: 2000; edited => { root.slave-view-changed(); } } }
+                        Field { label: I18n.t("格式：", "Format:"); ComboBox { model: Fmt.list; current-index <=> root.s-format; selected => { root.slave-view-changed(); } } }
 
                         Rectangle { height: 10px; }
                         AccentButton {
-                            text: root.s-running ? "Stop server" : "Start server";
+                            text: root.s-running ? I18n.t("停止从站", "Stop server") : I18n.t("启动从站", "Start server");
                             height: 36px;
                             clicked => { root.s-running ? root.slave-stop() : root.slave-start(); }
                         }
                         Text {
-                            text: "Edit a Value cell and press Enter to set a register. Masters can poll and write live.";
+                            text: I18n.t(
+                                "编辑数值单元格并按 Enter 写入寄存器；主站可实时轮询和写入。",
+                                "Edit a Value cell and press Enter to set a register. Masters can poll and write live."
+                            );
                             wrap: word-wrap;
                             font-size: 12px;
                             opacity: 0.65;
@@ -1584,10 +1899,10 @@ export component AppWindow inherits Window {
                             sstats-vl := VerticalLayout {
                                 padding: 10px;
                                 spacing: 5px;
-                                Text { text: "Statistics"; font-weight: 800; font-size: 14px; }
-                                HorizontalLayout { Text { text: "Requests"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.s-requests}"; font-weight: 600; } }
-                                HorizontalLayout { Text { text: "Running"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.s-running ? "Yes" : "No"; font-weight: 600; color: root.s-running ? Theme.ok : Palette.foreground; } }
-                                HorizontalLayout { Text { text: "Simulating"; opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.sim-active ? "Yes" : "No"; font-weight: 600; color: root.sim-active ? Theme.warn : Palette.foreground; } }
+                                Text { text: I18n.t("统计", "Statistics"); font-weight: 800; font-size: 14px; }
+                                HorizontalLayout { Text { text: I18n.t("请求", "Requests"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: "\{root.s-requests}"; font-weight: 600; } }
+                                HorizontalLayout { Text { text: I18n.t("运行", "Running"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.s-running ? I18n.t("是", "Yes") : I18n.t("否", "No"); font-weight: 600; color: root.s-running ? Theme.ok : Palette.foreground; } }
+                                HorizontalLayout { Text { text: I18n.t("仿真", "Simulating"); opacity: 0.7; } Rectangle { horizontal-stretch: 1; } Text { text: root.sim-active ? I18n.t("是", "Yes") : I18n.t("否", "No"); font-weight: 600; color: root.sim-active ? Theme.warn : Palette.foreground; } }
                             }
                         }
                     }
@@ -1634,17 +1949,28 @@ export component AppWindow inherits Window {
                         }
                     }
                     } } // close tab HorizontalLayout + ScrollView
-                    Button { text: "+ New"; clicked => { root.new-slave-window(); } }
-                    Button { text: "Float"; clicked => { root.float-slave-window(); } }
+                    Button { text: I18n.t("+ 新建", "+ New"); clicked => { root.new-slave-window(); } }
+                    Button { text: I18n.t("浮动", "Float"); clicked => { root.float-slave-window(); } }
                 }
 
-                ScrollView {
-                    height: 40px;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Button { text: "Simulate…"; clicked => { root.sim-open = true; } }
-                        Button { text: "Import"; clicked => { root.import-csv(); } }
-                        Button { text: "Export"; clicked => { root.export-csv(); } }
+                ToolBar {
+                    ScrollView {
+                        width: 100%; height: 100%;
+                        HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: 8px;
+                            ToolAction { text: I18n.t("保存工作区", "Save Workspace"); action-width: 132px; clicked => { root.save-workspace(); } }
+                            ToolAction { text: I18n.t("打开工作区", "Open Workspace"); action-width: 132px; clicked => { root.open-workspace(); } }
+                            ToolAction { text: I18n.t("导入", "Import"); action-width: 88px; clicked => { root.import-csv(); } }
+                            ToolAction { text: I18n.t("导出", "Export"); action-width: 88px; clicked => { root.export-csv(); } }
+                            ToolAction { text: I18n.t("视图…", "View…"); action-width: 92px; clicked => { root.vw-open = true; } }
+                            Rectangle { width: 8px; }
+                            ToolAction { text: I18n.t("仿真…", "Simulate…"); action-width: 110px; clicked => { root.sim-open = true; } }
+                            ToolAction { text: I18n.t("连接信息…", "Connection…"); action-width: 116px; clicked => { root.show-conn-info(); root.conn-info-open = true; } }
+                        }
                     }
                 }
 
@@ -1663,7 +1989,7 @@ export component AppWindow inherits Window {
                             border-radius: 4px;
                             background: Theme.ok;
                             y: (parent.height - self.height) / 2;
-                            Text { text: "SERVER"; color: #ffffff; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
+                            Text { text: "SERVER"; color: Theme.accent-fg; font-size: 11px; font-weight: 800; horizontal-alignment: center; vertical-alignment: center; }
                         }
                         Text { text: root.slave-fc-label(root.s-area); vertical-alignment: center; font-weight: 700; }
                         Rectangle { horizontal-stretch: 1; }
@@ -1691,10 +2017,10 @@ export component AppWindow inherits Window {
                 }
                 HorizontalLayout {
                     spacing: 6px;
-                    Tab { label: "Event Log"; active: root.s-bottom-tab == 0; clicked => { root.s-bottom-tab = 0; } }
-                    Tab { label: "Communication Traffic"; active: root.s-bottom-tab == 1; clicked => { root.s-bottom-tab = 1; } }
+                    Tab { label: I18n.t("事件日志", "Event Log"); active: root.s-bottom-tab == 0; clicked => { root.s-bottom-tab = 0; } }
+                    Tab { label: I18n.t("通信流量", "Communication Traffic"); active: root.s-bottom-tab == 1; clicked => { root.s-bottom-tab = 1; } }
                     Rectangle { horizontal-stretch: 1; }
-                    Button { text: "Chart Window ↗"; clicked => { root.open-slave-chart(); } }
+                    Button { text: I18n.t("曲线窗口 ↗", "Chart Window ↗"); clicked => { root.open-slave-chart(); } }
                 }
                 if root.s-bottom-tab == 0: LogPanel { height: 190px; lines: root.s-log; }
                 if root.s-bottom-tab == 1: LogPanel { height: 190px; lines: root.s-traffic; }
@@ -1711,13 +2037,14 @@ export component AppWindow inherits Window {
                         padding-left: 12px;
                         padding-right: 12px;
                         spacing: 18px;
-                        Rectangle {
-                            width: 9px; height: 9px; border-radius: 4px;
+                        ProductStatusDot {
                             y: (parent.height - self.height) / 2;
-                            background: root.s-running ? #5fb85f : #b0b0b0;
+                            active: root.s-running;
+                            warning: root.runtime-loss;
                         }
                         Text { horizontal-stretch: 1; text: root.s-status; vertical-alignment: center; overflow: elide; font-size: 12px; }
-                        Text { text: root.sim-active ? "Simulating" : ""; vertical-alignment: center; color: #e5c07b; font-size: 12px; }
+                        Text { text: root.runtime-health; color: root.runtime-loss ? Theme.err : Palette.foreground; vertical-alignment: center; font-size: 11px; }
+                        Text { text: root.sim-active ? "Simulating" : ""; vertical-alignment: center; color: Theme.warn; font-size: 12px; }
                         Text { text: "Requests: \{root.s-requests}"; vertical-alignment: center; font-size: 12px; }
                     }
                 }
@@ -1732,7 +2059,7 @@ export component AppWindow inherits Window {
     if root.wd-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 460px;
@@ -1785,7 +2112,7 @@ export component AppWindow inherits Window {
     if root.adv-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 480px;
@@ -1832,7 +2159,7 @@ export component AppWindow inherits Window {
     if root.cf-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 420px;
@@ -1867,7 +2194,7 @@ export component AppWindow inherits Window {
     if root.dv-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 480px;
@@ -1901,7 +2228,7 @@ export component AppWindow inherits Window {
     if root.vw-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 420px;
@@ -1955,7 +2282,7 @@ export component AppWindow inherits Window {
     if root.scan-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 560px;
@@ -1997,7 +2324,7 @@ export component AppWindow inherits Window {
     if root.scl-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 460px;
@@ -2036,7 +2363,7 @@ export component AppWindow inherits Window {
     if root.col-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 540px;
@@ -2081,7 +2408,7 @@ export component AppWindow inherits Window {
     if root.vn-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 480px;
@@ -2120,7 +2447,7 @@ export component AppWindow inherits Window {
     if root.log-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 480px;
@@ -2138,7 +2465,7 @@ export component AppWindow inherits Window {
                 Field { label: "Status:"; Text {
                     text: root.log-active ? "Logging…" : "Stopped";
                     vertical-alignment: center;
-                    color: root.log-active ? #98c379 : Palette.foreground;
+                    color: root.log-active ? Theme.ok : Palette.foreground;
                     font-weight: 700;
                 } }
                 Field { label: "Rate:"; ComboBox { model: ["Each read", "Every N seconds"]; current-index <=> root.log-rate-mode; } }
@@ -2165,7 +2492,7 @@ export component AppWindow inherits Window {
     if root.sim-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { } }
         Rectangle {
             width: 460px;
@@ -2183,7 +2510,7 @@ export component AppWindow inherits Window {
                 Field { label: "Status:"; Text {
                     text: root.sim-active ? "Running" : "Stopped";
                     vertical-alignment: center;
-                    color: root.sim-active ? #98c379 : Palette.foreground;
+                    color: root.sim-active ? Theme.ok : Palette.foreground;
                     font-weight: 700;
                 } }
                 Field { label: "Mode:"; ComboBox { model: ["Off", "Increment", "Decrement", "Random", "Toggle"]; current-index <=> root.sim-mode; } }
@@ -2212,7 +2539,7 @@ export component AppWindow inherits Window {
     if root.conn-info-open: Rectangle {
         width: 100%;
         height: 100%;
-        background: #00000099;
+        background: Theme.scrim;
         TouchArea { width: 100%; height: 100%; clicked => { root.conn-info-open = false; } }
         Rectangle {
             width: 420px;
@@ -2237,6 +2564,206 @@ export component AppWindow inherits Window {
                     spacing: 10px;
                     Rectangle { horizontal-stretch: 1; }
                     AccentButton { text: "Close"; width: 90px; clicked => { root.conn-info-open = false; } }
+                }
+            }
+        }
+    }
+
+    // =====================================================================
+    // Offline authorization dialog
+    // =====================================================================
+    if root.license-open: Rectangle {
+        width: 100%;
+        height: 100%;
+        background: Theme.scrim;
+        TouchArea {
+            width: 100%;
+            height: 100%;
+            clicked => { root.license-open = false; }
+        }
+        Rectangle {
+            x: (parent.width - self.width) / 2 + 4px;
+            y: (parent.height - self.height) / 2 + 6px;
+            width: 540px;
+            height: 430px;
+            border-radius: 12px;
+            background: Theme.shadow;
+        }
+        Rectangle {
+            width: 540px;
+            height: 430px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            background: Palette.background;
+            border-width: 1px;
+            border-color: Palette.border;
+            TouchArea { }
+            VerticalLayout {
+                spacing: 0px;
+
+                Rectangle {
+                    height: 88px;
+                    background: Theme.header;
+                    border-radius: 11px;
+                    Rectangle {
+                        y: parent.height - 11px;
+                        width: 100%;
+                        height: 11px;
+                        background: Theme.header;
+                    }
+                    Rectangle {
+                        y: parent.height - 1px;
+                        width: 100%;
+                        height: 1px;
+                        background: ProductDesign.on-brand-border;
+                    }
+                    Text {
+                        x: 24px;
+                        y: 14px;
+                        width: 340px;
+                        height: 30px;
+                        text: I18n.t("Modbus 使用授权", "Modbus License");
+                        color: Theme.accent-fg;
+                        font-size: 20px;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        x: 24px;
+                        y: 45px;
+                        width: 380px;
+                        height: 24px;
+                        text: root.license-unlocked
+                            ? I18n.t("本次运行已解除时间限制", "Time limit removed for this session")
+                            : I18n.t("剩余使用时间", "Time remaining");
+                        color: Theme.accent-fg-muted;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        x: parent.width - 132px;
+                        y: 23px;
+                        width: 104px;
+                        height: 40px;
+                        border-radius: 8px;
+                        background: ProductDesign.on-brand-faint;
+                        Text {
+                            text: root.license-unlocked ? I18n.t("已授权", "Licensed") : root.license-remaining;
+                            color: Theme.accent-fg;
+                            font-family: ProductDesign.font-mono;
+                            font-size: 18px;
+                            font-weight: 800;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-top: 18px;
+                    padding-bottom: 18px;
+                    spacing: 12px;
+
+                    Text {
+                        height: 38px;
+                        text: I18n.t(
+                            "未授权版本可试用一年。将机器码提供给授权方，并导入收到的 Ed25519 签名 .pcanlic 文件。",
+                            "The unlicensed edition runs for one year. Send the machine code to the licensor, then import the signed Ed25519 .pcanlic file."
+                        );
+                        color: Theme.text-muted;
+                        font-size: 12px;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        height: 20px;
+                        text: I18n.t("机器码", "Machine code");
+                        font-size: 12px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    HorizontalLayout {
+                        height: ProductDesign.control-height;
+                        spacing: 8px;
+                        LineEdit {
+                            text: root.license-machine-code;
+                            read-only: true;
+                            font-family: ProductDesign.font-mono;
+                        }
+                        Button {
+                            width: 112px;
+                            text: I18n.t("复制机器码", "Copy code");
+                            clicked => { root.license-copy-machine-code(); }
+                        }
+                    }
+
+                    Text {
+                        height: 20px;
+                        text: I18n.t("离线授权文件", "Offline license file");
+                        font-size: 12px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        height: 54px;
+                        border-width: 1px;
+                        border-color: ProductDesign.border;
+                        border-radius: 7px;
+                        background: ProductDesign.surface-raised;
+                        VerticalLayout {
+                            x: 12px;
+                            width: parent.width - 24px;
+                            padding-top: 6px;
+                            padding-bottom: 6px;
+                            spacing: 1px;
+                            Text {
+                                text: root.license-info != "" ? root.license-info : I18n.t("请选择 .pcanlic 文件", "Select a .pcanlic file");
+                                color: root.license-info != "" ? ProductDesign.text : Theme.text-muted;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                visible: root.license-unlocked;
+                                text: I18n.en ? root.license-validity-en : root.license-validity-zh;
+                                color: Theme.ok;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    Text {
+                        height: 22px;
+                        text: root.license-error;
+                        color: root.license-unlocked ? Theme.ok : Theme.err;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Rectangle { vertical-stretch: 1; }
+
+                    HorizontalLayout {
+                        height: ProductDesign.control-height;
+                        spacing: 10px;
+                        Button {
+                            text: I18n.t("关闭", "Close");
+                            clicked => { root.license-open = false; }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        AccentButton {
+                            width: 132px;
+                            enabled: !root.license-unlocked;
+                            text: I18n.t("导入授权文件", "Import license");
+                            clicked => { root.license-import(); }
+                        }
+                    }
                 }
             }
         }
@@ -2286,7 +2813,7 @@ export component PollFloat inherits Window {
                 padding-right: 14px;
                 spacing: 12px;
                 Rectangle {
-                    width: 52px; height: 20px; border-radius: 4px; background: #ffffff;
+                    width: 52px; height: 20px; border-radius: 4px; background: Theme.accent-fg;
                     y: (parent.height - self.height) / 2;
                     Text { text: "CLIENT"; color: Theme.accent; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
                 }
@@ -2317,7 +2844,7 @@ export component PollFloat inherits Window {
                         y: (parent.height - self.height) / 2;
                         Text {
                             text: root.is-write ? "WRITE" : "READ";
-                            color: #ffffff; font-size: 11px; font-weight: 800;
+                            color: Theme.accent-fg; font-size: 11px; font-weight: 800;
                             horizontal-alignment: center; vertical-alignment: center;
                         }
                     }
@@ -2377,17 +2904,17 @@ export component SlaveMonitor inherits Window {
                 padding-right: 14px;
                 spacing: 12px;
                 Rectangle {
-                    width: 56px; height: 20px; border-radius: 4px; background: #ffffff;
+                    width: 56px; height: 20px; border-radius: 4px; background: Theme.accent-fg;
                     y: (parent.height - self.height) / 2;
                     Text { text: "SERVER"; color: Theme.ok; font-size: 10px; font-weight: 800; width: 100%; height: 100%; horizontal-alignment: center; vertical-alignment: center; }
                 }
-                Text { text: root.mtitle; color: #ffffff; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+                Text { text: root.mtitle; color: Theme.accent-fg; font-size: 15px; font-weight: 800; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
-                Text { text: "Requests: \{root.requests}"; color: #ffffff; vertical-alignment: center; }
+                Text { text: "Requests: \{root.requests}"; color: Theme.accent-fg; vertical-alignment: center; }
                 Rectangle {
                     width: 10px; height: 10px; border-radius: 5px;
                     y: (parent.height - self.height) / 2;
-                    background: root.running ? #ffffff : #ffffff66;
+                    background: root.running ? Theme.accent-fg : Theme.accent-fg-subtle;
                 }
             }
         }

@@ -1,5 +1,5 @@
 import { LineEdit, TextEdit } from "std-widgets.slint";
-import { Theme, TBtn } from "common.slint";
+import { Theme, TBtn, TxByteRow, HexDataField, HexByteEditorOverlay, ThemedWindow } from "common.slint";
 
 component FieldLabel inherits Text {
     color: Theme.text;
@@ -7,7 +7,7 @@ component FieldLabel inherits Text {
     vertical-alignment: center;
 }
 
-export component XcpWindow inherits Window {
+export component XcpWindow inherits ThemedWindow {
     title: "XCP";
     icon: @image-url("logo.svg");
     preferred-width: 980px;
@@ -26,6 +26,18 @@ export component XcpWindow inherits Window {
     in-out property <string> xcp-upload-len: "7";
     in-out property <string> xcp-download-data: "";
     in-out property <string> xcp-custom: "FF";
+    in-out property <bool> hex-editor-open: false;
+    in-out property <string> hex-editor-field: "";
+    in-out property <string> hex-editor-title: "";
+    in property <[TxByteRow]> hex-editor-rows;
+    in-out property <string> hex-editor-paste: "";
+    in-out property <string> hex-editor-error: "";
+    in-out property <int> hex-editor-length: 0;
+    in-out property <int> hex-editor-max-length: 8;
+    callback hex-editor-show(string, string, int);
+    callback hex-editor-byte-edited(int, string);
+    callback hex-editor-fill(string);
+    callback hex-editor-apply() -> bool;
 
     callback xcp-connect();
     callback xcp-status();
@@ -100,14 +112,14 @@ export component XcpWindow inherits Window {
                         height: Theme.ctrl-h;
                         spacing: 8px;
                         FieldLabel { text: "Download"; width: 76px; }
-                        LineEdit { text: root.xcp-download-data; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-download-data = v; } }
+                        HexDataField { value: root.xcp-download-data; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("download", root.xcp-download-data, 6); } }
                         TBtn { boxed: true; text: "Download"; clicked => { root.xcp-download(); } }
                     }
                     HorizontalLayout {
                         height: Theme.ctrl-h;
                         spacing: 8px;
                         FieldLabel { text: "Custom"; width: 76px; }
-                        LineEdit { text: root.xcp-custom; horizontal-stretch: 1; height: Theme.ctrl-h; edited(v) => { root.xcp-custom = v; } }
+                        HexDataField { value: root.xcp-custom; horizontal-stretch: 1; edit-requested => { root.hex-editor-show("custom", root.xcp-custom, 8); } }
                         TBtn { primary: true; text: "Send"; clicked => { root.xcp-custom-send(); } }
                     }
                     Rectangle { vertical-stretch: 1; }
@@ -132,5 +144,15 @@ export component XcpWindow inherits Window {
                 }
             }
         }
+    }
+
+
+    HexByteEditorOverlay {
+        open: root.hex-editor-open; editor-title: root.hex-editor-title; rows: root.hex-editor-rows;
+        paste-value <=> root.hex-editor-paste; error-text: root.hex-editor-error;
+        close-requested => { root.hex-editor-open = false; }
+        byte-edited(i, value) => { root.hex-editor-byte-edited(i, value); }
+        paste-requested(value) => { root.hex-editor-fill(value); }
+        apply-requested => { return root.hex-editor-apply(); }
     }
 }

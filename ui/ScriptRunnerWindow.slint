@@ -1,12 +1,14 @@
 // One-window Slint page split from the original monolithic file.
 import { Button, ComboBox, LineEdit, CheckBox, TabWidget, ListView, ScrollView, VerticalBox, HorizontalBox, TextEdit } from "std-widgets.slint";
-import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph } from "common.slint";
+import { ByteCell, SimRow, MsgRow, SigRow, TxSigRow, TxRow, PbFileRow, TreeRow, ChanStat, IdStat, ChartSeries, DbcSignalRow, SignalPickRow, I18n, Theme, ColW, Cell, HCell, SortHeader, TBtn, Icon, RibbonBtn, RibbonGroup, RibbonTab, ConvTab, SimGlyph, ThemedWindow } from "common.slint";
 
-export component ScriptRunnerWindow inherits Window {
+export component ScriptRunnerWindow inherits ThemedWindow {
     title: I18n.en ? "Python Script Runner" : "Python 脚本运行器";
     icon: @image-url("logo.svg");
     preferred-width: 760px;
     preferred-height: 560px;
+    min-width: 520px;
+    min-height: 420px;
     background: Theme.bg;
 
     in-out property <string> interp-path: "";
@@ -17,6 +19,8 @@ export component ScriptRunnerWindow inherits Window {
     in property <bool> running: false;
     in property <int> result: 0; // -1 失败, 0 空闲/运行中, 1 通过
     in property <string> status-text: "";
+    in-out property <bool> help-open: false;
+    in property <string> help-text: "";
 
     callback detect-pythons();
     callback python-selected(string);
@@ -39,8 +43,19 @@ export component ScriptRunnerWindow inherits Window {
                     Button { text: I18n.en ? "Browse" : "浏览"; clicked => { root.browse-interp(); } }
                 }
                 HorizontalLayout { spacing: 6px;
-                    ComboBox { horizontal-stretch: 1; model: root.python-list; current-value <=> root.selected-python;
-                        selected(v) => { root.python-selected(v); } }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        min-width: 180px;
+                        height: Theme.ctrl-h;
+                        clip: true;
+                        ComboBox {
+                            width: parent.width;
+                            height: parent.height;
+                            model: root.python-list;
+                            current-value <=> root.selected-python;
+                            selected(v) => { root.python-selected(v); }
+                        }
+                    }
                     Button { text: I18n.en ? "Detect installed" : "检测已装版本"; clicked => { root.detect-pythons(); } }
                 }
             }
@@ -62,16 +77,72 @@ export component ScriptRunnerWindow inherits Window {
             Button { text: I18n.en ? "Run" : "运行"; enabled: !root.running; clicked => { root.run-script(); } }
             Button { text: I18n.en ? "Run folder" : "运行套件"; enabled: !root.running; clicked => { root.run-suite(); } }
             Button { text: I18n.en ? "Stop" : "停止"; enabled: root.running; clicked => { root.stop-run(); } }
+            Button {
+                text: root.help-open
+                    ? (I18n.en ? "Back to output" : "返回输出")
+                    : (I18n.en ? "User guide" : "使用说明");
+                clicked => { root.help-open = !root.help-open; }
+            }
             Rectangle { horizontal-stretch: 1; }
             Text { text: root.status-text; vertical-alignment: center; font-weight: 700; font-size: Theme.fs;
                 color: root.result == 1 ? Theme.ok : (root.result == -1 ? Theme.bad : Theme.text-dim); }
         }
 
         // 输出（脚本 stdout/stderr）
-        Rectangle { vertical-stretch: 1; background: Theme.panel; border-width: 1px; border-color: Theme.border; border-radius: 4px;
+        if !root.help-open: Rectangle {
+            vertical-stretch: 1;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            border-radius: 4px;
+            clip: true;
+            TextEdit {
+                x: 8px;
+                y: 8px;
+                width: parent.width - 16px;
+                height: parent.height - 16px;
+                text: root.output;
+                read-only: true;
+                wrap: word-wrap;
+                font-family: Theme.mono;
+                font-size: Theme.fs-sm;
+            }
+        }
+
+        if root.help-open: Rectangle {
+            vertical-stretch: 1;
+            background: Theme.panel;
+            border-width: 1px;
+            border-color: Theme.border;
+            border-radius: Theme.radius;
             VerticalLayout {
-                padding: 8px;
-                Text { text: root.output; font-family: Theme.mono; font-size: Theme.fs-sm; color: Theme.text; }
+                padding: 12px;
+                spacing: 8px;
+                HorizontalLayout {
+                    height: 28px;
+                    Text {
+                        text: I18n.en ? "Python automation guide" : "Python 自动化详细帮助";
+                        color: Theme.text;
+                        font-size: Theme.fs + 2px;
+                        font-weight: 800;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: "templates\\help.py";
+                        color: Theme.accent;
+                        font-size: Theme.fs-sm;
+                        vertical-alignment: center;
+                    }
+                }
+                TextEdit {
+                    vertical-stretch: 1;
+                    text: root.help-text;
+                    read-only: true;
+                    wrap: word-wrap;
+                    font-family: Theme.mono;
+                    font-size: Theme.fs-sm;
+                }
             }
         }
     }

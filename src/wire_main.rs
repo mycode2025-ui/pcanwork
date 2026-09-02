@@ -1,31 +1,265 @@
 // Event-wiring for the wire_main. Included into main.rs via include!(); lives in the
 // crate-root module, sharing main.rs's imports/private items (no use, no vis changes).
 // Windows are passed by reference; app is an owned Rc clone. Unused params are by design.
-#[allow(unused_variables, clippy::too_many_arguments)]
-fn wire_main(
-    app: Rc<std::cell::RefCell<App>>,
-    ui: &AppWindow,
-    chart_window: &ChartWindow,
-    signal_window: &SignalSelectWindow,
-    tx_window: &TxWindow,
-    uds_window: &UdsWindow,
-    xcp_window: &XcpWindow,
-    channel_window: &ChannelConfigWindow,
-    playback_window: &PlaybackWindow,
-    convert_window: &ConvertWindow,
-    cache_window: &CacheConfigWindow,
-    trigger_window: &TriggerWindow,
-    sim_panel_window: &SimPanelWindow,
-    sim_prop_window: &SimPropWindow,
-    console_help_window: &ConsoleHelpWindow,
-    script_runner_window: &ScriptRunnerWindow,
+fn begin_shutdown(app: &Rc<std::cell::RefCell<App>>, ui: &AppWindow) {
+    if let Err(error) = settings::save(&gather_settings(&app.borrow(), ui)) {
+        eprintln!("Failed to save settings during shutdown: {error}");
+    }
+
+    let (cmd, recorder_join, mut signal_log) = {
+        let mut state = app.borrow_mut();
+        if state.shutdown_requested {
+            return;
+        }
+        state.shutdown_requested = true;
+        state.recording = false;
+        state
+            .ipc_subs
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(mut child) = state.py_child.take()
+            && let Err(error) = child.kill()
+        {
+            state.log(format!("Failed to stop script process: {error}"));
+        }
+        (
+            state.cmd.clone(),
+            state.recorder.begin_shutdown(),
+            state.sig_log.take(),
+        )
+    };
+
+    std::thread::spawn(move || {
+        if let Some(join) = recorder_join
+            && join.join().is_err()
+        {
+            eprintln!("Recorder thread panicked during shutdown");
+        }
+        if let Some(writer) = signal_log.as_mut()
+            && let Err(error) = std::io::Write::flush(writer)
+        {
+            eprintln!("Failed to flush signal log during shutdown: {error}");
+        }
+        if cmd
+            .send_critical(Cmd::Shutdown, std::time::Duration::from_secs(1))
+            .is_err()
+        {
+            let _ = slint::invoke_from_event_loop(|| {
+                let _ = slint::quit_event_loop();
+            });
+        }
+    });
+}
+
+fn queue_project_load(path: std::path::PathBuf, worker: WorkerSender<WorkerEvent>) {
+    std::thread::spawn(move || {
+        let result = (|| -> Result<_, String> {
+            let text =
+                std::fs::read_to_string(&path).map_err(|error| format!("读取工程失败: {error}"))?;
+            let project: Project =
+                serde_json::from_str(&text).map_err(|error| format!("解析工程失败: {error}"))?;
+            let dbc_paths: Vec<String> = if project.settings.dbc_paths.is_empty() {
+                project.settings.dbc_path.clone().into_iter().collect()
+            } else {
+                project.settings.dbc_paths.clone()
+            };
+            let replace_dbcs = !dbc_paths.is_empty();
+            let mut loaded = Vec::new();
+            let mut errors = Vec::new();
+            for dbc_path in dbc_paths {
+                match DbcDb::load(&dbc_path) {
+                    Ok(database) => loaded.push((dbc_path, database)),
+                    Err(error) => errors.push(format!("加载 DBC 失败 {dbc_path}: {error}")),
+                }
+            }
+            Ok((project, loaded, errors, replace_dbcs))
+        })();
+        let _ = worker.send(WorkerEvent::ProjectLoaded {
+            path,
+            result: Box::new(result),
+        });
+    });
+}
+
+fn refresh_dbc_diagnostics(
+    app: &App,
+    window: &DbcDiagnosticsWindow,
+    model: &VecModel<DbcDiagnosticRow>,
 ) {
+    let mut rows = Vec::new();
+    let mut errors = 0;
+    let mut warnings = 0;
+    let mut infos = 0;
+    let active_filter = window.get_severity_filter();
+    for database in &app.dbcs {
+        for diagnostic in database.diagnostics() {
+            let severity = match diagnostic.severity {
+                dbc::DbcDiagnosticSeverity::Error => {
+                    errors += 1;
+                    2
+                }
+                dbc::DbcDiagnosticSeverity::Warning => {
+                    warnings += 1;
+                    1
+                }
+                dbc::DbcDiagnosticSeverity::Info => {
+                    infos += 1;
+                    0
+                }
+            };
+            if active_filter != 0
+                && !((active_filter == 1 && severity == 2)
+                    || (active_filter == 2 && severity == 1)
+                    || (active_filter == 3 && severity == 0))
+            {
+                continue;
+            }
+            let frame_kind = if diagnostic.extended { "EXT" } else { "STD" };
+            let signal = if diagnostic.signal_name.is_empty() {
+                String::new()
+            } else {
+                format!(" / {}", diagnostic.signal_name)
+            };
+            rows.push(DbcDiagnosticRow {
+                severity,
+                code: diagnostic.code.into(),
+                location: format!(
+                    "{} · 0x{:X} {} · {}{}",
+                    database.file_name,
+                    diagnostic.message_id,
+                    frame_kind,
+                    diagnostic.message_name,
+                    signal
+                )
+                .into(),
+                title_zh: diagnostic.title_zh.into(),
+                title_en: diagnostic.title_en.into(),
+                detail_zh: diagnostic.detail_zh.into(),
+                detail_en: diagnostic.detail_en.into(),
+            });
+        }
+    }
+    sync_vec_model(model, rows);
+    window.set_file_count(app.dbcs.len().min(i32::MAX as usize) as i32);
+    window.set_error_count(errors);
+    window.set_warning_count(warnings);
+    window.set_info_count(infos);
+    window.set_action_status(
+        if app.dbcs.is_empty() {
+            if window.global::<FeatureI18n>().get_en() {
+                "No DBC loaded"
+            } else {
+                "尚未加载 DBC"
+            }
+        } else if errors == 0 && warnings == 0 {
+            if window.global::<FeatureI18n>().get_en() {
+                "Diagnostics completed: no blocking issue"
+            } else {
+                "诊断完成：未发现阻断性问题"
+            }
+        } else if window.global::<FeatureI18n>().get_en() {
+            "Diagnostics completed; review the items below"
+        } else {
+            "诊断完成，请检查下列问题"
+        }
+        .into(),
+    );
+}
+
+fn dbc_diagnostic_report(app: &App, english: bool) -> String {
+    let mut report = String::new();
+    report.push_str(if english {
+        "PcanWork DBC Diagnostics\n"
+    } else {
+        "PcanWork DBC 诊断报告\n"
+    });
+    report.push_str(&format!(
+        "{}: {}\n\n",
+        if english { "Files" } else { "文件数" },
+        app.dbcs.len()
+    ));
+    let mut total = 0usize;
+    for database in &app.dbcs {
+        let diagnostics = database.diagnostics();
+        report.push_str(&format!("== {} ==\n", database.file_name));
+        if diagnostics.is_empty() {
+            report.push_str(if english { "PASS\n\n" } else { "通过\n\n" });
+            continue;
+        }
+        total += diagnostics.len();
+        for diagnostic in diagnostics {
+            let severity = match diagnostic.severity {
+                dbc::DbcDiagnosticSeverity::Error => {
+                    if english {
+                        "ERROR"
+                    } else {
+                        "错误"
+                    }
+                }
+                dbc::DbcDiagnosticSeverity::Warning => {
+                    if english {
+                        "WARN"
+                    } else {
+                        "警告"
+                    }
+                }
+                dbc::DbcDiagnosticSeverity::Info => {
+                    if english {
+                        "INFO"
+                    } else {
+                        "提示"
+                    }
+                }
+            };
+            let signal = if diagnostic.signal_name.is_empty() {
+                String::new()
+            } else {
+                format!("/{}", diagnostic.signal_name)
+            };
+            report.push_str(&format!(
+                "[{severity}] {} 0x{:X} {} {}/{}{}\n{}\n\n",
+                diagnostic.code,
+                diagnostic.message_id,
+                if diagnostic.extended { "EXT" } else { "STD" },
+                database.file_name,
+                diagnostic.message_name,
+                signal,
+                if english {
+                    diagnostic.detail_en
+                } else {
+                    diagnostic.detail_zh
+                }
+            ));
+        }
+    }
+    if app.dbcs.is_empty() {
+        report.push_str(if english {
+            "No DBC loaded.\n"
+        } else {
+            "尚未加载 DBC。\n"
+        });
+    } else {
+        report.push_str(&format!(
+            "{}: {}\n",
+            if english {
+                "Total findings"
+            } else {
+                "问题总数"
+            },
+            total
+        ));
+    }
+    report
+}
+
+fn wire_main_children(app: Rc<std::cell::RefCell<App>>, windows: &ChildWindows) {
     {
         let app = app.clone();
-        let spw = sim_panel_window.as_weak();
-        sim_panel_window.window().on_close_requested(move || {
+        let spw = windows.sim_panel.as_weak();
+        windows.sim_panel.window().on_close_requested(move || {
             let mut a = app.borrow_mut();
             if a.sim_running {
+                let _ = configure_sim_generators(&a, false);
                 a.sim_running = false;
                 for wdg in a.sim_widgets.iter_mut() {
                     wdg.last_fire = None;
@@ -45,55 +279,152 @@ fn wire_main(
                 .on_close_requested(|| slint::CloseRequestResponse::HideWindow);
         };
     }
-    hide_child_on_close!(chart_window);
-    hide_child_on_close!(signal_window);
-    hide_child_on_close!(uds_window);
-    hide_child_on_close!(xcp_window);
-    hide_child_on_close!(channel_window);
-    hide_child_on_close!(playback_window);
-    hide_child_on_close!(convert_window);
-    hide_child_on_close!(cache_window);
-    hide_child_on_close!(trigger_window);
-    hide_child_on_close!(sim_prop_window);
-    hide_child_on_close!(console_help_window);
-    hide_child_on_close!(script_runner_window);
-{
-        let cmd_quit = app.borrow().cmd.clone();
+    hide_child_on_close!(windows.chart);
+    hide_child_on_close!(windows.signal);
+    hide_child_on_close!(windows.uds);
+    hide_child_on_close!(windows.xcp);
+    {
+        let app = app.clone();
+        windows.channel.window().on_close_requested(move || {
+            let mut state = app.borrow_mut();
+            if state.channel_connect_pending {
+                slint::CloseRequestResponse::KeepWindowShown
+            } else {
+                state.channel_edit = None;
+                slint::CloseRequestResponse::HideWindow
+            }
+        });
+    }
+    hide_child_on_close!(windows.playback);
+    hide_child_on_close!(windows.convert);
+    hide_child_on_close!(windows.cache);
+    hide_child_on_close!(windows.trigger);
+    hide_child_on_close!(windows.sim_prop);
+    hide_child_on_close!(windows.console_help);
+    hide_child_on_close!(windows.script_runner);
+    hide_child_on_close!(windows.dbc_diagnostics);
+
+    {
+        let picker = windows.signal.as_weak();
+        windows.chart.on_open_signal_selector(move || {
+            if let Some(picker) = picker.upgrade() {
+                show_child_window(&picker);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let window = windows.dbc_diagnostics.as_weak();
+        let model = windows.dbc_diagnostics_model.clone();
+        windows.dbc_diagnostics.on_rescan(move || {
+            if let Some(window) = window.upgrade() {
+                refresh_dbc_diagnostics(&app.borrow(), &window, &model);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        let window = windows.dbc_diagnostics.as_weak();
+        windows.dbc_diagnostics.on_copy_report(move || {
+            let Some(window) = window.upgrade() else {
+                return;
+            };
+            let report =
+                dbc_diagnostic_report(&app.borrow(), window.global::<FeatureI18n>().get_en());
+            let status = match arboard::Clipboard::new()
+                .and_then(|mut clipboard| clipboard.set_text(report))
+            {
+                Ok(()) => if window.global::<FeatureI18n>().get_en() {
+                    "Report copied"
+                } else {
+                    "诊断报告已复制"
+                }
+                .to_string(),
+                Err(error) => {
+                    if window.global::<FeatureI18n>().get_en() {
+                        format!("Copy failed: {error}")
+                    } else {
+                        format!("复制失败：{error}")
+                    }
+                }
+            };
+            window.set_action_status(status.into());
+        });
+    }
+    {
+        let app = app.clone();
+        let window = windows.dbc_diagnostics.as_weak();
+        windows.dbc_diagnostics.on_export_report(move || {
+            let Some(dialog_window) = window.upgrade() else {
+                return;
+            };
+            let window = window.clone();
+            let app = app.clone();
+            let _ = slint::spawn_local(async move {
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .add_filter("Text report", &["txt"])
+                    .set_file_name("PcanWork-DBC-Diagnostics.txt")
+                    .set_parent(&dialog_window.window().window_handle())
+                    .save_file()
+                    .await
+                else {
+                    return;
+                };
+                let report = dbc_diagnostic_report(
+                    &app.borrow(),
+                    dialog_window.global::<FeatureI18n>().get_en(),
+                );
+                let status = match std::fs::write(file.path(), report) {
+                    Ok(()) => if dialog_window.global::<FeatureI18n>().get_en() {
+                        "Report exported"
+                    } else {
+                        "诊断报告已导出"
+                    }
+                    .to_string(),
+                    Err(error) => {
+                        if dialog_window.global::<FeatureI18n>().get_en() {
+                            format!("Export failed: {error}")
+                        } else {
+                            format!("导出失败：{error}")
+                        }
+                    }
+                };
+                if let Some(window) = window.upgrade() {
+                    window.set_action_status(status.into());
+                }
+            });
+        });
+    }
+    {
+        let window = windows.dbc_diagnostics.as_weak();
+        windows.dbc_diagnostics.on_dismiss(move || {
+            if let Some(window) = window.upgrade() {
+                let _ = window.window().hide();
+            }
+        });
+    }
+}
+
+fn wire_main(app: Rc<std::cell::RefCell<App>>, ui: &AppWindow, child_windows: ChildWindowStore) {
+    {
         let app_s = app.clone();
         let uiw = ui.as_weak();
         ui.window().on_close_requested(move || {
             if let Some(ui) = uiw.upgrade() {
-                settings::save(&gather_settings(&app_s.borrow(), &ui));
+                begin_shutdown(&app_s, &ui);
             }
-            {
-                let mut a = app_s.borrow_mut();
-                if a.recording && a.rec_fmt == RecFmt::Blf
-                    && let Some(p) = a.rec_path.clone()
-                {
-                    let buf = std::mem::take(&mut a.rec_blf_buf);
-                    let n = buf.len();
-                    match blf::write(&p.to_string_lossy(), &buf) {
-                        Ok(()) => a.log(format!("退出前已保存 BLF: {} ({n} 帧)", p.display())),
-                        Err(e) => a.log(format!("退出前写 BLF 失败: {e}")),
-                    }
-                }
-                if let Some(mut c) = a.py_child.take() {
-                    let _ = c.kill();
-                }
-                a.ipc_subs.stop.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-            let _ = cmd_quit.send(Cmd::Disconnect);
-            let _ = cmd_quit.send(Cmd::Quit);
-std::thread::sleep(std::time::Duration::from_millis(200));
-            let _ = slint::quit_event_loop();
-            slint::CloseRequestResponse::HideWindow
+            slint::CloseRequestResponse::KeepWindowShown
         });
     }
 
     {
         let app = app.clone();
         ui.on_connect(move || {
-            let a = app.borrow();
+            let mut a = app.borrow_mut();
+            if !a.license_allows("can-connect") {
+                return;
+            }
+            refresh_and_reconcile_pcan(&mut a);
             let _ = a.cmd.send(Cmd::ConnectChannels(a.channels.clone()));
         });
     }
@@ -107,8 +438,12 @@ std::thread::sleep(std::time::Duration::from_millis(200));
         let app = app.clone();
         ui.on_start_rx(move || {
             let mut a = app.borrow_mut();
+            if !a.license_allows("can-capture") {
+                return;
+            }
             a.capture_wall_epoch = None;
-if !a.connected {
+            if !a.connected {
+                refresh_and_reconcile_pcan(&mut a);
                 let _ = a.cmd.send(Cmd::ConnectChannels(a.channels.clone()));
             }
             let _ = a.cmd.send(Cmd::Start);
@@ -131,8 +466,10 @@ if !a.connected {
             a.selected_index = -1;
             a.display_items.clear();
             a.expanded_keys.clear();
+            a.expanded_signal_cache.clear();
             a.capture_wall_epoch = None;
             a.no_counter = 0;
+            a.last_msg_sig = u64::MAX;
             a.log("已清空显示缓存");
         });
     }
@@ -180,7 +517,11 @@ if !a.connected {
         ui.on_console_set_enabled(move |en| {
             let mut a = app.borrow_mut();
             a.console_enabled = en;
-            a.log(if en { "报文日志: 已启用捕获" } else { "报文日志: 已停止捕获" });
+            a.log(if en {
+                "报文日志: 已启用捕获"
+            } else {
+                "报文日志: 已停止捕获"
+            });
         });
     }
     {
@@ -206,14 +547,6 @@ if !a.connected {
         });
     }
     {
-        let hw = console_help_window.as_weak();
-        ui.on_console_help(move || {
-            if let Some(w) = hw.upgrade() {
-                show_child_window(&w);
-            }
-        });
-    }
-    {
         let app = app.clone();
         ui.on_console_clear(move || {
             app.borrow_mut().console.clear();
@@ -228,7 +561,7 @@ if !a.connected {
                 app.borrow_mut().log("报文日志为空, 无可导出");
                 return;
             }
-            let app = app.clone();
+            let worker = app.borrow().worker_tx.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
@@ -238,12 +571,17 @@ if !a.connected {
                 if let Some(w) = uiw.upgrade() {
                     dlg = dlg.set_parent(&w.window().window_handle());
                 }
-                let Some(file) = dlg.save_file().await else { return };
+                let Some(file) = dlg.save_file().await else {
+                    return;
+                };
                 let path = file.path().to_path_buf();
-                match std::fs::write(&path, text.as_bytes()) {
-                    Ok(()) => app.borrow_mut().log(format!("已导出报文日志: {}", path.display())),
-                    Err(e) => app.borrow_mut().log(format!("导出报文日志失败: {e}")),
-                }
+                std::thread::spawn(move || {
+                    let message = match std::fs::write(&path, text.as_bytes()) {
+                        Ok(()) => format!("已导出报文日志: {}", path.display()),
+                        Err(error) => format!("导出报文日志失败: {error}"),
+                    };
+                    let _ = worker.send(WorkerEvent::Log(message));
+                });
             });
         });
     }
@@ -255,19 +593,13 @@ if !a.connected {
             if recording {
                 let mut a = app.borrow_mut();
                 a.recording = false;
-                a.rec_file = None;
-                if a.rec_fmt == RecFmt::Blf {
-                    if let Some(p) = a.rec_path.clone() {
-                        let buf = std::mem::take(&mut a.rec_blf_buf);
-                        let n = buf.len();
-                        match blf::write(&p.to_string_lossy(), &buf) {
-                            Ok(()) => a.log(format!("已保存 BLF: {} ({n} 帧)", p.display())),
-                            Err(e) => a.log(format!("写 BLF 失败: {e}")),
-                        }
-                    }
+                if let Err(error) = a.recorder.stop() {
+                    a.log(format!("停止记录失败: {error}"));
                 }
-                a.log("停止记录");
             } else {
+                if !app.borrow_mut().license_allows("record-export") {
+                    return;
+                }
                 let app = app.clone();
                 let uiw = uiw.clone();
                 let _ = slint::spawn_local(async move {
@@ -279,53 +611,32 @@ if !a.connected {
                     if let Some(w) = uiw.upgrade() {
                         dlg = dlg.set_parent(&w.window().window_handle());
                     }
-                    let Some(file) = dlg.save_file().await else { return };
+                    let Some(file) = dlg.save_file().await else {
+                        return;
+                    };
                     let path = file.path().to_path_buf();
                     let mut a = app.borrow_mut();
-                let ext = path
-                    .extension()
-                    .map(|e| e.to_ascii_lowercase())
-                    .unwrap_or_default();
-                let fmt = if ext == "asc" {
-                    RecFmt::Asc
-                } else if ext == "blf" {
-                    RecFmt::Blf
-                } else {
-                    RecFmt::Csv
-                };
-                a.rec_fmt = fmt;
-                a.rec_path = Some(path.clone());
-                if fmt == RecFmt::Blf {
-a.rec_blf_buf.clear();
-                    a.rec_file = None;
-                    a.recording = true;
-                    a.log(format!("开始记录(BLF): {}", path.display()));
-                } else {
-                    match std::fs::File::create(&path) {
-                        Ok(f) => {
-                            let mut w = std::io::BufWriter::new(f);
-                            match fmt {
-                                RecFmt::Csv => {
-                                    let _ = writeln!(w, "Time,Ch,Dir,ID,Len,Data");
-                                }
-                                RecFmt::Asc => {
-                                    let _ = writeln!(w, "date Tue Jun 17 10:00:00 am 2026");
-                                    let _ = writeln!(w, "base hex  timestamps absolute");
-                                    let _ = writeln!(w, "no internal events logged");
-                                }
-                                RecFmt::Blf => {}
-                            }
-                            a.rec_file = Some(w);
+                    let ext = path
+                        .extension()
+                        .map(|e| e.to_ascii_lowercase())
+                        .unwrap_or_default();
+                    let fmt = if ext == "asc" {
+                        RecFmt::Asc
+                    } else if ext == "blf" {
+                        RecFmt::Blf
+                    } else {
+                        RecFmt::Csv
+                    };
+                    match a.recorder.start(path.clone(), fmt) {
+                        Ok(()) => {
+                            a.rec_fmt = fmt;
+                            a.rec_path = Some(path);
                             a.recording = true;
-                            a.log(format!(
-                                "开始记录({}): {}",
-                                if fmt == RecFmt::Asc { "ASC" } else { "CSV" },
-                                path.display()
-                            ));
                         }
-                        Err(e) => a.log(format!("创建记录文件失败: {e}")),
+                        Err(error) => {
+                            a.log(format!("开始记录失败: {error}"));
+                        }
                     }
-                }
                 });
             }
         });
@@ -341,55 +652,44 @@ a.rec_blf_buf.clear();
                 if let Some(w) = uiw.upgrade() {
                     dlg = dlg.set_parent(&w.window().window_handle());
                 }
-                let Some(file) = dlg.pick_file().await else { return };
+                let Some(file) = dlg.pick_file().await else {
+                    return;
+                };
                 let path = file.path().to_path_buf();
-                let mut a = app.borrow_mut();
                 let p = path.to_string_lossy().to_string();
-                if a.dbc_paths.iter().any(|x| x == &p) {
-                    a.log(format!("该 DBC 已加载: {p}"));
+                if app.borrow().dbc_paths.iter().any(|x| x == &p) {
+                    app.borrow_mut().log(format!("该 DBC 已加载: {p}"));
                     return;
                 }
-                match DbcDb::load(&p) {
-                    Ok(db) => {
-                        let n = db.messages().count();
-                        let total = a.dbcs.len() + 1;
-                        a.log(format!(
-                            "已加载 DBC: {} ({n} 条报文)，当前共 {total} 个 DBC",
-                            db.file_name
-                        ));
-                        a.dbcs.push(db);
-                        a.dbc_paths.push(p);
-                        rebuild_dbc_snap(&mut a);
-                    }
-                    Err(e) => a.log(format!("加载 DBC 失败: {e}")),
-                }
+                let worker = app.borrow().worker_tx.clone();
+                std::thread::spawn(move || {
+                    let result = DbcDb::load(&p);
+                    let _ = worker.send(WorkerEvent::DbcLoaded { path: p, result });
+                });
             });
         });
     }
     {
         let app = app.clone();
         ui.on_reload_dbc(move || {
-            let mut a = app.borrow_mut();
-            if a.dbc_paths.is_empty() {
-                a.log("尚未加载 DBC，无法重新加载".to_string());
+            let paths = app.borrow().dbc_paths.clone();
+            if paths.is_empty() {
+                app.borrow_mut()
+                    .log("尚未加载 DBC，无法重新加载".to_string());
                 return;
             }
-            let paths = a.dbc_paths.clone();
-            a.dbcs.clear();
-            a.dbc_paths.clear();
-            let mut ok = 0;
-            for p in paths {
-                match DbcDb::load(&p) {
-                    Ok(db) => {
-                        a.dbcs.push(db);
-                        a.dbc_paths.push(p);
-                        ok += 1;
+            let worker = app.borrow().worker_tx.clone();
+            std::thread::spawn(move || {
+                let mut loaded = Vec::new();
+                let mut errors = Vec::new();
+                for path in paths {
+                    match DbcDb::load(&path) {
+                        Ok(db) => loaded.push((path, db)),
+                        Err(error) => errors.push(format!("重新加载失败 {path}: {error}")),
                     }
-                    Err(e) => a.log(format!("重新加载失败 {p}: {e}")),
                 }
-            }
-            rebuild_dbc_snap(&mut a);
-            a.log(format!("已重新加载 {ok} 个 DBC"));
+                let _ = worker.send(WorkerEvent::DbcReloaded { loaded, errors });
+            });
         });
     }
     {
@@ -399,6 +699,7 @@ a.rec_blf_buf.clear();
             let n = a.dbcs.len();
             a.dbcs.clear();
             a.dbc_paths.clear();
+            a.expanded_signal_cache.clear();
             rebuild_dbc_snap(&mut a);
             a.log(format!("已清除全部 DBC（{n} 个）"));
         });
@@ -416,6 +717,7 @@ a.rec_blf_buf.clear();
             }
             let name = a.dbcs[dbc_i].file_name.clone();
             a.dbcs.remove(dbc_i);
+            a.expanded_signal_cache.clear();
             if dbc_i < a.dbc_paths.len() {
                 a.dbc_paths.remove(dbc_i);
             }
@@ -491,7 +793,7 @@ a.rec_blf_buf.clear();
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_apply_filter(move || {
-            let ui = uiw.unwrap();
+            let Some(ui) = uiw.upgrade() else { return };
             let mut a = app.borrow_mut();
             a.filter = parse_filter(&ui.get_f_id(), &ui.get_f_name(), &ui.get_f_data());
             a.filter.dir_filter = dir_idx_to_opt(ui.get_dir_filter());
@@ -503,7 +805,7 @@ a.rec_blf_buf.clear();
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_clear_filter(move || {
-            let ui = uiw.unwrap();
+            let Some(ui) = uiw.upgrade() else { return };
             ui.set_f_id(SharedString::new());
             ui.set_f_name(SharedString::new());
             ui.set_f_data(SharedString::new());
@@ -555,15 +857,7 @@ a.rec_blf_buf.clear();
             let i = i as usize;
             if i < a.txs.len() {
                 let t = a.txs.remove(i);
-                if t.periodic {
-                    let _ = a.cmd.send(Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(&t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: false,
-                    });
-                }
+                stop_task_periodic(&a, &t);
             }
         });
     }
@@ -571,6 +865,9 @@ a.rec_blf_buf.clear();
         let app = app.clone();
         ui.on_tx_send_once(move |i| {
             let mut a = app.borrow_mut();
+            if !a.license_allows("can-transmit") {
+                return;
+            }
             let i = i as usize;
             if i < a.txs.len() {
                 let f = tx_frame(&a.txs[i]);
@@ -585,6 +882,9 @@ a.rec_blf_buf.clear();
             let mut a = app.borrow_mut();
             let i = i as usize;
             if i < a.txs.len() {
+                if !a.txs[i].periodic && !a.license_allows("can-transmit") {
+                    return;
+                }
                 a.txs[i].periodic = !a.txs[i].periodic;
                 toggle_task_periodic(&mut a, i);
             }
@@ -605,25 +905,26 @@ a.rec_blf_buf.clear();
                     a.tree_collapsed.insert(key);
                 }
             } else if !a.tree_collapsed.insert(key.clone()) {
-                    a.tree_collapsed.remove(&key);
+                a.tree_collapsed.remove(&key);
             }
         });
     }
-{
+    {
         let app = app.clone();
-        let cw = chart_window.as_weak();
+        let uiw = ui.as_weak();
         ui.on_tree_dblclick(move |i| {
             let mut a = app.borrow_mut();
             if let Some(Some(name)) = a.tree_curve_sig.get(i as usize).cloned() {
                 a.chart_highlight = Some((name.clone(), std::time::Instant::now()));
-for s in a.series.iter_mut() {
+                for s in a.series.iter_mut() {
                     if s.name == name {
                         s.visible = true;
                     }
                 }
                 a.log(format!("高亮曲线信号: {name}"));
-                if let Some(w) = cw.upgrade() {
-                    show_child_window(&w);
+                drop(a);
+                if let Some(ui) = uiw.upgrade() {
+                    ui.invoke_open_chart_window();
                 }
             }
         });
@@ -640,26 +941,17 @@ for s in a.series.iter_mut() {
         let app = app.clone();
         ui.on_tx_all(move |start| {
             let mut a = app.borrow_mut();
-            let speed = a.tx_speed;
-            let cmds: Vec<Cmd> = a
-                .txs
-                .iter_mut()
-                .map(|t| {
-                    t.periodic = start;
-                    if start {
-                        t.sent = 0;
-                    }
-                    Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: eff_period(t.period_ms, speed),
-                        repeat: t.repeat,
-                        enable: start,
-                    }
-                })
-                .collect();
-            for c in cmds {
-                let _ = a.cmd.send(c);
+            if start && !a.license_allows("can-transmit") {
+                return;
+            }
+            for task in &mut a.txs {
+                task.periodic = start;
+                if start {
+                    task.sent = 0;
+                }
+            }
+            for idx in 0..a.txs.len() {
+                configure_task_periodic(&mut a, idx);
             }
             a.log(if start {
                 "启动全部发送"
@@ -669,81 +961,20 @@ for s in a.series.iter_mut() {
         });
     }
     {
-        let chart = chart_window.as_weak();
-        ui.on_open_chart_window(move || {
-            if let Some(chart) = chart.upgrade() {
-                show_child_window(&chart);
-            }
-        });
-    }
-    {
-        let picker = signal_window.as_weak();
-        chart_window.on_open_signal_selector(move || {
-            if let Some(picker) = picker.upgrade() {
-                show_child_window(&picker);
-            }
-        });
-    }
-    {
-        let txw = tx_window.as_weak();
-        ui.on_open_tx_window(move || {
-            if let Some(txw) = txw.upgrade() {
-                show_child_window(&txw);
-            }
-        });
-    }
-    {
-        let app = app.clone();
-        let chw = channel_window.as_weak();
-        ui.on_open_channel_config(move || {
-            let mut a = app.borrow_mut();
-            a.pcan_devices = can::pcan_attached_channels();
-            if let Some(chw) = chw.upgrade() {
-                let sel = a.channel_sel.clamp(0, a.channels.len() as i32 - 1).max(0);
-                chw.set_chan_sel(sel);
-                refresh_channel_window_lists(&chw, &a);
-                if let Some(c) = a.channels.get(sel as usize) {
-                    set_chan_form(&chw, c);
-                }
-                show_child_window(&chw);
-            }
-        });
-    }
-    {
         let app = app.clone();
         ui.on_tx_update(move |i, field, value| {
             let mut a = app.borrow_mut();
             update_tx_task(&mut a, i, &field, &value);
-            if let Some(t) = a.txs.get(i as usize)
-                && t.periodic {
-                    let _ = a.cmd.send(Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: true,
-                    });
-                }
+            let idx = i as usize;
+            if a.txs.get(idx).is_some_and(|t| t.periodic) {
+                configure_task_periodic(&mut a, idx);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_menu_info(move |s| {
             app.borrow_mut().log(format!("[菜单] {s}"));
-        });
-    }
-    {
-        let cmd_quit = app.borrow().cmd.clone();
-        let app_s = app.clone();
-        let uiw = ui.as_weak();
-        ui.on_quit_app(move || {
-            if let Some(ui) = uiw.upgrade() {
-                settings::save(&gather_settings(&app_s.borrow(), &ui));
-            }
-            let _ = cmd_quit.send(Cmd::Disconnect);
-            let _ = cmd_quit.send(Cmd::Quit);
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let _ = slint::quit_event_loop();
         });
     }
     {
@@ -755,7 +986,7 @@ for s in a.series.iter_mut() {
                     a.sort_desc = true;
                 } else {
                     a.sort_col = -1;
-a.sort_desc = false;
+                    a.sort_desc = false;
                 }
             } else {
                 a.sort_col = col;
@@ -767,35 +998,45 @@ a.sort_desc = false;
         let app = app.clone();
         ui.on_ctx_only_id(move |i| {
             let mut a = app.borrow_mut();
-            if let Some(k) = display_key(&a, i) { act_only_id(&mut a, k); }
+            if let Some(k) = display_key(&a, i) {
+                act_only_id(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_ctx_hide_id(move |i| {
             let mut a = app.borrow_mut();
-            if let Some(k) = display_key(&a, i) { act_hide_id(&mut a, k); }
+            if let Some(k) = display_key(&a, i) {
+                act_hide_id(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_ctx_to_tx(move |i| {
             let mut a = app.borrow_mut();
-            if let Some(k) = display_key(&a, i) { act_to_tx(&mut a, k); }
+            if let Some(k) = display_key(&a, i) {
+                act_to_tx(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_ctx_send_now(move |i| {
             let mut a = app.borrow_mut();
-            if let Some(k) = display_key(&a, i) { act_send_now(&mut a, k); }
+            if let Some(k) = display_key(&a, i) {
+                act_send_now(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_ctx_add_all_signals(move |i| {
             let mut a = app.borrow_mut();
-            if let Some(k) = display_key(&a, i) { act_add_all_signals(&mut a, k); }
+            if let Some(k) = display_key(&a, i) {
+                act_add_all_signals(&mut a, k);
+            }
         });
     }
     {
@@ -804,7 +1045,8 @@ a.sort_desc = false;
             let mut a = app.borrow_mut();
             a.chart_paused = !a.chart_paused;
             if a.chart_paused {
-                a.chart_pause_view = Some(a.chart_view.unwrap_or_else(|| chart_full_range(&a.series)));
+                a.chart_pause_view =
+                    Some(a.chart_view.unwrap_or_else(|| chart_full_range(&a.series)));
                 a.chart_frozen_series = Some(a.series.clone());
             } else {
                 a.chart_pause_view = None;
@@ -856,11 +1098,12 @@ a.sort_desc = false;
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_chart_export_csv(move || {
-            if app.borrow().series.is_empty() {
+            let snapshot = chart_export_snapshot(&app.borrow());
+            if snapshot.is_empty() {
                 app.borrow_mut().log("曲线为空，无可导出数据".to_string());
                 return;
             }
-            let app = app.clone();
+            let worker = app.borrow().worker_tx.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
@@ -869,22 +1112,11 @@ a.sort_desc = false;
                 if let Some(w) = uiw.upgrade() {
                     dlg = dlg.set_parent(&w.window().window_handle());
                 }
-                let Some(file) = dlg.save_file().await else { return };
+                let Some(file) = dlg.save_file().await else {
+                    return;
+                };
                 let path = file.path().to_path_buf();
-                let mut a = app.borrow_mut();
-                match std::fs::File::create(&path) {
-                    Ok(f) => {
-                        let mut w = std::io::BufWriter::new(f);
-                        let _ = writeln!(w, "Time,Signal,Value,Unit");
-                        for s in &a.series {
-                            for &(t, v) in &s.samples {
-                                let _ = writeln!(w, "{t:.6},{},{v},{}", s.name, s.unit);
-                            }
-                        }
-                        a.log(format!("曲线数据已导出: {}", path.display()));
-                    }
-                    Err(e) => a.log(format!("导出失败: {e}")),
-                }
+                spawn_chart_export(snapshot, path, false, worker);
             });
         });
     }
@@ -904,28 +1136,36 @@ a.sort_desc = false;
         let app = app.clone();
         ui.on_sel_only_id(move || {
             let mut a = app.borrow_mut();
-            if let Some(k) = a.selected_key { act_only_id(&mut a, k); }
+            if let Some(k) = a.selected_key {
+                act_only_id(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_sel_hide_id(move || {
             let mut a = app.borrow_mut();
-            if let Some(k) = a.selected_key { act_hide_id(&mut a, k); }
+            if let Some(k) = a.selected_key {
+                act_hide_id(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_sel_to_tx(move || {
             let mut a = app.borrow_mut();
-            if let Some(k) = a.selected_key { act_to_tx(&mut a, k); }
+            if let Some(k) = a.selected_key {
+                act_to_tx(&mut a, k);
+            }
         });
     }
     {
         let app = app.clone();
         ui.on_sel_send_now(move || {
             let mut a = app.borrow_mut();
-            if let Some(k) = a.selected_key { act_send_now(&mut a, k); }
+            if let Some(k) = a.selected_key {
+                act_send_now(&mut a, k);
+            }
         });
     }
     {
@@ -938,21 +1178,24 @@ a.sort_desc = false;
             }
         });
     }
-{
+    {
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_save_project(move || {
             let Some(ui) = uiw.upgrade() else { return };
-            let proj = {
+            let (proj, sim_revision) = {
                 let a = app.borrow();
-                Project {
-                    name: a.project_name.clone(),
-                    settings: gather_settings(&a, &ui),
-                    txs: a.txs.iter().map(TxTaskDto::from_task).collect(),
-                }
+                (
+                    Project {
+                        name: a.project_name.clone(),
+                        settings: gather_settings(&a, &ui),
+                        txs: a.txs.iter().map(TxTaskDto::from_task).collect(),
+                    },
+                    a.sim_revision,
+                )
             };
             let default_file_name = format!("{}.pcprj", proj.name);
-            let app = app.clone();
+            let worker = app.borrow().worker_tx.clone();
             let uiw = uiw.clone();
             let _ = slint::spawn_local(async move {
                 let mut dlg = rfd::AsyncFileDialog::new()
@@ -962,145 +1205,81 @@ a.sort_desc = false;
                 if let Some(w) = uiw.upgrade() {
                     dlg = dlg.set_parent(&w.window().window_handle());
                 }
-                let Some(file) = dlg.save_file().await else { return };
+                let Some(file) = dlg.save_file().await else {
+                    return;
+                };
                 let path = file.path().to_path_buf();
-                match serde_json::to_string_pretty(&proj) {
-                    Ok(txt) => match std::fs::write(&path, txt) {
-                        Ok(_) => app
-                            .borrow_mut()
-                            .log(format!("已保存工程: {}", path.display())),
-                        Err(e) => app.borrow_mut().log(format!("保存工程失败: {e}")),
-                    },
-                    Err(e) => app.borrow_mut().log(format!("序列化失败: {e}")),
-                }
+                std::thread::spawn(move || {
+                    let result = serde_json::to_string_pretty(&proj)
+                        .map_err(|error| format!("序列化工程失败: {error}"))
+                        .and_then(|text| {
+                            std::fs::write(&path, text)
+                                .map_err(|error| format!("保存工程失败: {error}"))
+                        });
+                    let _ = worker.send(WorkerEvent::ProjectSaved {
+                        path,
+                        sim_revision,
+                        result,
+                    });
+                });
             });
         });
     }
-{
+    {
         let app = app.clone();
         let uiw = ui.as_weak();
-        let cw = chart_window.as_weak();
-        let sw = signal_window.as_weak();
-        let txw = tx_window.as_weak();
-        let chw = channel_window.as_weak();
-        let pw = playback_window.as_weak();
-        let tgw = trigger_window.as_weak();
-        let ccw = cache_window.as_weak();
-        let spw = sim_panel_window.as_weak();
-        let ppw = sim_prop_window.as_weak();
         ui.on_open_project(move || {
             let app = app.clone();
             let uiw = uiw.clone();
-            let cw = cw.clone();
-            let sw = sw.clone();
-            let txw = txw.clone();
-            let chw = chw.clone();
-            let pw = pw.clone();
-            let tgw = tgw.clone();
-            let ccw = ccw.clone();
-            let spw = spw.clone();
-            let ppw = ppw.clone();
             let _ = slint::spawn_local(async move {
                 let Some(ui) = uiw.upgrade() else { return };
                 let mut dlg = rfd::AsyncFileDialog::new()
                     .add_filter("PcanWork 工程", &["pcprj"])
                     .add_filter("旧工程/JSON", &["zcp", "json"]);
                 dlg = dlg.set_parent(&ui.window().window_handle());
-                let Some(file) = dlg.pick_file().await else { return };
-                let path = file.path().to_path_buf();
-            let txt = match std::fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(e) => {
-                    app.borrow_mut().log(format!("读取工程失败: {e}"));
+                let Some(file) = dlg.pick_file().await else {
                     return;
-                }
-            };
-            let proj: Project = match serde_json::from_str(&txt) {
-                Ok(p) => p,
-                Err(e) => {
-                    app.borrow_mut().log(format!("解析工程失败: {e}"));
-                    return;
-                }
-            };
-            let dark = proj.settings.dark;
-            let big = proj.settings.big;
-            {
-                let mut a = app.borrow_mut();
-                a.project_name = if proj.name.trim().is_empty() {
-                    path.file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("CAN_Test_Project")
-                        .to_string()
-                } else {
-                    proj.name.clone()
                 };
-                apply_settings(&mut a, &ui, &proj.settings);
-                let stops: Vec<Cmd> = a
-                    .txs
-                    .iter()
-                    .map(|t| Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: false,
-                    })
-                    .collect();
-                for c in stops {
-                    let _ = a.cmd.send(c);
-                }
-                a.txs.clear();
-                a.change_next.clear();
-                let n = proj.txs.len();
-                for dto in proj.txs {
-                    let h = a.next_handle;
-                    a.next_handle += 1;
-                    a.txs.push(dto.into_task(h));
-                }
-                a.last_tree_sig = u64::MAX;
-                a.log(format!(
-                    "已打开工程: {}（发送任务 {n} 条，默认停发）",
-                    path.display()
-                ));
-            }
-ui.global::<Theme>().set_dark(dark);
-            ui.global::<Theme>().set_big(big);
-            if let Some(w) = cw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = sw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = txw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = chw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = pw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = tgw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = ccw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = spw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-            if let Some(w) = ppw.upgrade() { w.global::<Theme>().set_dark(dark); w.global::<Theme>().set_big(big); }
-refresh_sim(&app.borrow());
+                let path = file.path().to_path_buf();
+                let worker = app.borrow().worker_tx.clone();
+                queue_project_load(path, worker);
             });
         });
     }
-{
+    {
+        let app = app.clone();
+        ui.on_open_recent_project(move |index| {
+            let (path, worker) = {
+                let a = app.borrow();
+                let Some(path) = a.recent_project_paths.get(index as usize) else {
+                    return;
+                };
+                (std::path::PathBuf::from(path), a.worker_tx.clone())
+            };
+            if path.is_file() {
+                queue_project_load(path, worker);
+            }
+        });
+    }
+    {
         let app = app.clone();
         let uiw = ui.as_weak();
         ui.on_new_project(move || {
             {
                 let mut a = app.borrow_mut();
                 a.project_name = format!("Project_{}", chrono::Local::now().format("%H%M%S"));
-                let stops: Vec<Cmd> = a
-                    .txs
-                    .iter()
-                    .map(|t| Cmd::SetPeriodic {
-                        handle: t.handle,
-                        frame: tx_frame(t),
-                        period_ms: t.period_ms,
-                        repeat: t.repeat,
-                        enable: false,
-                    })
-                    .collect();
-                for c in stops {
-                    let _ = a.cmd.send(c);
+                a.project_path = None;
+                a.sim_dirty = false;
+                a.sim_revision = 0;
+                let _ = configure_sim_generators(&a, false);
+                a.sim_running = false;
+                a.sim_sel = -1;
+                a.sim_multi.clear();
+                let tasks = a.txs.clone();
+                for task in &tasks {
+                    stop_task_periodic(&a, task);
                 }
                 a.txs.clear();
-                a.change_next.clear();
                 a.filter = Filter::default();
                 a.series.clear();
                 a.trace.clear();
@@ -1110,13 +1289,19 @@ refresh_sim(&app.borrow());
                 a.selected_index = -1;
                 a.display_items.clear();
                 a.expanded_keys.clear();
+                a.expanded_signal_cache.clear();
                 a.sim_widgets.clear();
+                a.sim_tx_frames.clear();
+                a.dbcs.clear();
+                a.dbc_paths.clear();
+                rebuild_dbc_snap(&mut a);
                 refresh_sim(&a);
                 a.last_tree_sig = u64::MAX;
                 let project_name = a.project_name.clone();
                 a.log(format!("已新建工程: {project_name}"));
             }
             if let Some(ui) = uiw.upgrade() {
+                ui.set_project_open(true);
                 ui.set_f_id("".into());
                 ui.set_f_name("".into());
                 ui.set_f_data("".into());
@@ -1127,12 +1312,11 @@ refresh_sim(&app.borrow());
     {
         let app = app.clone();
         let uiw = ui.as_weak();
-        ui.on_cycle_renderer(move || {
+        ui.on_apply_renderer(move |requested| {
             let Some(ui) = uiw.upgrade() else { return };
-            let old = ui.get_renderer_mode().to_string();
-            let next = match ui.get_renderer_mode().as_str() {
-                "auto" => "gpu",
-                "gpu" => "cpu",
+            let next = match requested.as_str() {
+                "gpu" => "gpu",
+                "cpu" => "cpu",
                 _ => "auto",
             };
             let label = match next {
@@ -1140,24 +1324,11 @@ refresh_sim(&app.borrow());
                 "cpu" => "CPU",
                 _ => "Auto",
             };
-            let confirmed = matches!(
-                rfd::MessageDialog::new()
-                    .set_level(rfd::MessageLevel::Warning)
-                    .set_title("切换渲染模式")
-                    .set_description(format!(
-                        "将切换到 {label} 渲染模式。\n\n该设置需要重启程序后生效，现在保存设置并自动重启吗？"
-                    ))
-                    .set_buttons(rfd::MessageButtons::YesNo)
-                    .show(),
-                rfd::MessageDialogResult::Yes
-            );
-            if !confirmed {
-                ui.set_renderer_mode(old.into());
-                return;
-            }
             ui.set_renderer_mode(next.into());
             let mut a = app.borrow_mut();
-            settings::save(&gather_settings(&a, &ui));
+            if let Err(error) = settings::save(&gather_settings(&a, &ui)) {
+                a.log(format!("保存设置失败: {error}"));
+            }
             a.log(format!("渲染器已设为 {label}，正在重启程序"));
             if let Err(e) = restart_current_process() {
                 a.log(format!("自动重启失败: {e}"));
@@ -1166,91 +1337,49 @@ refresh_sim(&app.borrow());
     }
     {
         let uiw = ui.as_weak();
-        let cw = chart_window.as_weak();
-        let sw = signal_window.as_weak();
-        let txw = tx_window.as_weak();
-        let chw = channel_window.as_weak();
-        let pw = playback_window.as_weak();
-        let tgw = trigger_window.as_weak();
-        let spw = sim_panel_window.as_weak();
-        let ppw = sim_prop_window.as_weak();
-        let cvw = convert_window.as_weak();
+        let child_windows = child_windows.clone();
         ui.on_toggle_dark(move || {
-            let dark = !uiw.unwrap().global::<Theme>().get_dark();
-            uiw.unwrap().global::<Theme>().set_dark(dark);
-            if let Some(w) = cw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = sw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = txw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = chw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = pw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = tgw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = spw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = ppw.upgrade() { w.global::<Theme>().set_dark(dark); }
-            if let Some(w) = cvw.upgrade() { w.global::<Theme>().set_dark(dark); }
+            let Some(ui) = uiw.upgrade() else { return };
+            let dark = !ui.global::<Theme>().get_dark();
+            ui.global::<Theme>().set_dark(dark);
+            if let Some(windows) = child_windows.get() {
+                windows.set_dark(dark);
+            }
         });
     }
     {
         let uiw = ui.as_weak();
-        let cw = chart_window.as_weak();
-        let sw = signal_window.as_weak();
-        let txw = tx_window.as_weak();
-        let chw = channel_window.as_weak();
-        let pw = playback_window.as_weak();
-        let tgw = trigger_window.as_weak();
-        let spw = sim_panel_window.as_weak();
-        let ppw = sim_prop_window.as_weak();
-        let cvw = convert_window.as_weak();
+        let child_windows = child_windows.clone();
         ui.on_toggle_big(move || {
-            let big = !uiw.unwrap().global::<Theme>().get_big();
-            uiw.unwrap().global::<Theme>().set_big(big);
-            if let Some(w) = cw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = sw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = txw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = chw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = pw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = tgw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = spw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = ppw.upgrade() { w.global::<Theme>().set_big(big); }
-            if let Some(w) = cvw.upgrade() { w.global::<Theme>().set_big(big); }
+            let Some(ui) = uiw.upgrade() else { return };
+            let big = !ui.global::<Theme>().get_big();
+            ui.global::<Theme>().set_big(big);
+            if let Some(windows) = child_windows.get() {
+                windows.set_big(big);
+            }
         });
     }
-{
+    {
         let uiw = ui.as_weak();
-        let cw = chart_window.as_weak();
-        let sw = signal_window.as_weak();
-        let txw = tx_window.as_weak();
-        let udsw = uds_window.as_weak();
-        let xcpw = xcp_window.as_weak();
-        let chw = channel_window.as_weak();
-        let pw = playback_window.as_weak();
-        let tgw = trigger_window.as_weak();
-        let spw = sim_panel_window.as_weak();
-        let ppw = sim_prop_window.as_weak();
-        let ccw = cache_window.as_weak();
-        let cvw = convert_window.as_weak();
-        let srw = script_runner_window.as_weak();
+        let child_windows = child_windows.clone();
         let app = app.clone();
         ui.on_toggle_lang(move || {
-            let en = !uiw.unwrap().global::<I18n>().get_en();
+            let Some(ui) = uiw.upgrade() else { return };
+            let en = !ui.global::<I18n>().get_en();
             {
                 let mut a = app.borrow_mut();
                 a.lang_en = en;
                 a.last_tree_sig = u64::MAX;
             }
-            uiw.unwrap().global::<I18n>().set_en(en);
-            if let Some(w) = cw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = sw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = txw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = chw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = pw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = tgw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = spw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = ppw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = ccw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = cvw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = udsw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = xcpw.upgrade() { w.global::<I18n>().set_en(en); }
-            if let Some(w) = srw.upgrade() { w.global::<I18n>().set_en(en); }
+            ui.global::<I18n>().set_en(en);
+            if let Some(windows) = child_windows.get() {
+                windows.set_language(en);
+                refresh_dbc_diagnostics(
+                    &app.borrow(),
+                    &windows.dbc_diagnostics,
+                    &windows.dbc_diagnostics_model,
+                );
+            }
         });
     }
 }

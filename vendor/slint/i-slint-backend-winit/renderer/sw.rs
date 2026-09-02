@@ -108,12 +108,20 @@ impl super::WinitCompatibleRenderer for WinitSoftwareRenderer {
             .buffer_mut()
             .map_err(|e| format!("Error retrieving softbuffer rendering buffer: {e}"))?;
 
-        let age = target_buffer.age();
-        self.renderer.set_repaint_buffer_type(match age {
-            1 => RepaintBufferType::ReusedBuffer,
-            2 => RepaintBufferType::SwappedBuffers,
-            _ => RepaintBufferType::NewBuffer,
-        });
+        // DWM can discard an off-screen or occluded surface without Softbuffer's age changing.
+        // Reusing that buffer leaves untouched regions transparent until another full repaint.
+        #[cfg(target_os = "windows")]
+        self.renderer.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let age = target_buffer.age();
+            self.renderer.set_repaint_buffer_type(match age {
+                1 => RepaintBufferType::ReusedBuffer,
+                2 => RepaintBufferType::SwappedBuffers,
+                _ => RepaintBufferType::NewBuffer,
+            });
+        }
 
         let region = if std::env::var_os("SLINT_LINE_BY_LINE").is_none() {
             let buffer: &mut [SoftBufferPixel] =

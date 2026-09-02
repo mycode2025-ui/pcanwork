@@ -10,12 +10,13 @@
 use crate::format::*;
 use crate::protocol::*;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, VecDeque};
 use std::future::{ready, Ready};
 use std::io::Write as _;
 use std::net::ToSocketAddrs;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 use std::time::{Duration, Instant};
@@ -32,7 +33,11 @@ use tokio_serial::SerialStream;
 
 const RESPONSE_TIMEOUT_MS: u64 = 1000;
 const SCAN_TIMEOUT_MS: u64 = 400;
+const COMMAND_QUEUE_CAPACITY: usize = 512;
+const TRAFFIC_QUEUE_CAPACITY: usize = 1024;
+const ENGINE_CONTROL_QUEUE_CAPACITY: usize = 256;
 const CHART_LEN: usize = 600;
+const CHART_SERIES_PER_PAGE: usize = 12;
 const CHART_COLORS: [u32; 12] = [
     0xFF61AFEF, 0xFF98C379, 0xFFE06C75, 0xFFE5C07B, 0xFFC678DD, 0xFF56B6C2, 0xFFD19A66, 0xFFABB2BF,
     0xFFE06CB4, 0xFF7FB069, 0xFF5C9DFF, 0xFFF0A030,
@@ -109,6 +114,8 @@ pub struct SlaveCfg {
     pub address: u16,
     pub quantity: u16,
     pub format: RegFormat,
+    /// Language selected when the server is started; used for asynchronous status text.
+    pub english: bool,
     /// Some → accept TLS connections (Modbus/TCP Security).
     pub tls: Option<crate::tls::TlsServerCfg>,
 }
@@ -274,6 +281,8 @@ pub enum Cmd {
         addr: u16,
         right: bool,
     },
+    MasterChartPage(i32),
+    MasterChartFocus(u16),
     MasterReadDef {
         area: Area,
         address: u16,
@@ -328,33 +337,75 @@ pub enum Cmd {
     SlaveAutoInc {
         address: u16,
     },
-    SlaveAddMonitor {
-        id: u32,
-        weak: slint::Weak<crate::SlaveMonitor>,
-        area: Area,
-        address: u16,
-        quantity: u16,
-        format: RegFormat,
-    },
-    SlaveMonitorView {
-        id: u32,
-        area: Area,
-        address: u16,
-        quantity: u16,
-        format: RegFormat,
-    },
-    SlaveRemoveMonitor {
-        id: u32,
-    },
-    SlaveMonitorEdit {
-        id: u32,
-        address: u16,
-        text: String,
-    },
 }
 
-pub fn start_backend(weak: slint::Weak<crate::AppWindow>) -> mpsc::UnboundedSender<Cmd> {
-    let (tx, rx) = mpsc::unbounded_channel();
+#[derive(Clone)]
+pub struct CommandSender {
+    tx: mpsc::Sender<Cmd>,
+    weak: slint::Weak<crate::AppWindow>,
+    rejected: Arc<AtomicU64>,
+    high_watermark: Arc<AtomicUsize>,
+    last_report_ms: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CommandRejected;
+
+impl CommandSender {
+    pub fn send(&self, command: Cmd) -> Result<(), CommandRejected> {
+        let result = self.tx.try_send(command);
+        let rejected = result.is_err();
+        if rejected {
+            self.rejected.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.high_watermark
+                .fetch_max(self.queue_depth(), Ordering::Relaxed);
+        }
+        self.report_health(rejected);
+        result.map_err(|_| CommandRejected)
+    }
+
+    fn queue_depth(&self) -> usize {
+        self.tx.max_capacity().saturating_sub(self.tx.capacity())
+    }
+
+    fn report_health(&self, force: bool) {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let previous = self.last_report_ms.load(Ordering::Relaxed);
+        if !force && now_ms.saturating_sub(previous) < 500 {
+            return;
+        }
+        if self
+            .last_report_ms
+            .compare_exchange(previous, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return;
+        }
+        let depth = self.queue_depth();
+        let high = self.high_watermark.load(Ordering::Relaxed);
+        let rejected = self.rejected.load(Ordering::Relaxed);
+        let _ = self.weak.upgrade_in_event_loop(move |app| {
+            app.set_runtime_health(
+                format!("CMD {depth}/{COMMAND_QUEUE_CAPACITY} H{high} R{rejected}").into(),
+            );
+            app.set_runtime_loss(rejected > 0);
+        });
+    }
+}
+
+pub fn start_backend(weak: slint::Weak<crate::AppWindow>) -> CommandSender {
+    let (tx, rx) = mpsc::channel(COMMAND_QUEUE_CAPACITY);
+    let sender = CommandSender {
+        tx,
+        weak: weak.clone(),
+        rejected: Arc::new(AtomicU64::new(0)),
+        high_watermark: Arc::new(AtomicUsize::new(0)),
+        last_report_ms: Arc::new(AtomicU64::new(0)),
+    };
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -362,7 +413,8 @@ pub fn start_backend(weak: slint::Weak<crate::AppWindow>) -> mpsc::UnboundedSend
             .expect("failed to build tokio runtime");
         rt.block_on(controller(rx, UiSink { weak }));
     });
-    tx
+    sender.report_health(true);
+    sender
 }
 
 // ===========================================================================
@@ -424,7 +476,7 @@ fn show_window(windows: &[Win], id: u32, ui: &UiSink) {
     }
 }
 
-async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
+async fn controller(mut rx: mpsc::Receiver<Cmd>, ui: UiSink) {
     let active = Arc::new(AtomicU32::new(1));
     let mut windows: Vec<Win> = vec![Win {
         id: 1,
@@ -596,6 +648,12 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
             Cmd::MasterChartAxis { addr, right } => {
                 to_active!(MasterMsg::SetChartAxis { addr, right })
             }
+            Cmd::MasterChartPage(direction) => {
+                to_active!(MasterMsg::SetChartPage(direction))
+            }
+            Cmd::MasterChartFocus(addr) => {
+                to_active!(MasterMsg::FocusChartAddress(addr))
+            }
             Cmd::MasterReadDef {
                 area,
                 address,
@@ -705,7 +763,11 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                             ));
                         }
                     }
-                    let _ = std::fs::write(&path, out);
+                    let result_ui = ui.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let result = std::fs::write(&path, out);
+                        result_ui.file_result(false, "CSV 导出", path, result);
+                    });
                 }
             }
             Cmd::SlaveView {
@@ -753,56 +815,6 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
                     s.send(SlaveMsg::ToggleAutoInc { address });
                 }
             }
-            Cmd::SlaveAddMonitor {
-                id,
-                weak,
-                area,
-                address,
-                quantity,
-                format,
-            } => {
-                if let Some(s) = &slave {
-                    s.send(SlaveMsg::AddMonitor {
-                        id,
-                        weak,
-                        view: SlaveView {
-                            area,
-                            address,
-                            quantity,
-                            format,
-                        },
-                    });
-                }
-            }
-            Cmd::SlaveMonitorView {
-                id,
-                area,
-                address,
-                quantity,
-                format,
-            } => {
-                if let Some(s) = &slave {
-                    s.send(SlaveMsg::SetMonitorView {
-                        id,
-                        view: SlaveView {
-                            area,
-                            address,
-                            quantity,
-                            format,
-                        },
-                    });
-                }
-            }
-            Cmd::SlaveRemoveMonitor { id } => {
-                if let Some(s) = &slave {
-                    s.send(SlaveMsg::RemoveMonitor { id });
-                }
-            }
-            Cmd::SlaveMonitorEdit { id, address, text } => {
-                if let Some(s) = &slave {
-                    s.send(SlaveMsg::MonitorEdit { id, address, text });
-                }
-            }
         }
     }
 }
@@ -811,10 +823,62 @@ async fn controller(mut rx: mpsc::UnboundedReceiver<Cmd>, ui: UiSink) {
 // Raw-byte tap — captures the exact ADU bytes for the traffic monitor.
 // ===========================================================================
 
+#[derive(Debug, Default)]
+struct TrafficHealth {
+    dropped_chunks: AtomicU64,
+    dropped_bytes: AtomicU64,
+    high_watermark: AtomicUsize,
+}
+
+#[derive(Clone, Debug)]
+struct TrafficTx {
+    tx: mpsc::Sender<(bool, Vec<u8>)>,
+    health: Arc<TrafficHealth>,
+}
+
+impl TrafficTx {
+    fn send(&self, item: (bool, Vec<u8>)) -> Result<(), ()> {
+        let bytes = item.1.len() as u64;
+        match self.tx.try_send(item) {
+            Ok(()) => {
+                self.health.high_watermark.fetch_max(
+                    self.tx.max_capacity().saturating_sub(self.tx.capacity()),
+                    Ordering::Relaxed,
+                );
+                Ok(())
+            }
+            Err(_) => {
+                self.health.dropped_chunks.fetch_add(1, Ordering::Relaxed);
+                self.health
+                    .dropped_bytes
+                    .fetch_add(bytes, Ordering::Relaxed);
+                Err(())
+            }
+        }
+    }
+}
+
+struct TrafficRx {
+    rx: mpsc::Receiver<(bool, Vec<u8>)>,
+    health: Arc<TrafficHealth>,
+}
+
+fn traffic_channel() -> (TrafficTx, TrafficRx) {
+    let (tx, rx) = mpsc::channel(TRAFFIC_QUEUE_CAPACITY);
+    let health = Arc::new(TrafficHealth::default());
+    (
+        TrafficTx {
+            tx,
+            health: health.clone(),
+        },
+        TrafficRx { rx, health },
+    )
+}
+
 #[derive(Debug)]
 struct Tap<T> {
     inner: T,
-    tx: mpsc::UnboundedSender<(bool, Vec<u8>)>,
+    tx: TrafficTx,
 }
 
 impl<T: AsyncRead + Unpin> AsyncRead for Tap<T> {
@@ -904,14 +968,12 @@ async fn udp_connect(host: &str, port: u16) -> anyhow::Result<UdpStream> {
     Ok(UdpStream { sock })
 }
 
-type TrafficRx = mpsc::UnboundedReceiver<(bool, Vec<u8>)>;
-
 async fn connect_tapped(
     t: &Transport,
     slave_id: u8,
     tls: Option<&crate::tls::TlsClientCfg>,
 ) -> anyhow::Result<(Context, TrafficRx, Option<String>)> {
-    let (tap_tx, tap_rx) = mpsc::unbounded_channel();
+    let (tap_tx, tap_rx) = traffic_channel();
     let mut tls_desc = None;
     let ctx = match t {
         Transport::Tcp { host, port } => {
@@ -1084,6 +1146,10 @@ fn parse_modbus_adu(is_tx: bool, bytes: &[u8], is_tcp: bool) -> Option<String> {
         if bytes.len() < 8 {
             return None;
         }
+        let body_len = u16be(bytes, 4) as usize;
+        if u16be(bytes, 2) != 0 || !(2..=254).contains(&body_len) || bytes.len() != 6 + body_len {
+            return None;
+        }
         (Some(u16be(bytes, 0)), bytes[6], &bytes[7..])
     } else {
         if bytes.len() < 4 {
@@ -1113,7 +1179,7 @@ fn parse_modbus_adu(is_tx: bool, bytes: &[u8], is_tcp: bool) -> Option<String> {
     s += &format!("FC{fc:02} {}", fc_name(fc));
     let p = &pdu[1..]; // fc 之后的参数
     match fc {
-        1 | 2 | 3 | 4 => {
+        1..=4 => {
             if is_tx {
                 s += &format!(" addr={} qty={}", u16be(p, 0), u16be(p, 2));
             } else {
@@ -1152,30 +1218,109 @@ fn parse_modbus_adu(is_tx: bool, bytes: &[u8], is_tcp: bool) -> Option<String> {
     Some(s)
 }
 
+const MAX_MBAP_ADU: usize = 260;
+
+#[derive(Default)]
+struct MbapReassembler {
+    bytes: Vec<u8>,
+}
+
+impl MbapReassembler {
+    fn push(&mut self, chunk: &[u8]) -> Vec<Vec<u8>> {
+        self.bytes.extend_from_slice(chunk);
+        let mut frames = Vec::new();
+        loop {
+            if self.bytes.len() < 7 {
+                break;
+            }
+            let protocol = u16::from_be_bytes([self.bytes[2], self.bytes[3]]);
+            let body_len = u16::from_be_bytes([self.bytes[4], self.bytes[5]]) as usize;
+            let total = 6usize.saturating_add(body_len);
+            if protocol != 0 || !(2..=254).contains(&body_len) || total > MAX_MBAP_ADU {
+                self.bytes.remove(0);
+                continue;
+            }
+            if self.bytes.len() < total {
+                break;
+            }
+            frames.push(self.bytes.drain(..total).collect());
+        }
+        frames
+    }
+}
+
 fn spawn_traffic_forwarder(mut rx: TrafficRx, sink: WindowSink, is_tcp: bool) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut buf: Vec<crate::LogLine> = Vec::new();
-        while let Some((is_tx, bytes)) = rx.recv().await {
-            let hex = bytes
-                .iter()
-                .map(|b| format!("{b:02X}"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            // 解析摘要在前(便于直接读懂), 原始 hex 在后(保留)
-            let text = match parse_modbus_adu(is_tx, &bytes, is_tcp) {
-                Some(p) => format!("{p}   │   {hex}"),
-                None => hex,
-            };
-            buf.push(crate::LogLine {
-                time: now_hms().into(),
-                dir: if is_tx { "Tx" } else { "Rx" }.into(),
-                text: text.into(),
-            });
-            if buf.len() > 500 {
-                let excess = buf.len() - 500;
-                buf.drain(0..excess);
+        let mut tx_frames = MbapReassembler::default();
+        let mut rx_frames = MbapReassembler::default();
+        let mut health_tick = tokio::time::interval(Duration::from_secs(1));
+        let mut flush_tick = tokio::time::interval(Duration::from_millis(50));
+        let mut reported_drops = 0;
+        let mut dirty = false;
+        loop {
+            tokio::select! {
+                _ = flush_tick.tick(), if dirty => {
+                    sink.traffic(buf.clone());
+                    dirty = false;
+                }
+                _ = health_tick.tick() => {
+                    let dropped = rx.health.dropped_chunks.load(Ordering::Relaxed);
+                    if dropped > reported_drops {
+                        let bytes = rx.health.dropped_bytes.load(Ordering::Relaxed);
+                        let high = rx.health.high_watermark.load(Ordering::Relaxed);
+                        buf.push(crate::LogLine {
+                            time: now_hms().into(),
+                            dir: "ERR".into(),
+                            text: format!(
+                                "Traffic monitor queue overflow: dropped {dropped} chunks / {bytes} bytes, H{high}/{TRAFFIC_QUEUE_CAPACITY}"
+                            ).into(),
+                        });
+                        if buf.len() > 500 {
+                            let excess = buf.len() - 500;
+                            buf.drain(0..excess);
+                        }
+                        dirty = true;
+                        reported_drops = dropped;
+                    }
+                }
+                item = rx.rx.recv() => {
+                    let Some((is_tx, chunk)) = item else { break };
+                    let frames = if is_tcp {
+                        if is_tx {
+                            tx_frames.push(&chunk)
+                        } else {
+                            rx_frames.push(&chunk)
+                        }
+                    } else {
+                        vec![chunk]
+                    };
+                    for bytes in frames {
+                        let hex = bytes
+                            .iter()
+                            .map(|b| format!("{b:02X}"))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        let text = match parse_modbus_adu(is_tx, &bytes, is_tcp) {
+                            Some(p) => format!("{p}   |   {hex}"),
+                            None => hex,
+                        };
+                        buf.push(crate::LogLine {
+                            time: now_hms().into(),
+                            dir: if is_tx { "Tx" } else { "Rx" }.into(),
+                            text: text.into(),
+                        });
+                        if buf.len() > 500 {
+                            let excess = buf.len() - 500;
+                            buf.drain(0..excess);
+                        }
+                        dirty = true;
+                    }
+                }
             }
-            sink.traffic(buf.clone());
+        }
+        if dirty {
+            sink.traffic(buf);
         }
     })
 }
@@ -1225,6 +1370,8 @@ enum MasterMsg {
         addr: u16,
         right: bool,
     },
+    SetChartPage(i32),
+    FocusChartAddress(u16),
     SetReadDef {
         area: Area,
         address: u16,
@@ -1238,12 +1385,16 @@ enum MasterMsg {
 }
 
 struct MasterHandle {
-    ctrl: mpsc::UnboundedSender<MasterMsg>,
+    ctrl: mpsc::Sender<MasterMsg>,
+    sink: WindowSink,
 }
 
 impl MasterHandle {
     fn send(&self, m: MasterMsg) {
-        let _ = self.ctrl.send(m);
+        if self.ctrl.try_send(m).is_err() {
+            self.sink
+                .message("Master control queue full: command rejected");
+        }
     }
 }
 
@@ -1255,12 +1406,15 @@ enum PollData {
 enum PollErr {
     Exception(String),
     Io(String),
+    Invalid(String),
 }
 
 struct ChartState {
     addrs: Vec<u16>,
     data: Vec<VecDeque<f64>>,
     right: std::collections::HashSet<u16>, // addrs assigned to the right Y axis
+    page_start: usize,
+    total: usize,
 }
 
 impl ChartState {
@@ -1269,11 +1423,51 @@ impl ChartState {
             addrs: Vec::new(),
             data: Vec::new(),
             right: std::collections::HashSet::new(),
+            page_start: 0,
+            total: 0,
         }
     }
     fn reset(&mut self) {
         self.addrs.clear();
         self.data.clear();
+        self.page_start = 0;
+        self.total = 0;
+    }
+    fn move_page(&mut self, direction: i32) -> bool {
+        let max_start = self
+            .total
+            .saturating_sub(1)
+            .div_euclid(CHART_SERIES_PER_PAGE)
+            * CHART_SERIES_PER_PAGE;
+        let next = if direction < 0 {
+            self.page_start.saturating_sub(CHART_SERIES_PER_PAGE)
+        } else if direction > 0 {
+            self.page_start
+                .saturating_add(CHART_SERIES_PER_PAGE)
+                .min(max_start)
+        } else {
+            self.page_start
+        };
+        if next == self.page_start {
+            return false;
+        }
+        self.page_start = next;
+        true
+    }
+    fn focus_address(&mut self, rows: &[DisplayRow], address: u16) -> bool {
+        let Some(index) = rows
+            .iter()
+            .filter(|row| row.num.is_some())
+            .position(|row| row.address as u16 == address)
+        else {
+            return false;
+        };
+        let next = index.div_euclid(CHART_SERIES_PER_PAGE) * CHART_SERIES_PER_PAGE;
+        if next == self.page_start {
+            return false;
+        }
+        self.page_start = next;
+        true
     }
 }
 
@@ -1320,9 +1514,6 @@ fn build_series(ch: &ChartState) -> SeriesBundle {
     for (si, d) in ch.data.iter().enumerate() {
         if d.len() < 2 {
             continue;
-        }
-        if series.len() >= 6 {
-            break; // overlay caps at 6 series to stay responsive
         }
         let addr = ch.addrs.get(si).copied().unwrap_or(0);
         let is_right = ch.right.contains(&addr);
@@ -1374,18 +1565,18 @@ struct Logger {
 }
 
 impl Logger {
-    fn maybe_log(&mut self, rows: &[DisplayRow]) {
+    fn maybe_log(&mut self, rows: &[DisplayRow]) -> std::io::Result<()> {
         let now = Instant::now();
         let due = self.cfg.each_read
-            || self.last_write.map_or(true, |t| {
-                now.duration_since(t).as_secs() >= self.cfg.period_s.max(1) as u64
-            });
+            || self
+                .last_write
+                .is_none_or(|t| now.duration_since(t).as_secs() >= self.cfg.period_s.max(1) as u64);
         if !due {
-            return;
+            return Ok(());
         }
         let nums: Vec<f64> = rows.iter().filter_map(|r| r.num).collect();
         if self.cfg.on_change && self.last_vals.as_ref() == Some(&nums) {
-            return;
+            return Ok(());
         }
         let d = self.cfg.delimiter.to_string();
         if !self.header_written {
@@ -1400,7 +1591,7 @@ impl Logger {
                 .map(|r| format!("@{}", r.address))
                 .collect();
             h.push_str(&addrs.join(&d));
-            let _ = writeln!(self.file, "{h}");
+            writeln!(self.file, "{h}")?;
             self.header_written = true;
         }
         let mut line = String::new();
@@ -1410,24 +1601,32 @@ impl Logger {
         }
         let vals: Vec<String> = nums.iter().map(|n| format!("{n}")).collect();
         line.push_str(&vals.join(&d));
-        let _ = writeln!(self.file, "{line}");
+        writeln!(self.file, "{line}")?;
         // 限频 flush(~1s)：避免每轮阻塞 syscall；崩溃最多丢最近 ~1s 行，停止/Drop 时也会 flush。
         if self
             .last_flush
             .is_none_or(|t| now.duration_since(t) >= Duration::from_secs(1))
         {
-            let _ = self.file.flush();
+            self.file.flush()?;
             self.last_flush = Some(now);
         }
         self.last_write = Some(now);
         self.last_vals = Some(nums);
+        Ok(())
     }
 }
 
 fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
-    let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel::<MasterMsg>();
+    let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<MasterMsg>(ENGINE_CONTROL_QUEUE_CAPACITY);
+    let handle_sink = sink.clone();
     tokio::spawn(async move {
         let desc = cfg.transport.describe();
+        if cfg.poll {
+            if let Err(error) = validate_read_definition(cfg.area, cfg.address, cfg.quantity) {
+                sink.status(format!("Invalid read definition: {error}"), false);
+                return;
+            }
+        }
         sink.status(format!("Connecting — {desc} …"), false);
 
         let (mut ctx, traffic_rx, tls_desc) =
@@ -1450,7 +1649,7 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
         // MBAP 帧(TCP/UDP 同) vs RTU CRC: UDP 也是 MBAP，按 TCP 口径解析
         let is_tcp = matches!(cfg.transport, Transport::Tcp { .. } | Transport::Udp { .. });
         // 流量转发器: tokio JoinHandle drop 即 detach, 任务照跑; 旧连接断开时其通道关闭会自然结束
-        let _ = spawn_traffic_forwarder(traffic_rx, sink.clone(), is_tcp);
+        drop(spawn_traffic_forwarder(traffic_rx, sink.clone(), is_tcp));
         let conn_desc = match &tls_desc {
             Some(td) => format!("{desc} · {td}"),
             None => desc.clone(),
@@ -1518,7 +1717,17 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                             sink.rows(rr, nn);
                             update_chart(&mut chart, &drows);
                             sink.chart(&chart);
-                            if let Some(l) = &mut logger { l.maybe_log(&drows); }
+                            let log_error = logger
+                                .as_mut()
+                                .and_then(|active| active.maybe_log(&drows).err());
+                            if let Some(error) = log_error {
+                                logger = None;
+                                sink.log(push_log(
+                                    &mut logbuf,
+                                    "ERR",
+                                    format!("Logging stopped after file write failure: {error}"),
+                                ));
+                            }
                             sink.log(push_log(&mut logbuf, "RX", describe_poll(area, &data)));
                             sink.status(format!("Polling — {conn_desc}"), true);
                             last = Some(data);
@@ -1543,7 +1752,7 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                                 match connect_tapped(&cfg.transport, cfg.slave_id, cfg.tls.as_ref()).await {
                                     Ok((nctx, ntraffic, _ntls)) => {
                                         ctx = nctx;
-                                        let _ = spawn_traffic_forwarder(ntraffic, sink.clone(), is_tcp);
+                                        drop(spawn_traffic_forwarder(ntraffic, sink.clone(), is_tcp));
                                         consec_fail = 0;
                                         sink.status(format!("Reconnected — {conn_desc}"), true);
                                         sink.log(push_log(&mut logbuf, "TX", "已重连".into()));
@@ -1553,6 +1762,12 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                                     }
                                 }
                             }
+                        }
+                        Err(PollErr::Invalid(s)) => {
+                            err += 1;
+                            poll = false;
+                            sink.log(push_log(&mut logbuf, "ERR", format!("Invalid read definition: {s}")));
+                            sink.status(format!("Invalid read definition: {s}"), true);
                         }
                     }
                     sink.counts(tx, rx, err);
@@ -1610,13 +1825,33 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                                 s.push('\n');
                             }
                             // 一次性导出(CSV 可能较大)移到阻塞线程池，避免卡住本引擎轮询。
+                            let result_sink = sink.clone();
                             tokio::task::spawn_blocking(move || {
-                                let _ = std::fs::write(&path, s);
+                                let result = std::fs::write(&path, s);
+                                result_sink.file_result("图表导出", path, result);
                             });
                         }
                         Some(MasterMsg::SetChartAxis { addr: a, right }) => {
                             if right { chart.right.insert(a); } else { chart.right.remove(&a); }
                             sink.chart(&chart);
+                        }
+                        Some(MasterMsg::SetChartPage(direction)) => {
+                            if chart.move_page(direction) {
+                                if let Some(d) = &last {
+                                    let drows = render_master_rows(d, address, fmt, &cell_formats, &scaling);
+                                    update_chart(&mut chart, &drows);
+                                }
+                                sink.chart(&chart);
+                            }
+                        }
+                        Some(MasterMsg::FocusChartAddress(addr)) => {
+                            if let Some(d) = &last {
+                                let drows = render_master_rows(d, address, fmt, &cell_formats, &scaling);
+                                if chart.focus_address(&drows, addr) {
+                                    update_chart(&mut chart, &drows);
+                                    sink.chart(&chart);
+                                }
+                            }
                         }
                         Some(MasterMsg::SetName { address: a, name }) => {
                             if name.trim().is_empty() { names.remove(&a); } else { names.insert(a, name); }
@@ -1635,17 +1870,25 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                             rerender(&last, address, fmt, &scaling, &names, &colors, &value_names, &cell_formats, &derived, area, &mut chart, &sink);
                         }
                         Some(MasterMsg::SetReadDef { area: na, address: nad, quantity: nq, scan_ms: ns, poll: np }) => {
-                            area = na;
-                            address = nad;
-                            quantity = nq;
-                            poll = np;
-                            if ns != scan_ms {
-                                scan_ms = ns;
-                                tick = tokio::time::interval(Duration::from_millis(scan_ms.max(20)));
-                                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                            match validate_read_definition(na, nad, nq) {
+                                Ok(()) => {
+                                    area = na;
+                                    address = nad;
+                                    quantity = nq;
+                                    poll = np;
+                                    if ns != scan_ms {
+                                        scan_ms = ns;
+                                        tick = tokio::time::interval(Duration::from_millis(scan_ms.max(20)));
+                                        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                                    }
+                                    chart.reset();
+                                    last = None;
+                                }
+                                Err(error) => {
+                                    sink.log(push_log(&mut logbuf, "ERR", format!("Invalid read definition: {error}")));
+                                    sink.status(format!("Invalid read definition: {error}"), true);
+                                }
                             }
-                            chart.reset();
-                            last = None;
                         }
                         Some(MasterMsg::StartLog(c)) => {
                             match std::fs::File::create(&c.path) {
@@ -1700,6 +1943,15 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
                             sink.counts(tx, rx, err);
                         }
                         Some(MasterMsg::ReadWrite { read_addr, read_qty, write_addr, write_values }) => {
+                            let validation = validate_span(read_addr, read_qty as usize, 125, "FC23 read")
+                                .and_then(|()| validate_span(write_addr, write_values.len(), 121, "FC23 write"));
+                            if let Err(error) = validation {
+                                err += 1;
+                                sink.log(push_log(&mut logbuf, "ERR", format!("FC23 validation failed: {error}")));
+                                sink.status(format!("FC23 validation failed: {error}"), true);
+                                sink.counts(tx, rx, err);
+                                continue;
+                            }
                             tx += 1;
                             let dur = Duration::from_millis(timeout_ms.max(20));
                             match tokio::time::timeout(dur, ctx.read_write_multiple_registers(read_addr, read_qty, write_addr, &write_values)).await {
@@ -1723,7 +1975,10 @@ fn spawn_master(cfg: MasterCfg, sink: WindowSink) -> MasterHandle {
         sink.status(format!("Disconnected — {desc}"), false);
     });
 
-    MasterHandle { ctrl: ctrl_tx }
+    MasterHandle {
+        ctrl: ctrl_tx,
+        sink: handle_sink,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1771,6 +2026,28 @@ fn render_master_rows(
     }
 }
 
+fn validate_span(address: u16, quantity: usize, maximum: usize, label: &str) -> Result<(), String> {
+    if quantity == 0 || quantity > maximum {
+        return Err(format!(
+            "{label} quantity must be 1..{maximum}, got {quantity}"
+        ));
+    }
+    if address as usize + quantity > 65_536 {
+        return Err(format!(
+            "{label} address range exceeds 65535: {address} + {quantity}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_read_definition(area: Area, address: u16, quantity: u16) -> Result<(), String> {
+    let maximum = match area {
+        Area::Coils | Area::DiscreteInputs => 2000,
+        Area::HoldingRegisters | Area::InputRegisters => 125,
+    };
+    validate_span(address, quantity as usize, maximum, "read")
+}
+
 async fn poll_once(
     ctx: &mut Context,
     area: Area,
@@ -1778,6 +2055,7 @@ async fn poll_once(
     qty: u16,
     timeout_ms: u64,
 ) -> Result<PollData, PollErr> {
+    validate_read_definition(area, addr, qty).map_err(PollErr::Invalid)?;
     let dur = Duration::from_millis(timeout_ms.max(20));
     match area {
         Area::Coils => match tokio::time::timeout(dur, ctx.read_coils(addr, qty)).await {
@@ -1827,6 +2105,7 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
     if let Some(fmt) = req.encode {
         // 精确整数解析 + 范围校验(不经 f64)：避免 u64 高半区被拒、>2^53 精度丢失、超范围静默饱和写错值。
         let words = encode_typed(&req.text, fmt)?;
+        validate_span(req.address, words.len(), 123, "FC16 write")?;
         flatten_unit(
             tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &words)).await,
         )?;
@@ -1854,6 +2133,7 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
         WriteFunc::MultiCoils => {
             let vs = parse_bit_list(&req.text)
                 .ok_or_else(|| "invalid coil list (e.g. 1,0,1)".to_string())?;
+            validate_span(req.address, vs.len(), 1968, "FC15 write")?;
             flatten_unit(
                 tokio::time::timeout(dur, ctx.write_multiple_coils(req.address, &vs)).await,
             )?;
@@ -1862,6 +2142,7 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
         WriteFunc::MultiRegs => {
             let vs = parse_word_list(&req.text)
                 .ok_or_else(|| "invalid register list (e.g. 10,20,30)".to_string())?;
+            validate_span(req.address, vs.len(), 123, "FC16 write")?;
             flatten_unit(
                 tokio::time::timeout(dur, ctx.write_multiple_registers(req.address, &vs)).await,
             )?;
@@ -1872,6 +2153,27 @@ async fn do_write(ctx: &mut Context, req: &WriteReq, timeout_ms: u64) -> Result<
 
 /// Write the list using the chosen function code. Single-* write each item in its
 /// own request; Multi-* write the contiguous block in one request (base = first addr).
+fn validate_write_items(func: WriteFunc, items: &[WriteItem]) -> Result<(), String> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    if matches!(func, WriteFunc::MultiRegs | WriteFunc::MultiCoils) {
+        if !items
+            .windows(2)
+            .all(|pair| pair[0].address.checked_add(1) == Some(pair[1].address))
+        {
+            return Err("multiple-write addresses are not contiguous".into());
+        }
+        let maximum = if matches!(func, WriteFunc::MultiCoils) {
+            1968
+        } else {
+            123
+        };
+        validate_span(items[0].address, items.len(), maximum, "multiple write")?;
+    }
+    Ok(())
+}
+
 async fn write_items(
     ctx: &mut Context,
     func: WriteFunc,
@@ -1882,6 +2184,7 @@ async fn write_items(
     if items.is_empty() {
         return Ok(0);
     }
+    validate_write_items(func, items)?;
     let base = items[0].address;
     match func {
         WriteFunc::SingleReg => {
@@ -1936,11 +2239,19 @@ fn describe_poll(area: Area, data: &PollData) -> String {
 // ----- chart -----
 
 fn update_chart(ch: &mut ChartState, rows: &[DisplayRow]) {
-    let pts: Vec<(u16, f64)> = rows
+    let all_points: Vec<(u16, f64)> = rows
         .iter()
         .filter_map(|r| r.num.map(|n| (r.address as u16, n)))
-        .take(12)
         .collect();
+    ch.total = all_points.len();
+    let max_start =
+        ch.total.saturating_sub(1).div_euclid(CHART_SERIES_PER_PAGE) * CHART_SERIES_PER_PAGE;
+    ch.page_start = ch.page_start.min(max_start);
+    let page_end = ch
+        .page_start
+        .saturating_add(CHART_SERIES_PER_PAGE)
+        .min(all_points.len());
+    let pts = &all_points[ch.page_start..page_end];
     let addrs: Vec<u16> = pts.iter().map(|p| p.0).collect();
     if ch.addrs != addrs {
         ch.addrs = addrs;
@@ -2095,7 +2406,7 @@ fn spawn_scan_address(cfg: ScanCfg, ui: UiSink) -> JoinHandle<()> {
             }
             let addr = addr32 as u16;
             let res = probe(&mut ctx, cfg.area, addr).await;
-            if matches!(res, Ok(_)) {
+            if res.is_ok() {
                 found += 1;
             }
             rows.push(scan_row(format!("@{addr}"), &res));
@@ -2135,7 +2446,7 @@ fn spawn_scan_slave(cfg: SlaveScanCfg, ui: UiSink) -> JoinHandle<()> {
         for id in lo..=hi {
             ctx.set_slave(Slave(id));
             let res = probe(&mut ctx, cfg.area, cfg.address).await;
-            if matches!(res, Ok(_)) {
+            if res.is_ok() {
                 found += 1;
             }
             rows.push(scan_row(format!("ID {id}"), &res));
@@ -2192,30 +2503,32 @@ enum SlaveMsg {
     ToggleAutoInc {
         address: u16,
     },
-    AddMonitor {
-        id: u32,
-        weak: slint::Weak<crate::SlaveMonitor>,
-        view: SlaveView,
-    },
-    SetMonitorView {
-        id: u32,
-        view: SlaveView,
-    },
-    RemoveMonitor {
-        id: u32,
-    },
-    MonitorEdit {
-        id: u32,
-        address: u16,
-        text: String,
-    },
-    Stop,
 }
 
 struct SlaveShared {
     store: Mutex<DataStore>,
     requests: AtomicU64,
     events: mpsc::Sender<SlaveEvent>,
+    event_drops: AtomicU64,
+    event_high_watermark: AtomicUsize,
+}
+
+impl SlaveShared {
+    fn send_event(&self, event: SlaveEvent) {
+        match self.events.try_send(event) {
+            Ok(()) => {
+                self.event_high_watermark.fetch_max(
+                    self.events
+                        .max_capacity()
+                        .saturating_sub(self.events.capacity()),
+                    Ordering::Relaxed,
+                );
+            }
+            Err(_) => {
+                self.event_drops.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -2245,7 +2558,7 @@ impl Service for SlaveService {
         }
 
         self.shared.requests.fetch_add(1, Ordering::Relaxed);
-        let _ = self.shared.events.try_send(SlaveEvent::Log {
+        self.shared.send_event(SlaveEvent::Log {
             dir: "RX",
             text: describe_request(&request),
         });
@@ -2253,12 +2566,12 @@ impl Service for SlaveService {
         match handle_request(&self.shared, &request) {
             Ok(resp) => {
                 if is_write(&request) {
-                    let _ = self.shared.events.try_send(SlaveEvent::Changed);
+                    self.shared.send_event(SlaveEvent::Changed);
                 }
                 ready(Ok(if broadcast { None } else { Some(resp) }))
             }
             Err(e) => {
-                let _ = self.shared.events.try_send(SlaveEvent::Log {
+                self.shared.send_event(SlaveEvent::Log {
                     dir: "ERR",
                     text: format!("Exception: {e:?}"),
                 });
@@ -2269,18 +2582,21 @@ impl Service for SlaveService {
 }
 
 struct SlaveHandle {
-    ctrl: mpsc::UnboundedSender<SlaveMsg>,
+    ctrl: mpsc::Sender<SlaveMsg>,
     server: JoinHandle<()>,
     updater: JoinHandle<()>,
+    ui: UiSink,
 }
 
 impl SlaveHandle {
     fn send(&self, m: SlaveMsg) {
-        let _ = self.ctrl.send(m);
+        if self.ctrl.try_send(m).is_err() {
+            self.ui
+                .slave_message("Slave control queue full: command rejected");
+        }
     }
     fn stop(self) {
         self.server.abort();
-        let _ = self.ctrl.send(SlaveMsg::Stop);
         self.updater.abort();
     }
 }
@@ -2293,18 +2609,298 @@ struct SlaveView {
     format: RegFormat,
 }
 
+fn bind_error_message(host: &str, port: u16, error: &std::io::Error, english: bool) -> String {
+    let address_not_local =
+        error.kind() == std::io::ErrorKind::AddrNotAvailable || error.raw_os_error() == Some(10049);
+
+    if address_not_local {
+        if english {
+            return format!(
+                "Start failed: {host} is not currently available for listening. Its network adapter may be disconnected, the IP address may not be active yet, or the address may not be assigned to this computer. Connect the adapter and wait for the IP address to become active, or use 0.0.0.0 to listen on all active interfaces."
+            );
+        }
+        return format!(
+            "启动失败：{host} 当前不能用于监听。对应网卡可能未连接、IP 地址尚未生效，或该地址未分配给本机。请连接网卡并等待 IP 生效，或使用 0.0.0.0 监听全部有效网卡。"
+        );
+    }
+
+    if error.kind() == std::io::ErrorKind::AddrInUse {
+        return if english {
+            format!("Start failed: port {port} is already in use.")
+        } else {
+            format!("启动失败：端口 {port} 已被其他程序占用。")
+        };
+    }
+
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        return if english {
+            format!("Start failed: permission denied while listening on {host}:{port}.")
+        } else {
+            format!("启动失败：没有权限监听 {host}:{port}，请更换端口或以管理员身份运行。")
+        };
+    }
+
+    if english {
+        format!("Start failed: cannot listen on {host}:{port} ({error}).")
+    } else {
+        format!("启动失败：无法监听 {host}:{port}（{error}）。")
+    }
+}
+
+fn pdu_u16(data: &[u8], offset: usize) -> Option<u16> {
+    let bytes: [u8; 2] = data.get(offset..offset + 2)?.try_into().ok()?;
+    Some(u16::from_be_bytes(bytes))
+}
+
+fn decode_server_request_pdu(pdu: &[u8]) -> Result<Request<'static>, ExceptionCode> {
+    let malformed = || ExceptionCode::IllegalDataValue;
+    if pdu.len() > 253 {
+        return Err(malformed());
+    }
+    let function = *pdu.first().ok_or_else(malformed)?;
+    let pair = |offset| Some((pdu_u16(pdu, offset)?, pdu_u16(pdu, offset + 2)?));
+    match function {
+        0x01 if pdu.len() == 5 => pair(1)
+            .map(|(a, q)| Request::ReadCoils(a, q))
+            .ok_or_else(malformed),
+        0x02 if pdu.len() == 5 => pair(1)
+            .map(|(a, q)| Request::ReadDiscreteInputs(a, q))
+            .ok_or_else(malformed),
+        0x03 if pdu.len() == 5 => pair(1)
+            .map(|(a, q)| Request::ReadHoldingRegisters(a, q))
+            .ok_or_else(malformed),
+        0x04 if pdu.len() == 5 => pair(1)
+            .map(|(a, q)| Request::ReadInputRegisters(a, q))
+            .ok_or_else(malformed),
+        0x05 if pdu.len() == 5 => {
+            let (address, raw) = pair(1).ok_or_else(malformed)?;
+            let value = match raw {
+                0xFF00 => true,
+                0x0000 => false,
+                _ => return Err(malformed()),
+            };
+            Ok(Request::WriteSingleCoil(address, value))
+        }
+        0x06 if pdu.len() == 5 => pair(1)
+            .map(|(a, v)| Request::WriteSingleRegister(a, v))
+            .ok_or_else(malformed),
+        0x0F => {
+            let (address, quantity) = pair(1).ok_or_else(malformed)?;
+            let byte_count = usize::from(*pdu.get(5).ok_or_else(malformed)?);
+            let packed = pdu.get(6..6 + byte_count).ok_or_else(malformed)?;
+            if pdu.len() != 6 + byte_count || byte_count != usize::from(quantity).div_ceil(8) {
+                return Err(malformed());
+            }
+            let values = (0..usize::from(quantity))
+                .map(|i| packed[i / 8] & (1 << (i % 8)) != 0)
+                .collect::<Vec<_>>();
+            Ok(Request::WriteMultipleCoils(address, Cow::Owned(values)))
+        }
+        0x10 => {
+            let (address, quantity) = pair(1).ok_or_else(malformed)?;
+            let byte_count = usize::from(*pdu.get(5).ok_or_else(malformed)?);
+            let bytes = pdu.get(6..6 + byte_count).ok_or_else(malformed)?;
+            if pdu.len() != 6 + byte_count || byte_count != usize::from(quantity) * 2 {
+                return Err(malformed());
+            }
+            let values = bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<_>>();
+            Ok(Request::WriteMultipleRegisters(address, Cow::Owned(values)))
+        }
+        0x16 if pdu.len() == 7 => {
+            let address = pdu_u16(pdu, 1).ok_or_else(malformed)?;
+            let and_mask = pdu_u16(pdu, 3).ok_or_else(malformed)?;
+            let or_mask = pdu_u16(pdu, 5).ok_or_else(malformed)?;
+            Ok(Request::MaskWriteRegister(address, and_mask, or_mask))
+        }
+        0x17 => {
+            let read_address = pdu_u16(pdu, 1).ok_or_else(malformed)?;
+            let read_quantity = pdu_u16(pdu, 3).ok_or_else(malformed)?;
+            let write_address = pdu_u16(pdu, 5).ok_or_else(malformed)?;
+            let write_quantity = pdu_u16(pdu, 7).ok_or_else(malformed)?;
+            let byte_count = usize::from(*pdu.get(9).ok_or_else(malformed)?);
+            let bytes = pdu.get(10..10 + byte_count).ok_or_else(malformed)?;
+            if pdu.len() != 10 + byte_count || byte_count != usize::from(write_quantity) * 2 {
+                return Err(malformed());
+            }
+            let values = bytes
+                .chunks_exact(2)
+                .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+                .collect::<Vec<_>>();
+            Ok(Request::ReadWriteMultipleRegisters(
+                read_address,
+                read_quantity,
+                write_address,
+                Cow::Owned(values),
+            ))
+        }
+        0x01..=0x06 | 0x16 => Err(malformed()),
+        _ => Err(ExceptionCode::IllegalFunction),
+    }
+}
+
+fn encode_server_response_pdu(function: u8, response: Result<Response, ExceptionCode>) -> Vec<u8> {
+    let mut out = Vec::with_capacity(253);
+    let response = match response {
+        Ok(response) => response,
+        Err(exception) => {
+            out.push(function | 0x80);
+            out.push(exception.into());
+            return out;
+        }
+    };
+    out.push(response.function_code().value());
+    match response {
+        Response::ReadCoils(values) | Response::ReadDiscreteInputs(values) => {
+            let byte_count = values.len().div_ceil(8);
+            out.push(byte_count as u8);
+            out.resize(2 + byte_count, 0);
+            for (index, value) in values.into_iter().enumerate() {
+                if value {
+                    out[2 + index / 8] |= 1 << (index % 8);
+                }
+            }
+        }
+        Response::ReadInputRegisters(values)
+        | Response::ReadHoldingRegisters(values)
+        | Response::ReadWriteMultipleRegisters(values) => {
+            out.push((values.len() * 2) as u8);
+            for value in values {
+                out.extend_from_slice(&value.to_be_bytes());
+            }
+        }
+        Response::WriteSingleCoil(address, value) => {
+            out.extend_from_slice(&address.to_be_bytes());
+            out.extend_from_slice(&(if value { 0xFF00u16 } else { 0 }).to_be_bytes());
+        }
+        Response::WriteSingleRegister(address, value) => {
+            out.extend_from_slice(&address.to_be_bytes());
+            out.extend_from_slice(&value.to_be_bytes());
+        }
+        Response::WriteMultipleCoils(address, quantity)
+        | Response::WriteMultipleRegisters(address, quantity) => {
+            out.extend_from_slice(&address.to_be_bytes());
+            out.extend_from_slice(&quantity.to_be_bytes());
+        }
+        Response::MaskWriteRegister(address, and_mask, or_mask) => {
+            out.extend_from_slice(&address.to_be_bytes());
+            out.extend_from_slice(&and_mask.to_be_bytes());
+            out.extend_from_slice(&or_mask.to_be_bytes());
+        }
+        Response::ReportServerId(server_id, running, additional) => {
+            out.push((additional.len() + 2) as u8);
+            out.push(server_id);
+            out.push(if running { 0xFF } else { 0 });
+            out.extend_from_slice(&additional);
+        }
+        Response::Custom(_, bytes) => out.extend_from_slice(&bytes),
+        Response::ReadDeviceIdentification(_) => {
+            out.clear();
+            out.push(function | 0x80);
+            out.push(ExceptionCode::IllegalFunction.into());
+        }
+    }
+    out
+}
+
+fn modbus_crc16(data: &[u8]) -> u16 {
+    let mut crc = 0xFFFFu16;
+    for &byte in data {
+        crc ^= u16::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xA001
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    crc
+}
+
+async fn serve_udp_slave(
+    socket: tokio::net::UdpSocket,
+    service: SlaveService,
+    traffic: TrafficTx,
+    rtu: bool,
+) -> std::io::Result<()> {
+    let mut buffer = [0u8; 260];
+    loop {
+        let (size, peer) = socket.recv_from(&mut buffer).await?;
+        let frame = &buffer[..size];
+        let _ = traffic.send((false, frame.to_vec()));
+
+        let parsed = if rtu {
+            if frame.len() < 4 {
+                None
+            } else {
+                let body_len = frame.len() - 2;
+                let expected = u16::from_le_bytes([frame[body_len], frame[body_len + 1]]);
+                (modbus_crc16(&frame[..body_len]) == expected)
+                    .then(|| (None, frame[0], &frame[1..body_len]))
+            }
+        } else if frame.len() >= 8 && frame[2..4] == [0, 0] {
+            let length = usize::from(u16::from_be_bytes([frame[4], frame[5]]));
+            let end = 6usize.saturating_add(length);
+            (length >= 2 && end == frame.len())
+                .then(|| (Some([frame[0], frame[1]]), frame[6], &frame[7..end]))
+        } else {
+            None
+        };
+
+        let Some((transaction, slave, pdu)) = parsed else {
+            service.shared.send_event(SlaveEvent::Log {
+                dir: "ERR",
+                text: "Discarded malformed UDP Modbus frame".into(),
+            });
+            continue;
+        };
+        let function = pdu.first().copied().unwrap_or(0);
+        let result = match decode_server_request_pdu(pdu) {
+            Ok(request) => service
+                .call(SlaveRequest { slave, request })
+                .await
+                .transpose(),
+            Err(_) if rtu && slave == 0 => None,
+            Err(exception) => Some(Err(exception)),
+        };
+        let Some(result) = result else {
+            continue;
+        };
+        let response_pdu = encode_server_response_pdu(function, result);
+        let mut response = Vec::with_capacity(response_pdu.len() + 7);
+        if let Some(transaction) = transaction {
+            response.extend_from_slice(&transaction);
+            response.extend_from_slice(&[0, 0]);
+            response.extend_from_slice(&((response_pdu.len() + 1) as u16).to_be_bytes());
+            response.push(slave);
+            response.extend_from_slice(&response_pdu);
+        } else {
+            response.push(slave);
+            response.extend_from_slice(&response_pdu);
+            response.extend_from_slice(&modbus_crc16(&response).to_le_bytes());
+        }
+        socket.send_to(&response, peer).await?;
+        let _ = traffic.send((true, response));
+    }
+}
+
 fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
     // 有界队列 + try_send：高频请求下满则丢弃事件(背压/有损)，避免无界内存增长。
     let (events_tx, mut events_rx) = mpsc::channel::<SlaveEvent>(1024);
-    let (ctrl_tx, mut ctrl_rx) = mpsc::unbounded_channel::<SlaveMsg>();
+    let (ctrl_tx, mut ctrl_rx) = mpsc::channel::<SlaveMsg>(ENGINE_CONTROL_QUEUE_CAPACITY);
     let shared = Arc::new(SlaveShared {
         store: Mutex::new(DataStore::new()),
         requests: AtomicU64::new(0),
         events: events_tx,
+        event_drops: AtomicU64::new(0),
+        event_high_watermark: AtomicUsize::new(0),
     });
 
-    let (traffic_tx, mut traffic_rx) = mpsc::unbounded_channel::<(bool, Vec<u8>)>();
-    let slave_is_tcp = matches!(cfg.transport, Transport::Tcp { .. }); // 流量解析: MBAP vs RTU CRC
+    let (traffic_tx, mut traffic_rx) = traffic_channel();
+    let slave_is_tcp = matches!(cfg.transport, Transport::Tcp { .. } | Transport::Udp { .. });
 
     // --- server task ---
     let server_shared = shared.clone();
@@ -2312,18 +2908,15 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
     let transport = cfg.transport.clone();
     let unit_id = cfg.unit_id;
     let ignore_unit_id = cfg.ignore_unit_id;
+    let english = cfg.english;
     let tls = cfg.tls.clone();
     let server = tokio::spawn(async move {
         match transport {
-            // 从站(模拟器)只支持 TCP/RTU —— UDP / RTU-over-IP 为主站专用，UI 从站模式不提供。
-            Transport::Udp { .. } | Transport::RtuOverTcp { .. } | Transport::RtuOverUdp { .. } => {
-                ui_srv.slave_status("从站仅支持 TCP / RTU(串口)", false);
-            }
             Transport::Tcp { host, port } => {
                 let listener = match TcpListener::bind((host.as_str(), port)).await {
                     Ok(l) => l,
                     Err(e) => {
-                        ui_srv.slave_status(format!("Bind failed: {e}"), false);
+                        ui_srv.slave_status(bind_error_message(&host, port, &e, english), false);
                         return;
                     }
                 };
@@ -2391,6 +2984,104 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                     }
                 }
             }
+            Transport::Udp { host, port } => {
+                let socket = match tokio::net::UdpSocket::bind((host.as_str(), port)).await {
+                    Ok(socket) => socket,
+                    Err(error) => {
+                        ui_srv
+                            .slave_status(bind_error_message(&host, port, &error, english), false);
+                        return;
+                    }
+                };
+                let local = socket
+                    .local_addr()
+                    .map(|address| address.to_string())
+                    .unwrap_or_else(|_| format!("{host}:{port}"));
+                ui_srv.slave_status(format!("Listening on {local} (Modbus UDP)"), true);
+                let service = SlaveService {
+                    shared: server_shared.clone(),
+                    unit_id,
+                    tcp: true,
+                    ignore_unit_id,
+                };
+                if let Err(error) = serve_udp_slave(socket, service, traffic_tx, false).await {
+                    ui_srv.slave_status(format!("UDP server stopped: {error}"), false);
+                }
+            }
+            Transport::RtuOverTcp { host, port } => {
+                let listener = match TcpListener::bind((host.as_str(), port)).await {
+                    Ok(listener) => listener,
+                    Err(error) => {
+                        ui_srv
+                            .slave_status(bind_error_message(&host, port, &error, english), false);
+                        return;
+                    }
+                };
+                let local = listener
+                    .local_addr()
+                    .map(|address| address.to_string())
+                    .unwrap_or_else(|_| format!("{host}:{port}"));
+                ui_srv.slave_status(format!("Listening on {local} (RTU over TCP)"), true);
+                let service = SlaveService {
+                    shared: server_shared.clone(),
+                    unit_id,
+                    tcp: false,
+                    ignore_unit_id: false,
+                };
+                let on_connected =
+                    move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
+                        let service = service.clone();
+                        let traffic = traffic_tx.clone();
+                        async move {
+                            tokio_modbus::server::rtu_over_tcp::accept_tcp_connection(
+                                stream,
+                                peer,
+                                move |_address| Ok(Some(service.clone())),
+                            )
+                            .map(|accepted| {
+                                accepted.map(|(service, stream)| {
+                                    (
+                                        service,
+                                        Tap {
+                                            inner: stream,
+                                            tx: traffic,
+                                        },
+                                    )
+                                })
+                            })
+                        }
+                    };
+                let on_error =
+                    |error: std::io::Error| eprintln!("modbus rtu-over-tcp server error: {error}");
+                let server = tokio_modbus::server::rtu_over_tcp::Server::new(listener);
+                if let Err(error) = server.serve(&on_connected, on_error).await {
+                    ui_srv.slave_status(format!("RTU/TCP server stopped: {error}"), false);
+                }
+            }
+            Transport::RtuOverUdp { host, port } => {
+                let socket = match tokio::net::UdpSocket::bind((host.as_str(), port)).await {
+                    Ok(socket) => socket,
+                    Err(error) => {
+                        ui_srv
+                            .slave_status(bind_error_message(&host, port, &error, english), false);
+                        return;
+                    }
+                };
+                let local = socket
+                    .local_addr()
+                    .map(|address| address.to_string())
+                    .unwrap_or_else(|_| format!("{host}:{port}"));
+                ui_srv.slave_status(format!("Listening on {local} (RTU over UDP)"), true);
+                let service = SlaveService {
+                    shared: server_shared.clone(),
+                    unit_id,
+                    tcp: false,
+                    ignore_unit_id: false,
+                };
+                if let Err(error) = serve_udp_slave(socket, service, traffic_tx, true).await {
+                    ui_srv.slave_status(format!("RTU/UDP server stopped: {error}"), false);
+                }
+            }
             Transport::Rtu {
                 path,
                 baud,
@@ -2431,6 +3122,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         quantity: cfg.quantity,
         format: cfg.format,
     };
+    let handle_ui = ui.clone();
     let updater = tokio::spawn(async move {
         let mut view = view0;
         let mut names: HashMap<u16, String> = HashMap::new();
@@ -2444,14 +3136,18 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         let mut trafficbuf: Vec<crate::LogLine> = Vec::new();
         let mut last_names: Vec<slint::SharedString> = Vec::new();
         let mut sim_tick = tokio::time::interval(Duration::from_secs(3600));
+        let mut traffic_health_tick = tokio::time::interval(Duration::from_secs(1));
+        let mut traffic_flush_tick = tokio::time::interval(Duration::from_millis(50));
+        let mut log_flush_tick = tokio::time::interval(Duration::from_millis(50));
+        let mut reported_traffic_drops = 0;
+        let mut reported_event_drops = 0;
+        let mut traffic_dirty = false;
+        let mut log_dirty = false;
         // Per-register auto-increment toggled from the row context menu.
         let mut auto_inc: std::collections::HashSet<(Area, u16)> = std::collections::HashSet::new();
         let mut ainc_tick = tokio::time::interval(Duration::from_millis(500));
         // Per-cell display-format overrides (Set format… 右键菜单), 与主站对等。
         let mut cell_formats: HashMap<u16, RegFormat> = HashMap::new();
-        // Floating server monitors: independent views into the same store.
-        let mut monitors: Vec<(u32, slint::Weak<crate::SlaveMonitor>, SlaveView)> = Vec::new();
-
         render_slave(
             &upd_shared,
             &view,
@@ -2472,12 +3168,22 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                     match ev {
                         SlaveEvent::Changed => {
                             render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
-                            for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                         }
-                        SlaveEvent::Log { dir, text } => ui.slave_log(push_log(&mut logbuf, dir, text)),
+                        SlaveEvent::Log { dir, text } => {
+                            logbuf.push(crate::LogLine {
+                                time: now_hms().into(),
+                                dir: dir.into(),
+                                text: text.into(),
+                            });
+                            if logbuf.len() > 300 {
+                                let excess = logbuf.len() - 300;
+                                logbuf.drain(0..excess);
+                            }
+                            log_dirty = true;
+                        },
                     }
                 }
-                Some((is_tx, bytes)) = traffic_rx.recv() => {
+                Some((is_tx, bytes)) = traffic_rx.rx.recv() => {
                     let hex = bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
                     let text = match parse_modbus_adu(is_tx, &bytes, slave_is_tcp) {
                         Some(p) => format!("{p}   │   {hex}"),
@@ -2492,7 +3198,55 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         let excess = trafficbuf.len() - 500;
                         trafficbuf.drain(0..excess);
                     }
+                    traffic_dirty = true;
+                }
+                _ = traffic_flush_tick.tick(), if traffic_dirty => {
                     ui.slave_traffic(trafficbuf.clone());
+                    traffic_dirty = false;
+                }
+                _ = log_flush_tick.tick(), if log_dirty => {
+                    ui.slave_log(logbuf.clone());
+                    log_dirty = false;
+                }
+                _ = traffic_health_tick.tick() => {
+                    let dropped = traffic_rx.health.dropped_chunks.load(Ordering::Relaxed);
+                    if dropped > reported_traffic_drops {
+                        let bytes = traffic_rx.health.dropped_bytes.load(Ordering::Relaxed);
+                        let high = traffic_rx.health.high_watermark.load(Ordering::Relaxed);
+                        trafficbuf.push(crate::LogLine {
+                            time: now_hms().into(),
+                            dir: "ERR".into(),
+                            text: format!(
+                                "Traffic monitor queue overflow: dropped {dropped} chunks / {bytes} bytes, H{high}/{TRAFFIC_QUEUE_CAPACITY}"
+                            ).into(),
+                        });
+                        if trafficbuf.len() > 500 {
+                            let excess = trafficbuf.len() - 500;
+                            trafficbuf.drain(0..excess);
+                        }
+                        traffic_dirty = true;
+                        reported_traffic_drops = dropped;
+                    }
+                    let event_drops = upd_shared.event_drops.load(Ordering::Relaxed);
+                    if event_drops > reported_event_drops {
+                        let high = upd_shared.event_high_watermark.load(Ordering::Relaxed);
+                        ui.slave_message(format!(
+                            "Slave event queue overflow: dropped {event_drops}, H{high}/1024"
+                        ));
+                        logbuf.push(crate::LogLine {
+                            time: now_hms().into(),
+                            dir: "ERR".into(),
+                            text: format!(
+                                "Slave event queue overflow: dropped {event_drops}, H{high}/1024"
+                            ).into(),
+                        });
+                        if logbuf.len() > 300 {
+                            let excess = logbuf.len() - 300;
+                            logbuf.drain(0..excess);
+                        }
+                        log_dirty = true;
+                        reported_event_drops = event_drops;
+                    }
                 }
                 _ = sim_tick.tick(), if sim.is_some() => {
                     if let Some(cfg) = &sim {
@@ -2501,7 +3255,6 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             apply_sim(&mut store, cfg, &mut rng);
                         }
                         render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
-                        for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                     }
                 }
                 _ = ainc_tick.tick(), if !auto_inc.is_empty() => {
@@ -2512,7 +3265,6 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         }
                     }
                     render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
-                    for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                 }
                 msg = ctrl_rx.recv() => {
                     match msg {
@@ -2524,7 +3276,6 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                         Some(SlaveMsg::Edit { address, text }) => {
                             apply_edit(&upd_shared, view.area, address, &text);
                             render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
-                            for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
                         }
                         Some(SlaveMsg::EditAt { area, address, text }) => {
                             // 导入按 Function 列写到指定表(与当前视图无关)
@@ -2543,7 +3294,11 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             let store = upd_shared.store.lock().unwrap();
                             let out = build_server_csv(&store, &names);
                             drop(store);
-                            let _ = std::fs::write(&path, out);
+                            let result_ui = ui.clone();
+                            tokio::task::spawn_blocking(move || {
+                                let result = std::fs::write(&path, out);
+                                result_ui.file_result(true, "CSV 导出", path, result);
+                            });
                         }
                         Some(SlaveMsg::SetScaling(s)) => {
                             scaling = s;
@@ -2570,28 +3325,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
                             }
                             render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
                         }
-                        Some(SlaveMsg::AddMonitor { id, weak, view: mv }) => {
-                            render_monitor(&upd_shared, &mv, &weak);
-                            monitors.push((id, weak, mv));
-                        }
-                        Some(SlaveMsg::SetMonitorView { id, view: mv }) => {
-                            if let Some(m) = monitors.iter_mut().find(|m| m.0 == id) {
-                                m.2 = mv;
-                                render_monitor(&upd_shared, &m.2, &m.1);
-                            }
-                        }
-                        Some(SlaveMsg::RemoveMonitor { id }) => {
-                            monitors.retain(|m| m.0 != id);
-                        }
-                        Some(SlaveMsg::MonitorEdit { id, address, text }) => {
-                            if let Some(m) = monitors.iter().find(|m| m.0 == id) {
-                                let mv = m.2;
-                                apply_edit(&upd_shared, mv.area, address, &text);
-                                render_slave(&upd_shared, &view, &names, &scaling, &colors, &value_names, &mut chart, &mut last_names, &auto_inc, &cell_formats, &ui);
-                                for (_, w, v) in &monitors { render_monitor(&upd_shared, v, w); }
-                            }
-                        }
-                        Some(SlaveMsg::Stop) | None => break,
+                        None => break,
                     }
                 }
                 else => break,
@@ -2603,6 +3337,7 @@ fn spawn_slave(cfg: SlaveCfg, ui: UiSink) -> SlaveHandle {
         ctrl: ctrl_tx,
         server,
         updater,
+        ui: handle_ui,
     }
 }
 
@@ -2716,24 +3451,24 @@ fn sim_hits(cfg: &SimCfg, i: usize) -> bool {
 
 fn sim_regs(mem: &mut [u16], lo: usize, hi: usize, cfg: &SimCfg, rng: &mut Xorshift) {
     let hi = hi.min(mem.len());
-    for i in lo..hi {
+    for (i, value) in mem.iter_mut().enumerate().take(hi).skip(lo) {
         if !sim_hits(cfg, i) {
             continue;
         }
-        mem[i] = step_value(mem[i], cfg.mode, cfg.step, cfg.min, cfg.max, rng);
+        *value = step_value(*value, cfg.mode, cfg.step, cfg.min, cfg.max, rng);
     }
 }
 
 fn sim_bits(mem: &mut [bool], lo: usize, hi: usize, cfg: &SimCfg, rng: &mut Xorshift) {
     let hi = hi.min(mem.len());
-    for i in lo..hi {
+    for (i, value) in mem.iter_mut().enumerate().take(hi).skip(lo) {
         if !sim_hits(cfg, i) {
             continue;
         }
-        mem[i] = match cfg.mode {
+        *value = match cfg.mode {
             SimMode::Random => rng.next() & 1 == 1,
-            SimMode::Off => mem[i],
-            _ => !mem[i], // increment/decrement/toggle all flip a bit
+            SimMode::Off => *value,
+            _ => !*value, // increment/decrement/toggle all flip a bit
         };
     }
 }
@@ -3007,48 +3742,6 @@ fn render_slave(
 
 /// Render one floating server monitor's view from the shared store and push the
 /// rows to its window. Monitors are plain views (no names/colors/value-names).
-fn render_monitor(shared: &SlaveShared, view: &SlaveView, weak: &slint::Weak<crate::SlaveMonitor>) {
-    let store = shared.store.lock().unwrap();
-    let start = view.address as usize;
-    let qty = view.quantity as usize;
-    let no_overrides: HashMap<u16, RegFormat> = HashMap::new();
-    let rows = match view.area {
-        Area::Coils => render_bits(view.address, window_bool(&store.coils, start, qty)),
-        Area::DiscreteInputs => render_bits(
-            view.address,
-            window_bool(&store.discrete_inputs, start, qty),
-        ),
-        Area::HoldingRegisters => render_registers(
-            view.address,
-            window_u16(&store.holding, start, qty),
-            view.format,
-            &no_overrides,
-            &Scaling::off(),
-        ),
-        Area::InputRegisters => render_registers(
-            view.address,
-            window_u16(&store.input, start, qty),
-            view.format,
-            &no_overrides,
-            &Scaling::off(),
-        ),
-    };
-    drop(store);
-    let names: HashMap<u16, String> = HashMap::new();
-    let (rr, nn) = build_grid(
-        rows,
-        &names,
-        &ColorRules::off(),
-        &ValueNames::off(),
-        true,
-        view.area,
-    );
-    let _ = weak.upgrade_in_event_loop(move |m| {
-        m.set_rows(slint::ModelRc::new(slint::VecModel::from(rr)));
-        m.set_names(slint::ModelRc::new(slint::VecModel::from(nn)));
-    });
-}
-
 fn window_bool(mem: &[bool], start: usize, qty: usize) -> &[bool] {
     if start >= mem.len() {
         return &[];
@@ -3117,6 +3810,8 @@ struct WinCache {
     axis_rmin: String,
     axis_rmax: String,
     chart_right: bool,
+    chart_page_start: i32,
+    chart_total: i32,
 }
 
 /// Per-window sink used by a master engine: updates the window's cache, pushes
@@ -3158,6 +3853,20 @@ impl WindowSink {
             a.set_m_connected(connected);
         });
         self.push_float(move |f| f.set_status(t2.into()));
+    }
+    fn message(&self, text: impl Into<String>) {
+        let text = text.into();
+        self.cache.lock().unwrap().status = text.clone();
+        let float_text = text.clone();
+        self.push(move |a| a.set_m_status(text.into()));
+        self.push_float(move |f| f.set_status(float_text.into()));
+    }
+    fn file_result(&self, action: &str, path: String, result: std::io::Result<()>) {
+        let message = match result {
+            Ok(()) => format!("{action}成功: {path}"),
+            Err(error) => format!("{action}失败: {path} — {error}"),
+        };
+        self.message(message);
     }
     fn counts(&self, tx: u64, rx: u64, err: u64) {
         let (tx, rx, err) = (tx as i32, rx as i32, err as i32);
@@ -3223,9 +3932,12 @@ impl WindowSink {
             c.axis_rmin = sb.right_min.clone();
             c.axis_rmax = sb.right_max.clone();
             c.chart_right = sb.has_right;
+            c.chart_page_start = ch.page_start as i32;
+            c.chart_total = ch.total as i32;
         }
         let c2 = charts.clone();
         let s1 = sb.series.clone();
+        let (page_start, total) = (ch.page_start as i32, ch.total as i32);
         let (lmin, lmax, rmin, rmax, hr) = (
             sb.left_min.clone(),
             sb.left_max.clone(),
@@ -3242,6 +3954,8 @@ impl WindowSink {
             a.set_m_axis_rmin(sb.right_min.into());
             a.set_m_axis_rmax(sb.right_max.into());
             a.set_m_chart_has_right(sb.has_right);
+            a.set_m_chart_page_start(page_start);
+            a.set_m_chart_total(total);
         });
         self.push_float(move |f| {
             f.set_charts(slint::ModelRc::new(slint::VecModel::from(c2)));
@@ -3369,6 +4083,8 @@ impl UiSink {
             a.set_m_axis_rmin(c.axis_rmin.into());
             a.set_m_axis_rmax(c.axis_rmax.into());
             a.set_m_chart_has_right(c.chart_right);
+            a.set_m_chart_page_start(c.chart_page_start);
+            a.set_m_chart_total(c.chart_total);
         });
     }
 
@@ -3381,6 +4097,20 @@ impl UiSink {
                 // 断开后自动写入/记录都已失效, 同步复位 UI 状态(否则界面仍显示"运行/记录中")
                 a.set_wl_active(false);
                 a.set_log_active(false);
+            }
+        });
+    }
+
+    fn file_result(&self, server: bool, action: &str, path: String, result: std::io::Result<()>) {
+        let message = match result {
+            Ok(()) => format!("{action}成功: {path}"),
+            Err(error) => format!("{action}失败: {path} — {error}"),
+        };
+        self.run(move |a| {
+            if server {
+                a.set_s_status(message.into());
+            } else {
+                a.set_m_status(message.into());
             }
         });
     }
@@ -3406,6 +4136,11 @@ impl UiSink {
                 a.set_sim_active(false); // 服务器停了, 模拟也停, 复位 UI
             }
         });
+    }
+
+    fn slave_message(&self, text: impl Into<String>) {
+        let text = text.into();
+        self.run(move |a| a.set_s_status(text.into()));
     }
 
     fn slave_requests(&self, n: u64) {
@@ -3598,6 +4333,148 @@ fn now_timestamp() -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn bind_error_explains_unavailable_windows_address_in_both_languages() {
+        let error = std::io::Error::from_raw_os_error(10049);
+        let zh = bind_error_message("192.168.1.110", 502, &error, false);
+        let en = bind_error_message("192.168.1.110", 502, &error, true);
+        assert!(zh.contains("当前不能用于监听"));
+        assert!(zh.contains("网卡可能未连接"));
+        assert!(zh.contains("IP 地址尚未生效"));
+        assert!(zh.contains("0.0.0.0"));
+        assert!(en.contains("not currently available for listening"));
+        assert!(en.contains("network adapter may be disconnected"));
+        assert!(en.contains("IP address may not be active yet"));
+        assert!(en.contains("0.0.0.0"));
+    }
+
+    #[test]
+    fn bind_error_explains_port_conflict() {
+        let error = std::io::Error::new(std::io::ErrorKind::AddrInUse, "in use");
+        assert!(bind_error_message("0.0.0.0", 502, &error, false).contains("端口 502"));
+        assert!(bind_error_message("0.0.0.0", 502, &error, true).contains("port 502"));
+    }
+
+    struct TestCertificates {
+        _directory: tempfile::TempDir,
+        ca_cert: String,
+        server_cert: String,
+        server_key: String,
+        client_cert: String,
+        client_key: String,
+    }
+
+    fn test_certificates() -> TestCertificates {
+        use rcgen::{
+            BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer,
+            KeyPair, KeyUsagePurpose,
+        };
+
+        let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        ca_params
+            .distinguished_name
+            .push(DnType::CommonName, "PcanWork ephemeral test CA");
+        ca_params.key_usages = vec![
+            KeyUsagePurpose::DigitalSignature,
+            KeyUsagePurpose::KeyCertSign,
+            KeyUsagePurpose::CrlSign,
+        ];
+        let ca_key = KeyPair::generate().unwrap();
+        let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+
+        let mut server_params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+        server_params
+            .distinguished_name
+            .push(DnType::CommonName, "localhost");
+        server_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        server_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        let server_key = KeyPair::generate().unwrap();
+        let server_cert = server_params.signed_by(&server_key, &issuer).unwrap();
+
+        let mut client_params =
+            CertificateParams::new(vec!["pcanwork-test-client".into()]).unwrap();
+        client_params
+            .distinguished_name
+            .push(DnType::CommonName, "pcanwork-test-client");
+        client_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        client_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ClientAuth];
+        let client_key = KeyPair::generate().unwrap();
+        let client_cert = client_params.signed_by(&client_key, &issuer).unwrap();
+
+        let directory = tempfile::tempdir().unwrap();
+        let ca_cert_path = directory.path().join("ca.crt");
+        let server_cert_path = directory.path().join("server.crt");
+        let server_key_path = directory.path().join("server.key");
+        let client_cert_path = directory.path().join("client.crt");
+        let client_key_path = directory.path().join("client.key");
+        std::fs::write(&ca_cert_path, ca_cert.pem()).unwrap();
+        std::fs::write(&server_cert_path, server_cert.pem()).unwrap();
+        std::fs::write(&server_key_path, server_key.serialize_pem()).unwrap();
+        std::fs::write(&client_cert_path, client_cert.pem()).unwrap();
+        std::fs::write(&client_key_path, client_key.serialize_pem()).unwrap();
+
+        TestCertificates {
+            ca_cert: ca_cert_path.to_string_lossy().into_owned(),
+            server_cert: server_cert_path.to_string_lossy().into_owned(),
+            server_key: server_key_path.to_string_lossy().into_owned(),
+            client_cert: client_cert_path.to_string_lossy().into_owned(),
+            client_key: client_key_path.to_string_lossy().into_owned(),
+            _directory: directory,
+        }
+    }
+
+    #[test]
+    fn protocol_spans_enforce_modbus_limits_and_address_space() {
+        assert!(validate_read_definition(Area::Coils, 0, 2000).is_ok());
+        assert!(validate_read_definition(Area::Coils, 0, 2001).is_err());
+        assert!(validate_read_definition(Area::HoldingRegisters, 0, 125).is_ok());
+        assert!(validate_read_definition(Area::HoldingRegisters, 0, 126).is_err());
+        assert!(validate_read_definition(Area::HoldingRegisters, 65_535, 2).is_err());
+        assert!(validate_span(0, 1968, 1968, "FC15").is_ok());
+        assert!(validate_span(0, 1969, 1968, "FC15").is_err());
+        assert!(validate_span(0, 123, 123, "FC16").is_ok());
+        assert!(validate_span(0, 124, 123, "FC16").is_err());
+    }
+
+    #[test]
+    fn mbap_reassembler_handles_split_and_sticky_frames() {
+        let first = [
+            0x00, 0x01, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x00, 0x00, 0x01,
+        ];
+        let second = [
+            0x00, 0x02, 0x00, 0x00, 0x00, 0x06, 0x01, 0x03, 0x00, 0x01, 0x00, 0x01,
+        ];
+
+        let mut split = MbapReassembler::default();
+        assert!(split.push(&first[..5]).is_empty());
+        assert_eq!(split.push(&first[5..]), vec![first.to_vec()]);
+
+        let mut sticky = MbapReassembler::default();
+        let mut joined = first.to_vec();
+        joined.extend_from_slice(&second);
+        assert_eq!(sticky.push(&joined), vec![first.to_vec(), second.to_vec()]);
+    }
+
+    #[test]
+    fn multiple_write_rejects_non_contiguous_addresses() {
+        let items = [
+            WriteItem {
+                address: 100,
+                value: 1,
+                inc: false,
+            },
+            WriteItem {
+                address: 102,
+                value: 3,
+                inc: false,
+            },
+        ];
+        assert!(validate_write_items(WriteFunc::MultiRegs, &items).is_err());
+        assert!(validate_write_items(WriteFunc::SingleReg, &items).is_ok());
+    }
+
     #[tokio::test]
     async fn udp_master_round_trip() {
         use tokio::net::UdpSocket;
@@ -3755,6 +4632,8 @@ mod tests {
             store: Mutex::new(DataStore::new()),
             requests: AtomicU64::new(0),
             events: events_tx,
+            event_drops: AtomicU64::new(0),
+            event_high_watermark: AtomicUsize::new(0),
         })
     }
 
@@ -3829,6 +4708,101 @@ mod tests {
         server.abort();
     }
 
+    async fn udp_slave_round_trip(rtu: bool) {
+        let shared = make_shared();
+        shared.store.lock().unwrap().holding[12] = 0x1234;
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let service = SlaveService {
+            shared: shared.clone(),
+            unit_id: 1,
+            tcp: !rtu,
+            ignore_unit_id: false,
+        };
+        let (traffic_tx, traffic_rx) = traffic_channel();
+        std::mem::forget(traffic_rx);
+        let server = tokio::spawn(serve_udp_slave(socket, service, traffic_tx, rtu));
+        let transport = if rtu {
+            Transport::RtuOverUdp {
+                host: "127.0.0.1".into(),
+                port,
+            }
+        } else {
+            Transport::Udp {
+                host: "127.0.0.1".into(),
+                port,
+            }
+        };
+        let mut context = connect_plain(&transport, 1).await.unwrap();
+        assert_eq!(
+            context
+                .read_holding_registers(12, 1)
+                .await
+                .unwrap()
+                .unwrap(),
+            vec![0x1234]
+        );
+        context
+            .write_single_register(12, 0x5678)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(shared.store.lock().unwrap().holding[12], 0x5678);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn udp_slave_server_round_trip() {
+        udp_slave_round_trip(false).await;
+    }
+
+    #[tokio::test]
+    async fn rtu_over_udp_slave_server_round_trip() {
+        udp_slave_round_trip(true).await;
+    }
+
+    #[tokio::test]
+    async fn rtu_over_tcp_slave_server_round_trip() {
+        let shared = make_shared();
+        shared.store.lock().unwrap().holding[7] = 0xCAFE;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let service = SlaveService {
+            shared,
+            unit_id: 1,
+            tcp: false,
+            ignore_unit_id: false,
+        };
+        let server = tokio::spawn(async move {
+            let on_connected = move |stream: tokio::net::TcpStream, peer: std::net::SocketAddr| {
+                let service = service.clone();
+                async move {
+                    tokio_modbus::server::rtu_over_tcp::accept_tcp_connection(
+                        stream,
+                        peer,
+                        move |_address| Ok(Some(service.clone())),
+                    )
+                }
+            };
+            let instance = tokio_modbus::server::rtu_over_tcp::Server::new(listener);
+            let _ = instance.serve(&on_connected, |_| {}).await;
+        });
+        let mut context = connect_plain(
+            &Transport::RtuOverTcp {
+                host: "127.0.0.1".into(),
+                port,
+            },
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            context.read_holding_registers(7, 1).await.unwrap().unwrap(),
+            vec![0xCAFE]
+        );
+        server.abort();
+    }
+
     #[test]
     fn handle_request_bounds() {
         let shared = make_shared();
@@ -3842,7 +4816,7 @@ mod tests {
         shared.store.lock().unwrap().holding[5] = 0x00F2;
         // FC22: result = (cur & and) | (or & !and) = 0x00F2 | 0xFF00 = 0xFFF2
         let r = handle_request(&shared, &Request::MaskWriteRegister(5, 0x00FF, 0xFF00));
-        assert!(matches!(r, Ok(_)));
+        assert!(r.is_ok());
         assert_eq!(shared.store.lock().unwrap().holding[5], 0xFFF2);
 
         // FC23: write [10,20,30] @0 then read 3 @0
@@ -3946,7 +4920,7 @@ mod tests {
 
     #[test]
     fn write_item_inc_wraps() {
-        let mut items = vec![
+        let mut items = [
             WriteItem {
                 address: 0,
                 value: 65534,
@@ -4043,6 +5017,42 @@ mod tests {
     }
 
     #[test]
+    fn chart_pages_cover_addresses_beyond_the_first_six() {
+        let rows: Vec<DisplayRow> = (0..25)
+            .map(|address| DisplayRow {
+                address,
+                value: String::new(),
+                raw: String::new(),
+                num: Some(address as f64),
+            })
+            .collect();
+        let mut ch = ChartState::new();
+
+        update_chart(&mut ch, &rows);
+        update_chart(&mut ch, &rows);
+        assert_eq!(ch.total, 25);
+        assert_eq!(ch.addrs, (0..12).collect::<Vec<_>>());
+        assert_eq!(build_series(&ch).series.len(), 12);
+
+        assert!(ch.move_page(1));
+        update_chart(&mut ch, &rows);
+        assert_eq!(ch.page_start, 12);
+        assert_eq!(ch.addrs, (12..24).collect::<Vec<_>>());
+
+        assert!(ch.move_page(1));
+        update_chart(&mut ch, &rows);
+        assert_eq!(ch.page_start, 24);
+        assert_eq!(ch.addrs, vec![24]);
+        assert!(!ch.move_page(1));
+
+        ch.page_start = 0;
+        assert!(ch.focus_address(&rows, 19));
+        update_chart(&mut ch, &rows);
+        assert_eq!(ch.page_start, 12);
+        assert!(ch.addrs.contains(&19));
+    }
+
+    #[test]
     fn log_line_written() {
         let dir = std::env::temp_dir();
         let path = dir.join("modbus_tools_test_log.csv");
@@ -4077,7 +5087,7 @@ mod tests {
                 num: Some(2.0),
             },
         ];
-        logger.maybe_log(&rows);
+        logger.maybe_log(&rows).unwrap();
         drop(logger);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("@0,@1"), "header missing: {content}");
@@ -4127,7 +5137,7 @@ mod tests {
         let mut tx_seen = false;
         let mut rx_seen = false;
         for _ in 0..20 {
-            match traffic.try_recv() {
+            match traffic.rx.try_recv() {
                 Ok((is_tx, bytes)) => {
                     assert!(!bytes.is_empty());
                     if is_tx {
@@ -4145,23 +5155,18 @@ mod tests {
         );
 
         let r = probe(&mut ctx, Area::HoldingRegisters, 0).await;
-        assert!(
-            matches!(r, Ok(_)),
-            "probe should succeed against a live server"
-        );
+        assert!(r.is_ok(), "probe should succeed against a live server");
     }
 
     #[tokio::test]
     async fn tls_roundtrip() {
-        // Needs the self-signed test certs in certs/; skip silently if absent.
+        let certs = test_certificates();
         let scfg = crate::tls::TlsServerCfg {
-            cert_file: "certs/server.crt".into(),
-            key_file: "certs/server.key".into(),
+            cert_file: certs.server_cert.clone(),
+            key_file: certs.server_key.clone(),
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
-            return;
-        };
+        let acceptor = crate::tls::server_acceptor(&scfg).unwrap();
 
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x1234;
@@ -4209,17 +5214,15 @@ mod tests {
 
     #[tokio::test]
     async fn mutual_tls_roundtrip() {
-        // Server requires a client cert signed by ca.crt; client presents client.crt.
+        let certs = test_certificates();
         let scfg = crate::tls::TlsServerCfg {
-            cert_file: "certs/server.crt".into(),
-            key_file: "certs/server.key".into(),
+            cert_file: certs.server_cert.clone(),
+            key_file: certs.server_key.clone(),
             require_client_cert: true,
-            client_ca: "certs/ca.crt".into(),
+            client_ca: certs.ca_cert.clone(),
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
-            return;
-        };
+        let acceptor = crate::tls::server_acceptor(&scfg).unwrap();
 
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x55AA;
@@ -4249,8 +5252,8 @@ mod tests {
             ca_file: String::new(),
             skip_verify: true,
             domain: "localhost".into(),
-            client_cert: "certs/client.crt".into(),
-            client_key: "certs/client.key".into(),
+            client_cert: certs.client_cert.clone(),
+            client_key: certs.client_key.clone(),
             ..Default::default()
         };
         let connector = crate::tls::client_connector(&ccfg).unwrap();
@@ -4264,16 +5267,15 @@ mod tests {
 
     #[tokio::test]
     async fn tls_cipher_mismatch_fails() {
+        let certs = test_certificates();
         // Server offers ONLY AES-256; client offers ONLY AES-128 → no shared suite.
         let scfg = crate::tls::TlsServerCfg {
-            cert_file: "certs/server.crt".into(),
-            key_file: "certs/server.key".into(),
+            cert_file: certs.server_cert.clone(),
+            key_file: certs.server_key.clone(),
             cipher: 2,
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
-            return;
-        };
+        let acceptor = crate::tls::server_acceptor(&scfg).unwrap();
         let shared = make_shared();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -4314,15 +5316,14 @@ mod tests {
 
     #[tokio::test]
     async fn tls_v13_negotiated() {
+        let certs = test_certificates();
         let scfg = crate::tls::TlsServerCfg {
-            cert_file: "certs/server.crt".into(),
-            key_file: "certs/server.key".into(),
+            cert_file: certs.server_cert.clone(),
+            key_file: certs.server_key.clone(),
             version: 2, // TLS 1.3 only
             ..Default::default()
         };
-        let Ok(acceptor) = crate::tls::server_acceptor(&scfg) else {
-            return;
-        };
+        let acceptor = crate::tls::server_acceptor(&scfg).unwrap();
         let shared = make_shared();
         shared.store.lock().unwrap().holding[0] = 0x0BAD;
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
