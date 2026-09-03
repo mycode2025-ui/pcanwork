@@ -2,13 +2,19 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
   <url>
     <loc>https://www.hexbyte.cn/</loc>
-    <lastmod>2026-08-31</lastmod>
+    <lastmod>2026-09-03</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
     <image:image><image:loc>https://www.hexbyte.cn/site-assets/product/v0325-main.jpg</image:loc><image:title>PcanWork v0.3.25 工程中心</image:title></image:image>
     <image:image><image:loc>https://www.hexbyte.cn/site-assets/product/v0325-workspace.jpg</image:loc><image:title>PcanWork v0.3.25 双通道工程工作台</image:title></image:image>
     <image:image><image:loc>https://www.hexbyte.cn/site-assets/product/v0325-device.jpg</image:loc><image:title>PcanWork PCAN 与 ZLG 设备配置</image:title></image:image>
     <image:image><image:loc>https://www.hexbyte.cn/site-assets/product/v0325-fd-bitrate.png</image:loc><image:title>PcanWork CAN FD 波特率配置</image:title></image:image>
+  </url>
+  <url>
+    <loc>https://www.hexbyte.cn/release-notes-0.4.2.html</loc>
+    <lastmod>2026-09-03</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>https://www.hexbyte.cn/release-notes-0.4.0.html</loc>

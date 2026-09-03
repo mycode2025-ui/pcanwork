@@ -1,18 +1,19 @@
-# PcanWork v0.4.0
+# PcanWork v0.4.2
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.4.0](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe) · [Gitee 下载 v0.4.0](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.0.html)
+[GitHub 下载 v0.4.2](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe) · [Gitee 下载 v0.4.2](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.2.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.4.0 更新
+## v0.4.2 更新
 
-- 版本号正式切换为标准三段语义化版本 `0.4.0`。
-- PcanWork、Serial Tool、Modbus Tools 与安装包的文件版本统一为 `0.4.0`。
-- 延续 v0.3.29 的统一十六进制字节编辑器、多格式粘贴、逐字节校验与诊断长载荷能力。
+- 发送列表的重复次数可直接编辑：正整数为有限次数，空值、`0` 或负数为持续发送。
+- 周期任务只在报文成功写入 CAN 适配器后递增“已发送”计数，有限任务按成功次数结束。
+- 删除全部通道后保持安全的无选择状态，提供明确引导，并禁止无通道时连接。
+- 通道卡片增加“编辑参数”入口，选中后自动聚焦备注编辑框。
 - Release 安装包已完成版本号、文件大小与 SHA-256 校验。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
@@ -33,10 +34,10 @@
 
 ## 下载与校验
 
-- 版本：`0.4.0`
-- 安装包：`PcanWork-Setup-0.4.0.exe`
-- 大小：`35,657,729` 字节
-- SHA-256：`14C7396912FE27F244C6093792C0D3D45872743D50A74C273DEDDDF72B23D46A`
+- 版本：`0.4.2`
+- 安装包：`PcanWork-Setup-0.4.2.exe`
+- 大小：`35,662,984` 字节
+- SHA-256：`501088740E8F91EABBF1A727DC899ED78BD40AE722878E14947CD5853BAC68B6`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行代码签名
 

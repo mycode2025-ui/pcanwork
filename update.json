@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.0",
-  "published_at": "2026-09-01T09:58:53Z",
-  "notes": "版本号切换为标准三段语义化版本 0.4.0。\nPcanWork、Serial Tool 与 Modbus Tools 的文件版本统一为 0.4.0。\nRelease 安装包已完成版本、大小与 SHA-256 校验。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.0.html",
-  "sha256": "14C7396912FE27F244C6093792C0D3D45872743D50A74C273DEDDDF72B23D46A",
+  "version": "0.4.2",
+  "published_at": "2026-09-03T10:10:59Z",
+  "notes": "发送列表支持编辑重复次数，有限与持续发送切换更直观。\n周期任务仅在报文成功写入适配器后更新发送计数。\n通道配置增加安全空状态、无通道连接保护与参数编辑聚焦。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.2.html",
+  "sha256": "501088740E8F91EABBF1A727DC899ED78BD40AE722878E14947CD5853BAC68B6",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe"
   }
 }

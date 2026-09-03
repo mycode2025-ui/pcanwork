@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.4.0 (released 2026-09-01)
+Current version: 0.4.2 (released 2026-09-03)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,17 +15,17 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.4.0 changes and verification:
-- The product now uses the standard three-part semantic version 0.4.0.
-- PcanWork, Serial Tool, Modbus Tools and the installer all report version 0.4.0.
-- The v0.3.29 unified hexadecimal byte editor, flexible paste formats, per-byte validation and long diagnostic payload support remain available.
+Version 0.4.2 changes and verification:
+- Transmission list repeat counts are directly editable; positive values are finite and empty, zero or negative values mean continuous sending.
+- Periodic task counters advance only after a frame is successfully written to a CAN adapter; finite tasks end by successful-send count.
+- Channel configuration has a safe no-selection state, blocks connection with no channels, and provides a focused parameter-editing entry point.
 - Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.4.0.exe
-SHA-256: 14C7396912FE27F244C6093792C0D3D45872743D50A74C273DEDDDF72B23D46A
+Installer: PcanWork-Setup-0.4.2.exe
+SHA-256: 501088740E8F91EABBF1A727DC899ED78BD40AE722878E14947CD5853BAC68B6
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.0/PcanWork-Setup-0.4.0.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.4.0.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.4.2.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork
