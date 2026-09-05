@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PcanWork v0.4.5 版本说明与安装包校验</title>
+<meta name="description" content="PcanWork v0.4.5 版本说明：优化高负载接收与 Trace 显示，完善筛选、响应式布局，并统一 CAN、Modbus 与串口工具的交互风格。">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://www.hexbyte.cn/release-notes-0.4.5.html">
+<meta property="og:type" content="article"><meta property="og:title" content="PcanWork v0.4.5 版本说明">
+<meta property="og:description" content="高负载数据链路、Trace 显示控制、筛选诊断和三工具统一交互全面改进。">
+<meta property="og:url" content="https://www.hexbyte.cn/release-notes-0.4.5.html">
+<meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"PcanWork v0.4.5 版本说明","datePublished":"2026-09-05","dateModified":"2026-09-05","inLanguage":"zh-CN","mainEntityOfPage":"https://www.hexbyte.cn/release-notes-0.4.5.html","image":"https://www.hexbyte.cn/site-assets/product/v0325-main.jpg","author":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},"publisher":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},"about":{"@type":"SoftwareApplication","name":"PcanWork","softwareVersion":"0.4.5","operatingSystem":"Windows 10/11 64-bit","applicationCategory":"DeveloperApplication"}}</script>
+<style>:root{color-scheme:dark;--bg:#0a0f18;--panel:#111a2b;--line:#2b3d60;--text:#d9e4f4;--dim:#91a3be;--cyan:#3ec7e8;--green:#41e08d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;line-height:1.75}.wrap{max-width:960px;margin:auto;padding:48px 24px 80px}a{color:var(--cyan)}.tag{color:var(--cyan);font:600 13px ui-monospace,Consolas,monospace;letter-spacing:1.5px}h1{font-size:clamp(34px,6vw,58px);line-height:1.12;margin:12px 0}.lead{color:var(--dim);font-size:18px}.card{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}h2{margin-top:36px}li{margin:8px 0}.ok{color:var(--green)}code{overflow-wrap:anywhere;color:#c9d8ee}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin:30px 0}.buttons a{text-decoration:none;padding:11px 18px;border:1px solid var(--line);border-radius:8px}.buttons a:first-child{background:var(--green);color:#04120a;border-color:var(--green);font-weight:700}img{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}</style>
+</head>
+<body><main class="wrap">
+<a href="https://www.hexbyte.cn/">← 返回 PcanWork 官网</a><p class="tag">RELEASE NOTES · 2026-09-05</p>
+<h1>PcanWork v0.4.5</h1>
+<p class="lead">本版本聚焦长时间运行和现场问题定位：降低高负载接收链路的持续积压，提供可控的 Trace 显示深度，并统一 CAN、Modbus 与串口工具的交互和视觉语言。</p>
+<div class="buttons"><a href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe">GitHub 下载安装包</a><a href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe">Gitee 下载安装包</a></div>
+<img src="site-assets/product/v0325-main.jpg" alt="PcanWork CAN CAN FD 工程分析平台真实运行截图" width="1323" height="757">
+<h2>性能与数据链路</h2><ul><li>接收事件使用独立 10ms 调度，每轮设置处理预算，界面仍按 100ms 节奏刷新。</li><li>批量接收帧整批提交记录队列，减少逐帧队列开销；启用触发器时仍保留精确的逐帧触发边界。</li><li>CAN 字节显示复用十六进制文本，并减少 64 字节 Trace 行的重复分配。</li><li>无硬件合成压力测试中，四阶段共 920,750 帧完成处理和 BLF 写入，输入与记录队列零拒收；该结果不等同于真实硬件和完整绘制性能保证。</li></ul>
+<h2>Trace、筛选与诊断</h2><ul><li>实时 Trace 显示范围可选 300、750 或 1500 行，默认 300；采集缓存和记录不受显示范围影响。</li><li>关闭自动滚动后冻结当前表格便于查看，筛选、排序和清空仍可操作，恢复自动滚动后显示最新数据。</li><li>筛选条件增加语法说明、待应用/已生效状态与非法 ID/Data 校验，方向等条件统一在点击应用后生效。</li><li>运行诊断从状态栏长文本移入详情窗口，状态栏保留连接、计数、帧速率和负载等关键信息。</li></ul>
+<h2>界面与工程维护</h2><ul><li>发送窗口、帮助、Modbus 与串口工具完善窄窗口布局，连接参数可折叠，表格通过滚动保持完整列可达。</li><li>CAN、Modbus、Serial 共享按钮状态、紧凑/舒适密度、弹窗边距、键盘焦点与中英文交互约定。</li><li>关闭、排序和通道下拉箭头改用 SVG，减少字体字形差异，并修正图标垂直对齐。</li><li>主程序、CAN 后端和 Modbus 后端按职责拆分模块，保留既有公共入口，降低后续维护成本。</li></ul>
+<h2>验证结果</h2><div class="card"><p class="ok"><strong>Release 安装包已生成并完成完整性核验</strong></p><ul><li>PcanWork、Serial Tool、Modbus Tools 与安装包均报告版本 0.4.5</li><li>构建配置：release-fast-msvc</li><li>安装包当前未进行代码签名</li></ul></div>
+<h2>安装包完整性</h2><ul><li>文件：<code>PcanWork-Setup-0.4.5.exe</code></li><li>大小：36,968,500 字节</li><li>SHA-256：<code>CC99C09B0F2C37BFDB4ED54FD4FAF97B24E6B94A9D922F20151C80F2963A4324</code></li><li>构建源提交：<code>e1909ab8a02d7dfb780a4a9790a17a377b1e985d</code></li></ul>
+<p class="card">构建报告记录工作树包含未提交改动，因此安装包应以版本号、文件大小和 SHA-256 共同识别。</p>
+</main></body></html>

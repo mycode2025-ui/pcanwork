@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.2",
-  "published_at": "2026-09-03T10:10:59Z",
-  "notes": "发送列表支持编辑重复次数，有限与持续发送切换更直观。\n周期任务仅在报文成功写入适配器后更新发送计数。\n通道配置增加安全空状态、无通道连接保护与参数编辑聚焦。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.2.html",
-  "sha256": "501088740E8F91EABBF1A727DC899ED78BD40AE722878E14947CD5853BAC68B6",
+  "version": "0.4.5",
+  "published_at": "2026-09-05T14:10:02Z",
+  "notes": "接收与界面刷新分离调度，批量记录与十六进制文本复用降低高负载积压。\nTrace 新增 300/750/1500 行显示范围，筛选、诊断和窄窗口布局更清晰。\nCAN、Modbus、Serial 统一按钮、密度、弹窗与中英文交互样式。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.5.html",
+  "sha256": "CC99C09B0F2C37BFDB4ED54FD4FAF97B24E6B94A9D922F20151C80F2963A4324",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe"
   }
 }

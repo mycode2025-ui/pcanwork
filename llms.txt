@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.4.2 (released 2026-09-03)
+Current version: 0.4.5 (released 2026-09-05)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,17 +15,19 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.4.2 changes and verification:
-- Transmission list repeat counts are directly editable; positive values are finite and empty, zero or negative values mean continuous sending.
-- Periodic task counters advance only after a frame is successfully written to a CAN adapter; finite tasks end by successful-send count.
-- Channel configuration has a safe no-selection state, blocks connection with no channels, and provides a focused parameter-editing entry point.
+Version 0.4.5 changes and verification:
+- Receive processing uses a separate fast scheduler; frame batches enter the recording queue together and hexadecimal byte strings are reused to reduce sustained backlog under load.
+- Trace live display depth is selectable at 300, 750 or 1500 rows; pausing auto-scroll freezes the visible table without stopping acquisition or recording.
+- Filters use explicit apply semantics with syntax guidance and invalid ID/data validation; detailed runtime diagnostics no longer crowd the status bar.
+- PcanWork, Modbus Tools and Serial Tool share button states, compact/comfortable density, modal focus behavior and bilingual UI conventions.
+- Core application, CAN backend and Modbus backend responsibilities were split into focused modules while preserving public behavior.
 - Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.4.2.exe
-SHA-256: 501088740E8F91EABBF1A727DC899ED78BD40AE722878E14947CD5853BAC68B6
+Installer: PcanWork-Setup-0.4.5.exe
+SHA-256: CC99C09B0F2C37BFDB4ED54FD4FAF97B24E6B94A9D922F20151C80F2963A4324
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.2/PcanWork-Setup-0.4.2.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.4.2.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.4.5.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork
