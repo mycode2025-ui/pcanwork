@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PcanWork v0.4.10 — 精简曲线工具栏的 CAN/CAN FD 工程平台</title>
-<meta name="description" content="PcanWork v0.4.10 精简独立曲线窗口工具栏，移除低频导出与记录入口，并将按钮图形统一为 24 px、点击热区保留 44 px。">
+<title>PcanWork v0.5.0 — 长文件完整回放与峰谷保留曲线分析</title>
+<meta name="description" content="PcanWork v0.5.0 完整保留长文件信号历史，默认每信号缓存 10 万点，采用峰谷保留极值降采样，并显示完整绝对日期、时间和毫秒。">
 <meta name="keywords" content="PcanWork,CAN分析工具,CAN FD,DBC解析,PCAN,ZLG,ZHCX,GCAN,Modbus Poll,Modbus Slave,串口助手,Rust,Slint">
 <meta name="author" content="PcanWork">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
@@ -13,15 +13,15 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:site_name" content="PcanWork">
-<meta property="og:title" content="PcanWork v0.4.10 — CAN/CAN FD 工程分析平台">
-<meta property="og:description" content="独立曲线窗口工具栏精简，图形尺寸与点击热区统一优化。">
+<meta property="og:title" content="PcanWork v0.5.0 — CAN/CAN FD 工程分析平台">
+<meta property="og:description" content="长文件完整回放、10 万点曲线缓存、峰谷保留降采样与完整绝对时间轴。">
 <meta property="og:url" content="https://www.hexbyte.cn/">
 <meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
 <meta property="og:image:width" content="1323">
 <meta property="og:image:height" content="757">
 <meta property="og:image:alt" content="PcanWork v0.3.25 工程中心真实运行界面">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="PcanWork v0.4.10 — CAN/CAN FD 工程分析平台">
+<meta name="twitter:title" content="PcanWork v0.5.0 — CAN/CAN FD 工程分析平台">
 <meta name="twitter:description" content="Windows 桌面 CAN/CAN FD、DBC、仿真、Modbus 与串口工程工具。">
 <meta name="twitter:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
 <script type="application/ld+json">
@@ -50,14 +50,14 @@
       "@type": "SoftwareApplication",
       "@id": "https://www.hexbyte.cn/#software",
       "name": "PcanWork",
-      "softwareVersion": "0.4.10",
+      "softwareVersion": "0.5.0",
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "CAN/CAN FD Bus Analysis Tool",
       "operatingSystem": "Windows 10/11 64-bit",
       "url": "https://www.hexbyte.cn/",
-      "downloadUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe",
-      "installUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe",
-      "releaseNotes": "https://www.hexbyte.cn/release-notes-0.4.10.html",
+      "downloadUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe",
+      "installUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe",
+      "releaseNotes": "https://www.hexbyte.cn/release-notes-0.5.0.html",
       "screenshot": "https://www.hexbyte.cn/site-assets/product/v0325-main.jpg",
       "dateModified": "2026-09-07",
       "description": "Rust 与 Slint 构建的 Windows CAN/CAN FD 工程分析平台，支持多厂商硬件、DBC 解码、实时曲线、发送、记录回放、仿真、Modbus 和串口调试。",
@@ -465,15 +465,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div>
       <div class="eyebrow">Rust + Slint · 多厂商 CAN / CAN FD 支持</div>
-      <h1>PcanWork<span class="ver">v0.4.10</span></h1>
+      <h1>PcanWork<span class="ver">v0.5.0</span></h1>
       <p class="tagline">CAN / CAN FD <em>总线报文分析工具</em></p>
       <p class="lead">
         桌面级总线分析器。支持 PCAN、ZLG、ZHCX、GCAN，提供 DBC 四类数值解析、
         实时曲线、周期发送、记录回放、UDS / XCP、OTA 与工程化仿真工具链。
       </p>
       <div class="btns">
-        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.4.10</a>
-        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.4.10</a>
+        <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.5.0</a>
+        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.5.0</a>
         <a class="btn btn-s" href="https://github.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">GitHub 仓库</a>
         <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">Gitee 仓库</a>
       </div>
@@ -511,16 +511,16 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 <section id="release-notes" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="sec-head rv">
-      <div class="eyebrow">WHAT'S NEW · v0.4.10</div>
-      <h2>曲线工具栏更<span class="hl">精简统一</span></h2>
-      <p class="sub">独立曲线窗口减少低频工具入口，按钮内部图形统一为 24 px，同时保留 44 px 点击热区。</p>
+      <div class="eyebrow">WHAT'S NEW · v0.5.0</div>
+      <h2>长文件曲线更<span class="hl">完整准确</span></h2>
+      <p class="sub">完整保留已加载信号历史，默认每信号 10 万点缓存；极值降采样优先保留峰谷、短暂 0 V 与瞬态变化。</p>
     </div>
     <div class="bento">
-      <div class="card rv"><div class="ico i-rx">⇄</div><h3>工具栏入口精简</h3><p>独立曲线窗口移除最右侧“导出 CSV”“导出宽表”“信号记录”三个按钮及其窗口入口。</p><span class="tag">FOCUSED TOOLBAR</span></div>
-      <div class="card rv"><div class="ico i-sig">▦</div><h3>统一 24 px 图形</h3><p>曲线工具栏按钮内部的白色与深色图形统一为 24 px，视觉重量和对齐关系更一致。</p><span class="tag">24 PX GLYPHS</span></div>
-      <div class="card rv"><div class="ico i-v">◉</div><h3>保留 44 px 热区</h3><p>图形尺寸收敛后仍保留 44 px 点击热区，兼顾紧凑视觉与鼠标操作舒适度。</p><span class="tag">44 PX HIT AREA</span></div>
-      <div class="card rv"><div class="ico i-tx">✓</div><h3>分析操作更聚焦</h3><p>独立窗口工具栏聚焦曲线查看与分析，减少重复入口造成的视觉和操作干扰。</p><span class="tag">CURVE ANALYSIS</span></div>
-      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>Release 完整性</h3><p>安装包版本与文件信息已核对。大小 37,051,292 字节；SHA-256：<span class="mono">3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572</span>。当前安装包未进行代码签名。</p><span class="tag">VERIFIED · UNSIGNED</span></div>
+      <div class="card rv"><div class="ico i-rx">⇄</div><h3>长文件完整历史</h3><p>回放完整保留所有已加载信号历史，不再受到旧的每信号 1 万点缓存限制。</p><span class="tag">FULL HISTORY</span></div>
+      <div class="card rv"><div class="ico i-sig">▦</div><h3>每信号 10 万点</h3><p>默认曲线缓存提高到每信号 100,000 点，并可在“测量 → 缓存设置”中按需求调整。</p><span class="tag">100K PER SIGNAL</span></div>
+      <div class="card rv"><div class="ico i-v">◉</div><h3>峰谷保留降采样</h3><p>绘制层按窗口宽度保留区间极值，短暂峰值、谷值和 0 V 事件不会因降采样被漏掉。</p><span class="tag">EXTREMA PRESERVING</span></div>
+      <div class="card rv"><div class="ico i-tx">✓</div><h3>完整绝对时间</h3><p>绝对时间轴显示完整年月日、时间和毫秒，长文件跨时段定位更明确。</p><span class="tag">DATE · TIME · MS</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>真实 ASC 数据核对</h3><p>8 个 ASC 文件中，BCU_V1 共 31,694 个有效采样；原始数据确有约 798 V 降至 1 V 且短暂出现 0 V。安装包大小 37,053,150 字节；SHA-256：<span class="mono">B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72</span>。</p><span class="tag">VERIFIED DATA · INSTALLER</span></div>
     </div>
   </div>
 </section>
@@ -531,7 +531,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">FEATURES · 已实现</div>
       <h2>从硬件接入到仿真诊断的<span class="hl">完整工程链路</span></h2>
-      <p class="sub">当前介绍以 v0.4.10 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
+      <p class="sub">当前介绍以 v0.5.0 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
     </div>
     <div class="bento">
       <div class="card card-big rv">
@@ -669,12 +669,12 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       <p class="sub">以下信息供用户、搜索引擎和 AI 检索系统准确理解 PcanWork，版本以发布页及校验值为准。</p>
     </div>
     <div class="facts">
-      <div class="fact rv"><b>CURRENT VERSION</b><p>PcanWork 0.4.10，Windows 10/11 64 位桌面软件，安装包 37,051,292 字节。</p></div>
+      <div class="fact rv"><b>CURRENT VERSION</b><p>PcanWork 0.5.0，Windows 10/11 64 位桌面软件，安装包 37,053,150 字节。</p></div>
       <div class="fact rv"><b>CAN HARDWARE</b><p>支持 PCAN（PEAK）、ZLG、ZHCX、GCAN。实际报文收发需要兼容适配器与厂商驱动。</p></div>
       <div class="fact rv"><b>DBC SEMANTICS</b><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，Intel / Motorola 字节序及 factor、offset。</p></div>
       <div class="fact rv"><b>TOOLS</b><p>同一产品集成 CAN/CAN FD 工作台、可视化仿真、Modbus TCP/RTU 主从站和串口终端。</p></div>
-      <div class="fact rv"><b>v0.4.10 VERIFICATION</b><p>三个程序和安装包均报告版本 0.4.10；安装包大小与 SHA-256 已核对。</p></div>
-      <div class="fact rv"><b>SHA-256</b><p class="mono">3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572</p></div>
+      <div class="fact rv"><b>v0.5.0 VERIFICATION</b><p>三个程序和安装包均报告版本 0.5.0；8 个 ASC 文件的数据与曲线异常位置已核对。</p></div>
+      <div class="fact rv"><b>SHA-256</b><p class="mono">B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72</p></div>
     </div>
   </div>
 </section>
@@ -691,8 +691,8 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       <details class="rv"><summary>支持哪些 CAN 硬件？</summary><p>当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。使用真实 CAN/CAN FD 报文收发前，需要安装相应厂商驱动并连接兼容硬件。</p></details>
       <details class="rv"><summary>DBC 是否支持四种数值类型和 factor、offset？</summary><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算，并保留单位和范围语义。</p></details>
       <details class="rv"><summary>没有 CAN 硬件可以使用吗？</summary><p>工程、DBC、界面和配置等不依赖总线的功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。</p></details>
-      <details class="rv"><summary>v0.4.10 更新了什么？</summary><p>独立曲线窗口移除三个低频工具按钮及对应入口；工具栏图形统一为 24 px，同时保留 44 px 点击热区。</p></details>
-      <details class="rv"><summary>如何验证安装包没有损坏？</summary><p>对 PcanWork-Setup-0.4.10.exe 计算 SHA-256，应为 3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572。当前安装包未进行代码签名。</p></details>
+      <details class="rv"><summary>v0.5.0 更新了什么？</summary><p>长文件回放完整保留历史，默认每信号 10 万点缓存；峰谷保留降采样不会漏掉短暂峰值或 0 V，绝对时间轴增加完整日期和毫秒。</p></details>
+      <details class="rv"><summary>如何验证安装包没有损坏？</summary><p>对 PcanWork-Setup-0.5.0.exe 计算 SHA-256，应为 B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72。当前安装包未进行代码签名。</p></details>
     </div>
   </div>
 </section>
@@ -706,8 +706,8 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     {"@type":"Question","name":"支持哪些 CAN 硬件？","acceptedAnswer":{"@type":"Answer","text":"当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。真实 CAN/CAN FD 报文收发需要对应厂商驱动和兼容硬件。"}},
     {"@type":"Question","name":"DBC 是否支持四种数值类型和 factor、offset？","acceptedAnswer":{"@type":"Answer","text":"支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算。"}},
     {"@type":"Question","name":"没有 CAN 硬件可以使用吗？","acceptedAnswer":{"@type":"Answer","text":"工程、DBC、界面和配置等功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。"}},
-    {"@type":"Question","name":"v0.4.10 更新了什么？","acceptedAnswer":{"@type":"Answer","text":"独立曲线窗口移除三个低频工具按钮及对应入口；工具栏图形统一为 24 px，同时保留 44 px 点击热区。"}},
-    {"@type":"Question","name":"如何验证安装包没有损坏？","acceptedAnswer":{"@type":"Answer","text":"PcanWork-Setup-0.4.10.exe 的 SHA-256 为 3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572。当前安装包未进行代码签名。"}}
+    {"@type":"Question","name":"v0.5.0 更新了什么？","acceptedAnswer":{"@type":"Answer","text":"长文件回放完整保留历史，默认每信号 10 万点缓存；峰谷保留降采样不会漏掉短暂峰值或 0 V，绝对时间轴增加完整日期和毫秒。"}},
+    {"@type":"Question","name":"如何验证安装包没有损坏？","acceptedAnswer":{"@type":"Answer","text":"PcanWork-Setup-0.5.0.exe 的 SHA-256 为 B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72。当前安装包未进行代码签名。"}}
   ]
 }
 </script>
@@ -727,9 +727,9 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
         <div class="f-links">
           <a href="https://github.com/mycode2025-ui/pcanwork" target="_blank">GitHub 仓库</a>
           <a href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank">Gitee 镜像</a>
-          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.4.10" target="_blank">GitHub Release</a>
-          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.4.10" target="_blank">Gitee Release</a>
-          <a href="release-notes-0.4.10.html">v0.4.10 版本说明</a>
+          <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.5.0" target="_blank">GitHub Release</a>
+          <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.5.0" target="_blank">Gitee Release</a>
+          <a href="release-notes-0.5.0.html">v0.5.0 版本说明</a>
           <a href="https://github.com/mycode2025-ui/pcanwork/issues" target="_blank">问题反馈</a>
         </div>
       </div>
@@ -744,7 +744,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     </div>
     <div class="copy">
       <span>© 2026 PcanWork · mycode2025-ui</span>
-      <span>Windows 10/11 x64 · v0.4.10</span>
+      <span>Windows 10/11 x64 · v0.5.0</span>
     </div>
   </div>
 </footer>

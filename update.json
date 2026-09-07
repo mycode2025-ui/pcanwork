@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.10",
-  "published_at": "2026-09-07T12:41:29Z",
-  "notes": "独立曲线窗口移除导出 CSV、导出宽表和信号记录三个工具按钮及对应入口。\n曲线工具栏图形统一为 24 px，并保留 44 px 点击热区。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.10.html",
-  "sha256": "3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572",
+  "version": "0.5.0",
+  "published_at": "2026-09-07T14:03:28Z",
+  "notes": "长文件回放完整保留已加载信号历史，默认每信号缓存提高至 10 万点并支持调整。\n绘制层采用保留峰谷的极值降采样，短暂峰值和 0 V 不再漏掉。\n绝对时间轴显示完整年月日、时间和毫秒；8 个 ASC 文件实测核对通过。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.5.0.html",
+  "sha256": "B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe"
   }
 }
