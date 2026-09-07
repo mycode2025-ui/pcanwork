@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.4.5 (released 2026-09-05)
+Current version: 0.4.8 (released 2026-09-07)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,19 +15,19 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.4.5 changes and verification:
-- Receive processing uses a separate fast scheduler; frame batches enter the recording queue together and hexadecimal byte strings are reused to reduce sustained backlog under load.
-- Trace live display depth is selectable at 300, 750 or 1500 rows; pausing auto-scroll freezes the visible table without stopping acquisition or recording.
-- Filters use explicit apply semantics with syntax guidance and invalid ID/data validation; detailed runtime diagnostics no longer crowd the status bar.
-- PcanWork, Modbus Tools and Serial Tool share button states, compact/comfortable density, modal focus behavior and bilingual UI conventions.
-- Core application, CAN backend and Modbus backend responsibilities were split into focused modules while preserving public behavior.
+Version 0.4.8 changes and verification:
+- Playback completion progress and the incorrect line connecting the end and beginning of loop playback were fixed.
+- Curve window titles and bilingual labels are consistent, and cursor markers now align with their curves.
+- Clearing curve data keeps the selected DBC signals.
+- The curve toolbar uses a unified professional icon style and supports the signal panel, grid, relative/absolute time, and independent/shared/normalized Y-axis modes.
+- Toolbar icons were enlarged; pin, relative-time and independent-Y-axis icons were redesigned.
 - Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.4.5.exe
-SHA-256: CC99C09B0F2C37BFDB4ED54FD4FAF97B24E6B94A9D922F20151C80F2963A4324
+Installer: PcanWork-Setup-0.4.8.exe
+SHA-256: 793047773891BE972F52FC3DA0FEA6F535255B91BBBBFF4BBCCDD089CAD14D27
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.4.5.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.4.8.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork

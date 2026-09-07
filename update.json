@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.5",
-  "published_at": "2026-09-05T14:10:02Z",
-  "notes": "接收与界面刷新分离调度，批量记录与十六进制文本复用降低高负载积压。\nTrace 新增 300/750/1500 行显示范围，筛选、诊断和窄窗口布局更清晰。\nCAN、Modbus、Serial 统一按钮、密度、弹窗与中英文交互样式。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.5.html",
-  "sha256": "CC99C09B0F2C37BFDB4ED54FD4FAF97B24E6B94A9D922F20151C80F2963A4324",
+  "version": "0.4.8",
+  "published_at": "2026-09-07T10:50:20Z",
+  "notes": "修复回放结束进度及循环回放首尾错误连线。\n修复曲线游标点与曲线不重合，清空数据时保留 DBC 信号。\n曲线工具栏统一专业图标，并支持多种时间与 Y 轴显示模式。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.8.html",
+  "sha256": "793047773891BE972F52FC3DA0FEA6F535255B91BBBBFF4BBCCDD089CAD14D27",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.5/PcanWork-Setup-0.4.5.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe"
   }
 }
