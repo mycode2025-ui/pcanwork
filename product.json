@@ -1,19 +1,19 @@
 {
   "name": "PcanWork",
-  "version": "0.4.9",
-  "released_at": "2026-09-07T12:14:01Z",
+  "version": "0.4.10",
+  "released_at": "2026-09-07T12:41:29Z",
   "website": "https://www.hexbyte.cn/",
   "platform": "Windows 10/11 64-bit",
   "installer": {
-    "name": "PcanWork-Setup-0.4.9.exe",
-    "size_bytes": 37083457,
-    "sha256": "291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2",
+    "name": "PcanWork-Setup-0.4.10.exe",
+    "size_bytes": 37051292,
+    "sha256": "3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572",
     "signed": false,
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe"
   },
   "hardware": ["PCAN (PEAK)", "ZLG", "ZHCX", "GCAN"],
   "dbc_value_types": ["Unsigned", "Signed", "IEEE Float", "IEEE Double"],
   "dbc_byte_orders": ["Intel", "Motorola"],
-  "verification": "PcanWork, Serial Tool, Modbus Tools and the installer all report version 0.4.9; installer byte size and SHA-256 were verified. Update-check offline tests (8) and public GitHub/Gitee API tests passed."
+  "verification": "PcanWork, Serial Tool, Modbus Tools and the installer all report version 0.4.10; installer byte size and SHA-256 were verified."
 }

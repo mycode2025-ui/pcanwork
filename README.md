@@ -1,19 +1,17 @@
-# PcanWork v0.4.9
+# PcanWork v0.4.10
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.4.9](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe) · [Gitee 下载 v0.4.9](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.9.html)
+[GitHub 下载 v0.4.10](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe) · [Gitee 下载 v0.4.10](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.10.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.4.9 更新
+## v0.4.10 更新
 
-- GitHub 与 Gitee Release API 改为并行查询，并按语义化版本选择较新版本，任一平台先发布即可提示升级。
-- 两个平台发布同一版本时合并两个真实下载地址；尚未同步的平台按钮保持禁用，避免无效下载。
-- Release API 被限流或暂时失败时，轻量探测标准安装包直链，确认存在后恢复对应下载按钮。
-- 更新检测离线测试 8 项全部通过，GitHub 与 Gitee 真实公开 API 联调通过。
+- 独立曲线窗口移除“导出 CSV”“导出宽表”“信号记录”三个最右侧工具按钮及对应窗口入口，工具栏更聚焦曲线查看和分析。
+- 曲线工具栏按钮内部的白色/深色图形统一为 24 px，同时保留 44 px 点击热区，提升视觉一致性和点击操作舒适度。
 - Release 安装包已完成版本号、文件大小与 SHA-256 校验。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
@@ -34,10 +32,10 @@
 
 ## 下载与校验
 
-- 版本：`0.4.9`
-- 安装包：`PcanWork-Setup-0.4.9.exe`
-- 大小：`37,083,457` 字节
-- SHA-256：`291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2`
+- 版本：`0.4.10`
+- 安装包：`PcanWork-Setup-0.4.10.exe`
+- 大小：`37,051,292` 字节
+- SHA-256：`3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行代码签名
 

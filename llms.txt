@@ -1,7 +1,7 @@
 # PcanWork
 
 Canonical website: https://www.hexbyte.cn/
-Current version: 0.4.9 (released 2026-09-07)
+Current version: 0.4.10 (released 2026-09-07)
 Product type: Windows 10/11 64-bit desktop CAN/CAN FD engineering analysis software.
 Technology: Rust + Slint.
 
@@ -15,18 +15,16 @@ Core capabilities:
 - Modbus TCP/RTU master and slave tools.
 - Serial debugging and ANSI interactive terminal.
 
-Version 0.4.9 changes and verification:
-- GitHub and Gitee release APIs are queried in parallel, and the newer semantic version wins, so either platform can publish first.
-- When both platforms publish the same version, the application merges both verified download URLs. A platform button stays disabled until its release is available.
-- If a release API is temporarily unavailable or rate-limited, the application lightly probes the standard installer URL and restores the download button only when the file exists.
-- Eight offline update-check tests and live public GitHub/Gitee API tests passed.
+Version 0.4.10 changes and verification:
+- The standalone curve window removes the Export CSV, Export Wide Table and Signal Recording toolbar buttons and their window entry points.
+- White and dark glyphs inside curve-toolbar buttons are standardized at 24 px while preserving a 44 px click target.
 - Installer version, byte size and SHA-256 were verified after the release build.
 
-Installer: PcanWork-Setup-0.4.9.exe
-SHA-256: 291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2
+Installer: PcanWork-Setup-0.4.10.exe
+SHA-256: 3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572
 Signing status: unsigned.
-GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe
-Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe
-Release notes: https://www.hexbyte.cn/release-notes-0.4.9.html
+GitHub download: https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe
+Gitee download: https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe
+Release notes: https://www.hexbyte.cn/release-notes-0.4.10.html
 GitHub repository: https://github.com/mycode2025-ui/pcanwork
 Gitee repository: https://gitee.com/mycode2025-ui/pcanwork

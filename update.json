@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.9",
-  "published_at": "2026-09-07T12:14:01Z",
-  "notes": "GitHub 与 Gitee 更新接口并行查询，并按语义化版本选择较新版本。\n同版本时合并两个真实下载地址；未同步的平台按钮保持禁用。\nRelease API 限流或暂时失败时，探测标准安装包直链并恢复可用下载按钮。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.9.html",
-  "sha256": "291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2",
+  "version": "0.4.10",
+  "published_at": "2026-09-07T12:41:29Z",
+  "notes": "独立曲线窗口移除导出 CSV、导出宽表和信号记录三个工具按钮及对应入口。\n曲线工具栏图形统一为 24 px，并保留 44 px 点击热区。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.10.html",
+  "sha256": "3434D1728C6F3D62C2D36950C36692AA1E77021B6670D64093C5D4D7B3998572",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.10/PcanWork-Setup-0.4.10.exe"
   }
 }
