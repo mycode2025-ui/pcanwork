@@ -1,20 +1,19 @@
-# PcanWork v0.4.8
+# PcanWork v0.4.9
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.4.8](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe) · [Gitee 下载 v0.4.8](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.8.html)
+[GitHub 下载 v0.4.9](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe) · [Gitee 下载 v0.4.9](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.4.9.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.4.8 更新
+## v0.4.9 更新
 
-- 修复回放结束进度显示，以及循环回放首尾错误连线问题。
-- 统一曲线窗口标题与中英文文案，修复游标点与曲线不重合的问题。
-- 清空曲线数据时保留已选择的 DBC 信号，便于继续观察同一组变量。
-- 曲线工具栏升级为统一专业图标风格，支持信号面板、网格、相对/实际时间，以及独立、共享、归一化 Y 轴模式。
-- 放大工具图标，并重新设计图钉、相对时间和独立 Y 轴图标。
+- GitHub 与 Gitee Release API 改为并行查询，并按语义化版本选择较新版本，任一平台先发布即可提示升级。
+- 两个平台发布同一版本时合并两个真实下载地址；尚未同步的平台按钮保持禁用，避免无效下载。
+- Release API 被限流或暂时失败时，轻量探测标准安装包直链，确认存在后恢复对应下载按钮。
+- 更新检测离线测试 8 项全部通过，GitHub 与 Gitee 真实公开 API 联调通过。
 - Release 安装包已完成版本号、文件大小与 SHA-256 校验。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
@@ -35,10 +34,10 @@
 
 ## 下载与校验
 
-- 版本：`0.4.8`
-- 安装包：`PcanWork-Setup-0.4.8.exe`
-- 大小：`37,064,830` 字节
-- SHA-256：`793047773891BE972F52FC3DA0FEA6F535255B91BBBBFF4BBCCDD089CAD14D27`
+- 版本：`0.4.9`
+- 安装包：`PcanWork-Setup-0.4.9.exe`
+- 大小：`37,083,457` 字节
+- SHA-256：`291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行代码签名
 

@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.4.8",
-  "published_at": "2026-09-07T10:50:20Z",
-  "notes": "修复回放结束进度及循环回放首尾错误连线。\n修复曲线游标点与曲线不重合，清空数据时保留 DBC 信号。\n曲线工具栏统一专业图标，并支持多种时间与 Y 轴显示模式。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.8.html",
-  "sha256": "793047773891BE972F52FC3DA0FEA6F535255B91BBBBFF4BBCCDD089CAD14D27",
+  "version": "0.4.9",
+  "published_at": "2026-09-07T12:14:01Z",
+  "notes": "GitHub 与 Gitee 更新接口并行查询，并按语义化版本选择较新版本。\n同版本时合并两个真实下载地址；未同步的平台按钮保持禁用。\nRelease API 限流或暂时失败时，探测标准安装包直链并恢复可用下载按钮。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.4.9.html",
+  "sha256": "291E17912D3E7B029CC8FB684A7634249AF66A7190C298D61E27484E79B333F2",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.8/PcanWork-Setup-0.4.8.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.4.9/PcanWork-Setup-0.4.9.exe"
   }
 }
