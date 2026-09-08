@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PcanWork v0.6.0 版本说明与安装包校验</title>
+<meta name="description" content="PcanWork v0.6.0 优化大文件离线回放与环形缓存曲线刷新，修复回放、时间轴和曲线交互，并统一 CAN、Modbus、Serial 界面。">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://www.hexbyte.cn/release-notes-0.6.0.html">
+<meta property="og:type" content="article"><meta property="og:title" content="PcanWork v0.6.0 版本说明">
+<meta property="og:description" content="批量离线回放、环形缓存可视区抽样、按需窗口、曲线交互修复与统一界面。">
+<meta property="og:url" content="https://www.hexbyte.cn/release-notes-0.6.0.html">
+<meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"PcanWork v0.6.0 版本说明","datePublished":"2026-09-08","dateModified":"2026-09-08","inLanguage":"zh-CN","mainEntityOfPage":"https://www.hexbyte.cn/release-notes-0.6.0.html","image":"https://www.hexbyte.cn/site-assets/product/v0325-main.jpg","author":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},"publisher":{"@type":"Organization","name":"PcanWork","url":"https://www.hexbyte.cn/"},"about":{"@type":"SoftwareApplication","name":"PcanWork","softwareVersion":"0.6.0","operatingSystem":"Windows 10/11 64-bit","applicationCategory":"DeveloperApplication"}}</script>
+<style>:root{color-scheme:dark;--bg:#0a0f18;--panel:#111a2b;--line:#2b3d60;--text:#d9e4f4;--dim:#91a3be;--cyan:#3ec7e8;--green:#41e08d}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;line-height:1.75}.wrap{max-width:960px;margin:auto;padding:48px 24px 80px}a{color:var(--cyan)}.tag{color:var(--cyan);font:600 13px ui-monospace,Consolas,monospace;letter-spacing:1.5px}h1{font-size:clamp(34px,6vw,58px);line-height:1.12;margin:12px 0}.lead{color:var(--dim);font-size:18px}.card{margin:24px 0;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}h2{margin-top:36px}li{margin:8px 0}.ok{color:var(--green)}code{overflow-wrap:anywhere;color:#c9d8ee}.buttons{display:flex;gap:12px;flex-wrap:wrap;margin:30px 0}.buttons a{text-decoration:none;padding:11px 18px;border:1px solid var(--line);border-radius:8px}.buttons a:first-child{background:var(--green);color:#04120a;border-color:var(--green);font-weight:700}img{max-width:100%;height:auto;border-radius:10px;border:1px solid var(--line)}</style>
+</head>
+<body><main class="wrap">
+<a href="https://www.hexbyte.cn/">← 返回 PcanWork 官网</a><p class="tag">RELEASE NOTES · 2026-09-08</p>
+<h1>PcanWork v0.6.0</h1>
+<p class="lead">本版本集中优化大文件离线回放、曲线可视区刷新与窗口初始化链路，并完善曲线交互和 CAN、Modbus、Serial 的统一桌面体验。</p>
+<div class="buttons"><a href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe">GitHub 下载安装包</a><a href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe">Gitee 下载安装包</a></div>
+<img src="site-assets/product/v0325-main.jpg" alt="PcanWork CAN CAN FD 工程分析平台真实运行截图" width="1323" height="757">
+<h2>性能与架构</h2><ul><li>大文件离线回放按批处理，快速、正常倍速和步进均减少事件队列压力。</li><li>曲线刷新直接在环形缓存定位可视区，并执行保留极值抽样，避免每 100 ms 复制全量几十万点数据。</li><li>数据回放窗口独立按需创建，首次打开不再连带初始化其他 14 个功能窗口。</li><li>主程序、CAN 和 Modbus 后端拆分模块，并增加高负载增量表格与软件压力测试。</li></ul>
+<h2>回放与曲线</h2><ul><li>修复回放数据、进度、循环首尾连线和绝对日期时间轴。</li><li>修复曲线平移、框选缩放、游标对齐，以及独立、共享和归一化 Y 轴。</li><li>曲线工具栏统一专业图标；按钮外框为 33 × 30 px，内部图形为 24 × 24 px，工具栏高度为 38 px。</li></ul>
+<h2>统一界面</h2><p>CAN、Modbus、Serial 的主题、响应式布局、默认窗口尺寸、弹窗居中和帮助说明已统一优化。</p>
+<h2>验证结果</h2><div class="card"><p class="ok"><strong>Release 安装包已生成并完成自动测试与完整性核验</strong></p><ul><li>自动测试：67 项通过，0 项失败，1 项联网测试跳过</li><li>构建配置：release-fast-msvc</li><li>文件版本：0.6.0</li><li>未进行 Authenticode 代码签名；构建脚本已生成内部完整性签名</li></ul></div>
+<h2>安装包完整性</h2><ul><li>文件：<code>PcanWork-Setup-0.6.0.exe</code></li><li>大小：35,467,693 字节</li><li>SHA-256：<code>9EB368AA5A50C5A42231EC9F6381CF59D16B38E5FE94DEBEBE4620B97C7BAD90</code></li><li>构建源提交：<code>9e2d2e3</code></li></ul>
+</main></body></html>

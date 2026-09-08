@@ -1,21 +1,22 @@
-# PcanWork v0.5.0
+# PcanWork v0.6.0
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.5.0](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe) · [Gitee 下载 v0.5.0](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.5.0/PcanWork-Setup-0.5.0.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.5.0.html)
+[GitHub 下载 v0.6.0](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe) · [Gitee 下载 v0.6.0](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.6.0.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.5.0 更新
+## v0.6.0 更新
 
-- 长文件回放完整保留已加载信号历史，不再被旧的 1 万点缓存截断。
-- 默认曲线缓存提高为每信号 10 万点，可在“测量 → 缓存设置”中调整。
-- 绘制层按窗口宽度执行保留峰谷的极值降采样，短暂峰值和 0 V 不再被漏掉。
-- 绝对时间轴显示完整年月日、时间和毫秒。
-- 使用用户提供的 8 个 ASC 文件核对：BCU_V1 共 31,694 个有效采样，原始数据确有约 798 V 降至 1 V 且短暂出现 0 V。
-- Release 安装包已完成版本号、文件大小与 SHA-256 校验。
+- 大文件离线回放改为批处理，快速、正常倍速和步进模式均减少事件队列压力。
+- 曲线刷新直接在环形缓存中定位可视区并保留极值抽样，避免每 100 ms 复制全量几十万点数据。
+- 数据回放窗口独立按需创建，首次打开不再连带初始化其他 14 个功能窗口。
+- 修复回放数据、进度、循环首尾连线、绝对日期时间轴，以及曲线平移、框选缩放、游标对齐和多种 Y 轴模式。
+- 曲线工具栏统一专业图标，按钮外框缩小至 33 × 30 px，内部图形放大至 24 × 24 px，工具栏高度调整为 38 px。
+- CAN、Modbus、Serial 界面的主题、响应式布局、默认窗口尺寸、弹窗居中与帮助说明统一优化。
+- 主程序、CAN 和 Modbus 后端拆分模块，并增加高负载增量表格与软件压力测试。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
 
@@ -35,11 +36,12 @@
 
 ## 下载与校验
 
-- 版本：`0.5.0`
-- 安装包：`PcanWork-Setup-0.5.0.exe`
-- 大小：`37,053,150` 字节
-- SHA-256：`B70D030E4BBB955973C13CFAC729BF33D4B1DD593B64627C21813A50E50F7F72`
+- 版本：`0.6.0`
+- 安装包：`PcanWork-Setup-0.6.0.exe`
+- 大小：`35,467,693` 字节
+- SHA-256：`9EB368AA5A50C5A42231EC9F6381CF59D16B38E5FE94DEBEBE4620B97C7BAD90`
 - 系统：Windows 10/11 64 位
-- 签名状态：当前安装包未进行代码签名
+- 签名状态：当前安装包未进行 Authenticode 代码签名；构建脚本已生成内部完整性签名
+- 自动测试：67 项通过，0 项失败，1 项联网测试跳过
 
 真实 CAN/CAN FD 报文采集和发送需要兼容硬件及相应厂商驱动。工程、DBC、界面与配置等非总线功能可独立打开使用；当前版本不提供虚拟 CAN 总线。
