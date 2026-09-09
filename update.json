@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.6.0",
-  "published_at": "2026-09-08T07:26:38Z",
-  "notes": "大文件离线回放改为批处理，快速、正常倍速与步进模式均显著降低事件队列压力。\n曲线刷新直接在环形缓存中定位可视区并进行保留极值抽样，避免周期性复制全量数据。\n修复进度、循环首尾连线、绝对日期时间轴与曲线交互；统一 CAN、Modbus、Serial 界面和高负载增量表格。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.0.html",
-  "sha256": "9EB368AA5A50C5A42231EC9F6381CF59D16B38E5FE94DEBEBE4620B97C7BAD90",
+  "version": "0.6.1",
+  "published_at": "2026-09-09T10:34:56Z",
+  "notes": "曲线窗口支持多曲线高亮批量选择、批量添加和一键清空。\n修复 Slint/Winit 窗口二次显示时的局部重绘问题。\n曲线工具栏图标缩小约 5% 并进一步细化，操作密度与辨识度更协调。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.1.html",
+  "sha256": "7642E05C8B48DCEC2F3FF6756CCA66B16FCA65893EE761F4F706F69A9C15D624",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe"
   }
 }

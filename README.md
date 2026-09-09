@@ -1,22 +1,19 @@
-# PcanWork v0.6.0
+# PcanWork v0.6.1
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.6.0](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe) · [Gitee 下载 v0.6.0](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.0/PcanWork-Setup-0.6.0.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.6.0.html)
+[GitHub 下载 v0.6.1](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe) · [Gitee 下载 v0.6.1](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.6.1.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.6.0 更新
+## v0.6.1 更新
 
-- 大文件离线回放改为批处理，快速、正常倍速和步进模式均减少事件队列压力。
-- 曲线刷新直接在环形缓存中定位可视区并保留极值抽样，避免每 100 ms 复制全量几十万点数据。
-- 数据回放窗口独立按需创建，首次打开不再连带初始化其他 14 个功能窗口。
-- 修复回放数据、进度、循环首尾连线、绝对日期时间轴，以及曲线平移、框选缩放、游标对齐和多种 Y 轴模式。
-- 曲线工具栏统一专业图标，按钮外框缩小至 33 × 30 px，内部图形放大至 24 × 24 px，工具栏高度调整为 38 px。
-- CAN、Modbus、Serial 界面的主题、响应式布局、默认窗口尺寸、弹窗居中与帮助说明统一优化。
-- 主程序、CAN 和 Modbus 后端拆分模块，并增加高负载增量表格与软件压力测试。
+- 曲线窗口支持多曲线高亮批量选择，可一次添加多个信号。
+- 增加批量添加与一键清空曲线操作，复杂工程中的信号配置更高效。
+- 修复 Slint/Winit 窗口二次显示时的局部重绘问题。
+- 曲线工具栏图标整体缩小约 5% 并细化，视觉密度和识别度更协调。
 
 ![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
 
@@ -36,10 +33,10 @@
 
 ## 下载与校验
 
-- 版本：`0.6.0`
-- 安装包：`PcanWork-Setup-0.6.0.exe`
-- 大小：`35,467,693` 字节
-- SHA-256：`9EB368AA5A50C5A42231EC9F6381CF59D16B38E5FE94DEBEBE4620B97C7BAD90`
+- 版本：`0.6.1`
+- 安装包：`PcanWork-Setup-0.6.1.exe`
+- 大小：`35,484,968` 字节
+- SHA-256：`7642E05C8B48DCEC2F3FF6756CCA66B16FCA65893EE761F4F706F69A9C15D624`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行 Authenticode 代码签名；构建脚本已生成内部完整性签名
 - 自动测试：67 项通过，0 项失败，1 项联网测试跳过
