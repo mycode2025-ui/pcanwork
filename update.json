@@ -1,12 +1,12 @@
 {
   "product": "PcanWork",
-  "version": "0.6.1",
-  "published_at": "2026-09-09T10:34:56Z",
-  "notes": "曲线窗口支持多曲线高亮批量选择、批量添加和一键清空。\n修复 Slint/Winit 窗口二次显示时的局部重绘问题。\n曲线工具栏图标缩小约 5% 并进一步细化，操作密度与辨识度更协调。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.1.html",
-  "sha256": "7642E05C8B48DCEC2F3FF6756CCA66B16FCA65893EE761F4F706F69A9C15D624",
+  "version": "0.6.2",
+  "published_at": "2026-09-10T08:00:00Z",
+  "notes": "PcanWork v0.6.2 修复普通发送和列表周期发送：\n- 连续点击立即发送时，ID 递增与数据递增会从上次结果继续。\n- 修复列表周期任务停止按钮失效，移除重复的行内删除按钮。\n- 周期发送改用高精度绝对时限调度，改善 1 ms 与 10 ms 周期偏差。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.2.html",
+  "sha256": "3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe"
+    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe"
   }
 }

@@ -1,23 +1,19 @@
-# PcanWork v0.6.1
+# PcanWork v0.6.2
 
 **Windows CAN / CAN FD 工程分析平台**
 
 面向汽车电子、储能、充电设备与工业通信研发测试，覆盖多厂商硬件接入、DBC 解析、报文采集与发送、记录回放、实时曲线、可视化仿真、printf-over-CAN、Modbus 与串口调试。
 
-[GitHub 下载 v0.6.1](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe) · [Gitee 下载 v0.6.1](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.1/PcanWork-Setup-0.6.1.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.6.1.html)
+[GitHub 下载 v0.6.2](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe) · [Gitee 下载 v0.6.2](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe) · [官方网站](https://www.hexbyte.cn) · [版本说明](https://www.hexbyte.cn/release-notes-0.6.2.html)
 
 ![PcanWork v0.3.25 工程中心](site-assets/product/v0325-main.jpg)
 
-## v0.6.1 更新
+## v0.6.2 更新
 
-- 曲线窗口支持多曲线高亮批量选择，可一次添加多个信号。
-- 增加批量添加与一键清空曲线操作，复杂工程中的信号配置更高效。
-- 修复 Slint/Winit 窗口二次显示时的局部重绘问题。
-- 曲线工具栏图标整体缩小约 5% 并细化，视觉密度和识别度更协调。
-
-![PcanWork v0.3.25 双通道工程](site-assets/product/v0325-workspace.jpg)
-
-![PcanWork v0.3.25 PCAN 与 ZLG 设备配置](site-assets/product/v0325-device.jpg)
+- 立即发送的 ID 与数据递增在连续操作间保持连续。
+- 修复列表周期任务停止按钮失效，停止时同时清理静态与动态任务。
+- 移除行内重复删除按钮，保留底部勾选批量删除。
+- 使用高分辨率绝对时限调度改善 1 ms 与 10 ms 周期偏差。
 
 ## 核心能力
 
@@ -33,10 +29,10 @@
 
 ## 下载与校验
 
-- 版本：`0.6.1`
-- 安装包：`PcanWork-Setup-0.6.1.exe`
-- 大小：`35,484,968` 字节
-- SHA-256：`7642E05C8B48DCEC2F3FF6756CCA66B16FCA65893EE761F4F706F69A9C15D624`
+- 版本：`0.6.2`
+- 安装包：`PcanWork-Setup-0.6.2.exe`
+- 大小：`35,482,197` 字节
+- SHA-256：`3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A`
 - 系统：Windows 10/11 64 位
 - 签名状态：当前安装包未进行 Authenticode 代码签名；构建脚本已生成内部完整性签名
 - 自动测试：67 项通过，0 项失败，1 项联网测试跳过
