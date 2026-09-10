@@ -1,16 +1,16 @@
 {
-  "name": "PcanWork",
-  "version": "0.6.2",
+  "name": "PCAN-Explorer10",
+  "version": "0.6.3",
   "released_at": "2026-09-10T08:00:00Z",
   "website": "https://www.hexbyte.cn/",
   "platform": "Windows 10/11 64-bit",
   "installer": {
-    "name": "PcanWork-Setup-0.6.2.exe",
-    "size_bytes": 35482197,
-    "sha256": "3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A",
+    "name": "PCAN-Explorer10-Setup-0.6.3.exe",
+    "size_bytes": 35455094,
+    "sha256": "F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08",
     "signed": false,
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe"
+    "github": "https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe"
   },
   "hardware": [
     "PCAN (PEAK)",
@@ -28,5 +28,5 @@
     "Intel",
     "Motorola"
   ],
-  "verification": "PcanWork, Serial Tool, Modbus Tools and the installer report version 0.6.2; installer byte size and SHA-256 were verified. The Authenticode signature is absent."
+  "verification": "PCAN-Explorer10, Serial Tool, Modbus Tools and the installer report version 0.6.3; 67 tests passed; native Slint rendering, installer size and SHA-256 were verified. The Authenticode signature is absent."
 }

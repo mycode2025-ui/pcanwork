@@ -1,4 +1,4 @@
-# 把 Modbus Poll 和 Slave 放进同一个窗口：PcanWork Modbus Tools 实战介绍
+# 把 Modbus Poll 和 Slave 放进同一个窗口：PCAN-Explorer10 Modbus Tools 实战介绍
 
 > 知乎原文：[https://zhuanlan.zhihu.com/p/2070567150901842037](https://zhuanlan.zhihu.com/p/2070567150901842037)
 
@@ -6,9 +6,9 @@
 
 当两套软件的连接参数、寄存器地址和数据格式分开管理时，最容易浪费时间的并不是协议本身，而是反复核对配置、切换窗口、重建测试现场。
 
-**PcanWork Modbus Tools** 把主站轮询、从站仿真、寄存器数据视图、事件日志和通信分析放进同一套 Windows 桌面工具中，面向设备开发、台架联调和现场诊断提供一条完整工作流。
+**PCAN-Explorer10 Modbus Tools** 把主站轮询、从站仿真、寄存器数据视图、事件日志和通信分析放进同一套 Windows 桌面工具中，面向设备开发、台架联调和现场诊断提供一条完整工作流。
 
-![PcanWork Modbus Tools 主站界面](../../site-assets/product/slide-6.png)
+![PCAN-Explorer10 Modbus Tools 主站界面](../../site-assets/product/slide-6.png)
 
 ## 一、主站模式：覆盖 Modbus Poll 的核心调试流程
 
@@ -25,7 +25,7 @@
 
 ## 二、从站模式：覆盖 Modbus Slave 的模拟需求
 
-从站模式允许电脑直接模拟 Modbus TCP 或 RTU 设备。启动从站后，外部 PLC、网关、上位机或测试程序可以连接 PcanWork，并读取或写入模拟寄存器。
+从站模式允许电脑直接模拟 Modbus TCP 或 RTU 设备。启动从站后，外部 PLC、网关、上位机或测试程序可以连接 PCAN-Explorer10，并读取或写入模拟寄存器。
 
 - 支持从站监听与单元 ID 处理
 - 支持寄存器和线圈实时查看
@@ -49,7 +49,7 @@
 
 ## 四、通信流量、事件日志与曲线
 
-仅看到“读取失败”往往不够。PcanWork 将运行事件和通信状态放在界面底部，可以观察连接、重连、超时、功能码请求和错误信息。
+仅看到“读取失败”往往不够。PCAN-Explorer10 将运行事件和通信状态放在界面底部，可以观察连接、重连、超时、功能码请求和错误信息。
 
 对连续变化的寄存器，还可以打开曲线窗口观察趋势。这比持续盯着表格数字更适合发现周期波动、突变、漂移和异常归零。
 
@@ -57,7 +57,7 @@
 
 Modbus 常见问题包括数量越界、起始地址与数量组合溢出、功能码不匹配、非法单元 ID，以及把远端设备 IP 错当成本机监听地址。
 
-PcanWork 在界面输入层和后端执行层同时进行范围校验。TCP 从站监听时，如果填写的地址不属于本机网卡，会明确提示应使用 **0.0.0.0** 监听全部网卡，或填写本机实际 IPv4 地址，避免只给出难懂的系统错误码。
+PCAN-Explorer10 在界面输入层和后端执行层同时进行范围校验。TCP 从站监听时，如果填写的地址不属于本机网卡，会明确提示应使用 **0.0.0.0** 监听全部网卡，或填写本机实际 IPv4 地址，避免只给出难懂的系统错误码。
 
 ## 六、典型使用场景
 
@@ -69,11 +69,11 @@ PcanWork 在界面输入层和后端执行层同时进行范围校验。TCP 从�
 
 ## 七、下载与项目地址
 
-当前版本：**PcanWork v0.1.37**，运行平台：Windows x64。
+当前版本：**PCAN-Explorer10 v0.1.37**，运行平台：Windows x64。
 
-- [GitHub 下载](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
-- [Gitee 下载](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
+- [GitHub 下载](https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
+- [Gitee 下载](https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
 - [产品网站](https://www.hexbyte.cn/)
 
-PcanWork Modbus Tools 的目标不是简单复制传统工具，而是把主站、从站、数据视图和工程保存连接起来，让一次调试可以被保存、复现并继续扩展。
+PCAN-Explorer10 Modbus Tools 的目标不是简单复制传统工具，而是把主站、从站、数据视图和工程保存连接起来，让一次调试可以被保存、复现并继续扩展。
 

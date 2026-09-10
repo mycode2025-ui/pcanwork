@@ -3,25 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PcanWork v0.6.2 — 发送连续性与周期调度修复</title>
-<meta name="description" content="PcanWork v0.6.2 修复发送 ID/数据连续递增、列表周期停止，并改善 1 ms 与 10 ms 周期调度精度。">
-<meta name="keywords" content="PcanWork,CAN分析工具,CAN FD,DBC解析,PCAN,ZLG,ZHCX,GCAN,Modbus Poll,Modbus Slave,串口助手,Rust,Slint">
-<meta name="author" content="PcanWork">
+<title>PCAN-Explorer10 v0.6.3 — 产品更名与升级迁移</title>
+<meta name="description" content="PCAN-Explorer10 v0.6.3 完成产品、安装包、仓库和官网名称统一，并支持旧版平滑升级。">
+<meta name="keywords" content="PCAN-Explorer10,CAN分析工具,CAN FD,DBC解析,PCAN,ZLG,ZHCX,GCAN,Modbus Poll,Modbus Slave,串口助手,Rust,Slint">
+<meta name="author" content="PCAN-Explorer10">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
 <meta name="theme-color" content="#0a0f18">
 <link rel="canonical" href="https://www.hexbyte.cn/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="zh_CN">
-<meta property="og:site_name" content="PcanWork">
-<meta property="og:title" content="PcanWork v0.6.2 — CAN/CAN FD 工程分析平台">
+<meta property="og:site_name" content="PCAN-Explorer10">
+<meta property="og:title" content="PCAN-Explorer10 v0.6.3 — CAN/CAN FD 工程分析平台">
 <meta property="og:description" content="发送递增连续、周期停止可靠生效，并改善高频周期调度精度。">
 <meta property="og:url" content="https://www.hexbyte.cn/">
 <meta property="og:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
 <meta property="og:image:width" content="1323">
 <meta property="og:image:height" content="757">
-<meta property="og:image:alt" content="PcanWork v0.3.25 工程中心真实运行界面">
+<meta property="og:image:alt" content="PCAN-Explorer10 v0.3.25 工程中心真实运行界面">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="PcanWork v0.6.2 — CAN/CAN FD 工程分析平台">
+<meta name="twitter:title" content="PCAN-Explorer10 v0.6.3 — CAN/CAN FD 工程分析平台">
 <meta name="twitter:description" content="Windows 桌面 CAN/CAN FD、DBC、仿真、Modbus 与串口工程工具。">
 <meta name="twitter:image" content="https://www.hexbyte.cn/site-assets/product/v0325-main.jpg">
 <script type="application/ld+json">
@@ -32,32 +32,32 @@
       "@type": "WebSite",
       "@id": "https://www.hexbyte.cn/#website",
       "url": "https://www.hexbyte.cn/",
-      "name": "PcanWork",
-      "alternateName": "PcanWork CAN/CAN FD 工程分析平台",
+      "name": "PCAN-Explorer10",
+      "alternateName": "PCAN-Explorer10 CAN/CAN FD 工程分析平台",
       "inLanguage": "zh-CN"
     },
     {
       "@type": "Organization",
       "@id": "https://www.hexbyte.cn/#organization",
-      "name": "PcanWork",
+      "name": "PCAN-Explorer10",
       "url": "https://www.hexbyte.cn/",
       "sameAs": [
-        "https://github.com/mycode2025-ui/pcanwork",
-        "https://gitee.com/mycode2025-ui/pcanwork"
+        "https://github.com/mycode2025-ui/PCAN-Explorer10",
+        "https://gitee.com/mycode2025-ui/PCAN-Explorer10"
       ]
     },
     {
       "@type": "SoftwareApplication",
       "@id": "https://www.hexbyte.cn/#software",
-      "name": "PcanWork",
-      "softwareVersion": "0.6.2",
+      "name": "PCAN-Explorer10",
+      "softwareVersion": "0.6.3",
       "applicationCategory": "DeveloperApplication",
       "applicationSubCategory": "CAN/CAN FD Bus Analysis Tool",
       "operatingSystem": "Windows 10/11 64-bit",
       "url": "https://www.hexbyte.cn/",
-      "downloadUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe",
-      "installUrl": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe",
-      "releaseNotes": "https://www.hexbyte.cn/release-notes-0.6.2.html",
+      "downloadUrl": "https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe",
+      "installUrl": "https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe",
+      "releaseNotes": "https://www.hexbyte.cn/release-notes-0.6.3.html",
       "screenshot": "https://www.hexbyte.cn/site-assets/product/v0325-main.jpg",
       "dateModified": "2026-09-10",
       "description": "Rust 与 Slint 构建的 Windows CAN/CAN FD 工程分析平台，支持多厂商硬件、DBC 解码、实时曲线、发送、记录回放、仿真、Modbus 和串口调试。",
@@ -422,7 +422,7 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 <!-- ═══════════ 顶部工具栏 ═══════════ -->
 <header class="toolbar">
   <div class="wrap">
-    <div class="brand"><span class="mark">C</span>PcanWork</div>
+    <div class="brand"><span class="mark">C</span>PCAN-Explorer10</div>
     <div class="leds">
       <span class="led-item"><i class="led g on pulse"></i>连接</span>
       <span class="led-item"><i class="led g on pulse"></i>运行</span>
@@ -465,17 +465,17 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div>
       <div class="eyebrow">Rust + Slint · 多厂商 CAN / CAN FD 支持</div>
-       <h1>PcanWork<span class="ver">v0.6.2</span></h1>
+       <h1>PCAN-Explorer10<span class="ver">v0.6.3</span></h1>
       <p class="tagline">CAN / CAN FD <em>总线报文分析工具</em></p>
       <p class="lead">
         桌面级总线分析器。支持 PCAN、ZLG、ZHCX、GCAN，提供 DBC 四类数值解析、
         实时曲线、周期发送、记录回放、UDS / XCP、OTA 与工程化仿真工具链。
       </p>
       <div class="btns">
-         <a class="btn btn-p" href="https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.6.2</a>
-         <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.6.2</a>
-        <a class="btn btn-s" href="https://github.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">GitHub 仓库</a>
-        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank" rel="noopener">Gitee 仓库</a>
+         <a class="btn btn-p" href="https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe" title="从 GitHub Release 下载 Windows 安装包">⤓ GitHub 下载 v0.6.3</a>
+         <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe" title="从 Gitee Release 下载 Windows 安装包">⤓ Gitee 下载 v0.6.3</a>
+        <a class="btn btn-s" href="https://github.com/mycode2025-ui/PCAN-Explorer10" target="_blank" rel="noopener">GitHub 仓库</a>
+        <a class="btn btn-s" href="https://gitee.com/mycode2025-ui/PCAN-Explorer10" target="_blank" rel="noopener">Gitee 仓库</a>
       </div>
       <div class="stats">
         <div class="stat"><b>16</b><span>列报文摘表</span></div>
@@ -510,28 +510,23 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
 <!-- ═══════════ 版本更新 ═══════════ -->
 <section id="release-notes" style="background:rgba(14,21,34,.55);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
-    <div class="sec-head rv">
-       <div class="eyebrow">WHAT'S NEW · v0.6.2</div>
-       <h2>发送与周期更<span class="hl">准确可靠</span></h2>
-       <p class="sub">修复普通发送递增和列表周期停止，使用高分辨率绝对时限调度改善 1 ms 与 10 ms 周期偏差。</p>
-    </div>
+    <div class="sec-head rv"><div class="eyebrow">WHAT'S NEW · v0.6.3</div><h2>产品名称全面统一为<span class="hl">PCAN-Explorer10</span></h2><p class="sub">窗口、主程序、安装包、GitHub、Gitee 与官方网站统一使用新名称，升级时迁移原有设置与许可证。</p></div>
     <div class="bento">
-       <div class="card rv"><div class="ico i-rx">⇄</div><h3>发送递增连续</h3><p>连续点击立即发送时，ID 与数据从上次结果继续递增。</p><span class="tag">CONTINUOUS SEQUENCE</span></div>
-       <div class="card rv"><div class="ico i-sig">▦</div><h3>周期停止可靠</h3><p>停止命令同时移除静态与动态周期任务，列表按钮保持稳定可点击。</p><span class="tag">RELIABLE STOP</span></div>
-       <div class="card rv"><div class="ico i-v">◉</div><h3>高精度周期调度</h3><p>Windows 高分辨率等待定时器配合绝对时限，减少 1 ms 与 10 ms 周期漂移。</p><span class="tag">PRECISE DEADLINE</span></div>
-       <div class="card rv"><div class="ico i-tx">✓</div><h3>列表操作简化</h3><p>移除重复的行内删除按钮，统一使用底部勾选批量删除。</p><span class="tag">SIMPLIFIED ACTIONS</span></div>
-       <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>发行完整性核验</h3><p>PcanWork、Serial Tool、Modbus Tools 与安装包均报告 0.6.2。安装包大小 35,482,197 字节；SHA-256：<span class="mono">3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A</span>。</p><span class="tag">VERSION · SIZE · SHA-256</span></div>
+      <div class="card rv"><div class="ico i-rx">⇄</div><h3>全界面统一命名</h3><p>主窗口、曲线、回放、仿真、串口和 Modbus 工具均显示 PCAN-Explorer10。</p><span class="tag">CONSISTENT BRAND</span></div>
+      <div class="card rv"><div class="ico i-sig">▦</div><h3>安装包同步更名</h3><p>主程序与安装包分别更名为 PCAN-Explorer10.exe 和 PCAN-Explorer10-Setup-0.6.3.exe。</p><span class="tag">EXE · INSTALLER</span></div>
+      <div class="card rv"><div class="ico i-v">◉</div><h3>旧版平滑升级</h3><p>升级安装迁移原有设置与许可证，并卸载旧品牌程序后写入新目录。</p><span class="tag">MIGRATION</span></div>
+      <div class="card rv"><div class="ico i-tx">✓</div><h3>发布渠道统一</h3><p>GitHub、Gitee 仓库、下载地址、更新接口和官方网站全部切换到新名称。</p><span class="tag">REPOSITORIES · WEBSITE</span></div>
+      <div class="card card-w rv"><div class="ico i-e">⚙</div><h3>发行完整性核验</h3><p>PCAN-Explorer10、Serial Tool、Modbus Tools 与安装包均报告 0.6.3。安装包大小 35,455,094 字节；SHA-256：<span class="mono">F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08</span>。</p><span class="tag">VERSION · SIZE · SHA-256</span></div>
     </div>
   </div>
 </section>
-
 <!-- ═══════════ 功能 ═══════════ -->
 <section id="features">
   <div class="wrap">
     <div class="sec-head rv">
       <div class="eyebrow">FEATURES · 已实现</div>
       <h2>从硬件接入到仿真诊断的<span class="hl">完整工程链路</span></h2>
-       <p class="sub">当前介绍以 v0.6.2 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
+       <p class="sub">当前介绍以 v0.6.3 实际功能为准：多厂商 CAN、DBC 四类数值解析、工程管理、仿真面板、Modbus 与串口工具已统一集成。</p>
     </div>
     <div class="bento">
       <div class="card card-big rv">
@@ -566,35 +561,35 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     </div>
     <div class="shot-grid">
       <a class="shot rv" href="site-assets/product/v0325-main.jpg" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0325-main.jpg" alt="PcanWork v0.3.25 工程中心真实运行截图" loading="eager" width="1323" height="757">
+        <img src="site-assets/product/v0325-main.jpg" alt="PCAN-Explorer10 v0.3.25 工程中心真实运行截图" loading="eager" width="1323" height="757">
         <div class="shot-meta"><strong>工程中心与最近工程</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0325-workspace.jpg" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0325-workspace.jpg" alt="PcanWork v0.3.25 双通道双 DBC 工程工作台真实运行截图" loading="lazy" width="1323" height="757">
+        <img src="site-assets/product/v0325-workspace.jpg" alt="PCAN-Explorer10 v0.3.25 双通道双 DBC 工程工作台真实运行截图" loading="lazy" width="1323" height="757">
         <div class="shot-meta"><strong>双硬件通道与多 DBC 工程</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0325-device.jpg" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0325-device.jpg" alt="PcanWork v0.3.25 PCAN 与 ZLG 设备扫描及通道配置真实运行截图" loading="lazy" width="947" height="671">
+        <img src="site-assets/product/v0325-device.jpg" alt="PCAN-Explorer10 v0.3.25 PCAN 与 ZLG 设备扫描及通道配置真实运行截图" loading="lazy" width="947" height="671">
         <div class="shot-meta"><strong>PCAN 与 ZLG 设备扫描、通道参数</strong><span>v0.3.25 LIVE CAPTURE ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0325-fd-bitrate.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0325-fd-bitrate.png" alt="PcanWork CAN FD 仲裁与数据波特率配置界面" loading="lazy">
+        <img src="site-assets/product/v0325-fd-bitrate.png" alt="PCAN-Explorer10 CAN FD 仲裁与数据波特率配置界面" loading="lazy">
         <div class="shot-meta"><strong>CAN FD 仲裁与数据波特率</strong><span>BITRATE CONFIG ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-simulation.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-simulation.png" alt="PcanWork DBC 可视化仿真面板真实 UI 验证截图" loading="lazy">
+        <img src="site-assets/product/v0311-simulation.png" alt="PCAN-Explorer10 DBC 可视化仿真面板真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>DBC 可视化仿真面板</strong><span>SIMULATION ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-simulation-library.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-simulation-library.png" alt="PcanWork DBC 信号库与仿真控件绑定真实截图" loading="lazy">
+        <img src="site-assets/product/v0311-simulation-library.png" alt="PCAN-Explorer10 DBC 信号库与仿真控件绑定真实截图" loading="lazy">
         <div class="shot-meta"><strong>DBC 信号库与控件绑定</strong><span>SIGNAL LIBRARY ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-modbus.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-modbus.png" alt="PcanWork Modbus Tools 主站从站真实 UI 验证截图" loading="lazy">
+        <img src="site-assets/product/v0311-modbus.png" alt="PCAN-Explorer10 Modbus Tools 主站从站真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>Modbus 主站、从站与数据视图</strong><span>MODBUS TOOLS ↗</span></div>
       </a>
       <a class="shot rv" href="site-assets/product/v0311-serial.png" target="_blank" rel="noopener">
-        <img src="site-assets/product/v0311-serial.png" alt="PcanWork Serial Tool 串口助手真实 UI 验证截图" loading="lazy">
+        <img src="site-assets/product/v0311-serial.png" alt="PCAN-Explorer10 Serial Tool 串口助手真实 UI 验证截图" loading="lazy">
         <div class="shot-meta"><strong>串口调试与交互终端</strong><span>SERIAL TOOL ↗</span></div>
       </a>
     </div>
@@ -666,15 +661,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
     <div class="sec-head rv">
       <div class="eyebrow">PRODUCT FACTS · 产品事实</div>
       <h2>可核验的<span class="hl">版本与能力边界</span></h2>
-      <p class="sub">以下信息供用户、搜索引擎和 AI 检索系统准确理解 PcanWork，版本以发布页及校验值为准。</p>
+      <p class="sub">以下信息供用户、搜索引擎和 AI 检索系统准确理解 PCAN-Explorer10，版本以发布页及校验值为准。</p>
     </div>
     <div class="facts">
-       <div class="fact rv"><b>CURRENT VERSION</b><p>PcanWork 0.6.2，Windows 10/11 64 位桌面软件，安装包 35,482,197 字节。</p></div>
+       <div class="fact rv"><b>CURRENT VERSION</b><p>PCAN-Explorer10 0.6.3，Windows 10/11 64 位桌面软件，安装包 35,455,094 字节。</p></div>
       <div class="fact rv"><b>CAN HARDWARE</b><p>支持 PCAN（PEAK）、ZLG、ZHCX、GCAN。实际报文收发需要兼容适配器与厂商驱动。</p></div>
       <div class="fact rv"><b>DBC SEMANTICS</b><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，Intel / Motorola 字节序及 factor、offset。</p></div>
       <div class="fact rv"><b>TOOLS</b><p>同一产品集成 CAN/CAN FD 工作台、可视化仿真、Modbus TCP/RTU 主从站和串口终端。</p></div>
-       <div class="fact rv"><b>v0.6.2 VERIFICATION</b><p>三个程序和安装包均报告版本 0.6.2；核心测试、文件大小和 SHA-256 已核验。</p></div>
-       <div class="fact rv"><b>SHA-256</b><p class="mono">3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A</p></div>
+       <div class="fact rv"><b>v0.6.3 VERIFICATION</b><p>三个程序和安装包均报告版本 0.6.3；核心测试、文件大小和 SHA-256 已核验。</p></div>
+       <div class="fact rv"><b>SHA-256</b><p class="mono">F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08</p></div>
     </div>
   </div>
 </section>
@@ -684,15 +679,15 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div class="sec-head rv">
       <div class="eyebrow">FAQ · 常见问题</div>
-      <h2>关于 PcanWork 的<span class="hl">直接答案</span></h2>
+      <h2>关于 PCAN-Explorer10 的<span class="hl">直接答案</span></h2>
     </div>
     <div class="faq">
-      <details class="rv"><summary>PcanWork 是什么？</summary><p>PcanWork 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。</p></details>
+      <details class="rv"><summary>PCAN-Explorer10 是什么？</summary><p>PCAN-Explorer10 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。</p></details>
       <details class="rv"><summary>支持哪些 CAN 硬件？</summary><p>当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。使用真实 CAN/CAN FD 报文收发前，需要安装相应厂商驱动并连接兼容硬件。</p></details>
       <details class="rv"><summary>DBC 是否支持四种数值类型和 factor、offset？</summary><p>支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算，并保留单位和范围语义。</p></details>
       <details class="rv"><summary>没有 CAN 硬件可以使用吗？</summary><p>工程、DBC、界面和配置等不依赖总线的功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。</p></details>
-       <details class="rv"><summary>v0.6.2 更新了什么？</summary><p>立即发送的 ID/数据递增保持连续；修复周期停止按钮，并改善 1 ms 与 10 ms 周期调度精度。</p></details>
-       <details class="rv"><summary>如何验证安装包没有损坏？</summary><p>对 PcanWork-Setup-0.6.2.exe 计算 SHA-256，应为 3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A。当前安装包未进行 Authenticode 代码签名。</p></details>
+       <details class="rv"><summary>v0.6.3 更新了什么？</summary><p>产品、主程序、安装包、仓库与官网统一更名为 PCAN-Explorer10，并支持旧版设置和许可证迁移。</p></details>
+       <details class="rv"><summary>如何验证安装包没有损坏？</summary><p>对 PCAN-Explorer10-Setup-0.6.3.exe 计算 SHA-256，应为 F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08。当前安装包未进行 Authenticode 代码签名。</p></details>
     </div>
   </div>
 </section>
@@ -702,12 +697,12 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   "@context": "https://schema.org",
   "@type": "FAQPage",
   "mainEntity": [
-    {"@type":"Question","name":"PcanWork 是什么？","acceptedAnswer":{"@type":"Answer","text":"PcanWork 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。"}},
+    {"@type":"Question","name":"PCAN-Explorer10 是什么？","acceptedAnswer":{"@type":"Answer","text":"PCAN-Explorer10 是 Rust 与 Slint 构建的 Windows 桌面 CAN/CAN FD 工程分析平台，覆盖硬件接入、DBC 解码、报文分析、发送、记录回放、曲线、仿真、Modbus 和串口调试。"}},
     {"@type":"Question","name":"支持哪些 CAN 硬件？","acceptedAnswer":{"@type":"Answer","text":"当前支持 PCAN（PEAK）、ZLG、ZHCX 和 GCAN。真实 CAN/CAN FD 报文收发需要对应厂商驱动和兼容硬件。"}},
     {"@type":"Question","name":"DBC 是否支持四种数值类型和 factor、offset？","acceptedAnswer":{"@type":"Answer","text":"支持 Unsigned、Signed、IEEE Float、IEEE Double，也支持 Intel / Motorola 字节序；物理值按 raw × factor + offset 换算。"}},
     {"@type":"Question","name":"没有 CAN 硬件可以使用吗？","acceptedAnswer":{"@type":"Answer","text":"工程、DBC、界面和配置等功能可以打开使用；当前版本不提供虚拟 CAN 总线，真实报文采集与发送需要兼容硬件和驱动。"}},
-     {"@type":"Question","name":"v0.6.2 更新了什么？","acceptedAnswer":{"@type":"Answer","text":"立即发送的 ID/数据递增保持连续；修复周期停止按钮，并改善 1 ms 与 10 ms 周期调度精度。"}},
-     {"@type":"Question","name":"如何验证安装包没有损坏？","acceptedAnswer":{"@type":"Answer","text":"PcanWork-Setup-0.6.2.exe 的 SHA-256 为 3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A。当前安装包未进行 Authenticode 代码签名。"}}
+     {"@type":"Question","name":"v0.6.3 更新了什么？","acceptedAnswer":{"@type":"Answer","text":"产品、主程序、安装包、仓库与官网统一更名为 PCAN-Explorer10，并支持旧版设置和许可证迁移。"}},
+     {"@type":"Question","name":"如何验证安装包没有损坏？","acceptedAnswer":{"@type":"Answer","text":"PCAN-Explorer10-Setup-0.6.3.exe 的 SHA-256 为 F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08。当前安装包未进行 Authenticode 代码签名。"}}
   ]
 }
 </script>
@@ -719,18 +714,18 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
   <div class="wrap">
     <div class="f-grid">
       <div>
-        <div class="f-brand">PcanWork</div>
+        <div class="f-brand">PCAN-Explorer10</div>
         <p class="f-note">Rust + Slint 构建的 CAN/CAN FD 报文分析工具。<br>真卡运行需安装 PEAK 驱动（PCANBasic.dll）。</p>
       </div>
       <div>
         <div class="f-h">项目</div>
         <div class="f-links">
-          <a href="https://github.com/mycode2025-ui/pcanwork" target="_blank">GitHub 仓库</a>
-          <a href="https://gitee.com/mycode2025-ui/pcanwork" target="_blank">Gitee 镜像</a>
-           <a href="https://github.com/mycode2025-ui/pcanwork/releases/tag/v0.6.2" target="_blank">GitHub Release</a>
-           <a href="https://gitee.com/mycode2025-ui/pcanwork/releases/tag/v0.6.2" target="_blank">Gitee Release</a>
-           <a href="release-notes-0.6.2.html">v0.6.2 版本说明</a>
-          <a href="https://github.com/mycode2025-ui/pcanwork/issues" target="_blank">问题反馈</a>
+          <a href="https://github.com/mycode2025-ui/PCAN-Explorer10" target="_blank">GitHub 仓库</a>
+          <a href="https://gitee.com/mycode2025-ui/PCAN-Explorer10" target="_blank">Gitee 镜像</a>
+           <a href="https://github.com/mycode2025-ui/PCAN-Explorer10/releases/tag/v0.6.3" target="_blank">GitHub Release</a>
+           <a href="https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/tag/v0.6.3" target="_blank">Gitee Release</a>
+           <a href="release-notes-0.6.3.html">v0.6.3 版本说明</a>
+          <a href="https://github.com/mycode2025-ui/PCAN-Explorer10/issues" target="_blank">问题反馈</a>
         </div>
       </div>
       <div>
@@ -743,8 +738,8 @@ footer{border-top:1px solid var(--line);padding:44px 0 54px;margin-top:30px}
       </div>
     </div>
     <div class="copy">
-      <span>© 2026 PcanWork · mycode2025-ui</span>
-       <span>Windows 10/11 x64 · v0.6.2</span>
+      <span>© 2026 PCAN-Explorer10 · mycode2025-ui</span>
+       <span>Windows 10/11 x64 · v0.6.3</span>
     </div>
   </div>
 </footer>

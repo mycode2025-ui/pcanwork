@@ -1,12 +1,12 @@
-# 不只是收发 HEX：PcanWork Serial Tool 把串口助手和交互终端合在一起
+# 不只是收发 HEX：PCAN-Explorer10 Serial Tool 把串口助手和交互终端合在一起
 
 > 知乎原文：[https://zhuanlan.zhihu.com/p/2070567518624823161](https://zhuanlan.zhihu.com/p/2070567518624823161)
 
 传统串口助手很擅长完成一件事：选择串口参数，然后收一段、发一段数据。但设备进入 Linux、Bootloader、AT 命令或交互式 Shell 场景后，普通收发框很快会暴露局限：命令历史不好用、ANSI 颜色丢失、长日志复制卡顿，多行粘贴的换行规则也常常说不清楚。
 
-**PcanWork Serial Tool** 将“普通串口调试”和“交互终端”作为两种明确的工作模式，既保留工程师熟悉的 HEX、定时发送与文件传输，也提供更接近 CMD/SSH 终端的输入、历史和日志体验。
+**PCAN-Explorer10 Serial Tool** 将“普通串口调试”和“交互终端”作为两种明确的工作模式，既保留工程师熟悉的 HEX、定时发送与文件传输，也提供更接近 CMD/SSH 终端的输入、历史和日志体验。
 
-![PcanWork Serial Tool 普通调试与交互终端](../../site-assets/product/slide-7.png)
+![PCAN-Explorer10 Serial Tool 普通调试与交互终端](../../site-assets/product/slide-7.png)
 
 ## 一、普通调试模式：熟悉，但不简陋
 
@@ -38,7 +38,7 @@
 
 很多串口工具对“多行粘贴”解释含糊：有的逐行触发发送，有的把换行改写，有的会意外追加多个 CRLF。
 
-PcanWork 的规则非常明确：
+PCAN-Explorer10 的规则非常明确：
 
 - 键盘输入仍保持单行命令体验，Enter 立即发送
 - 从剪贴板粘贴多行内容时，内部 CR / LF 原样保留
@@ -50,7 +50,7 @@ PcanWork 的规则非常明确：
 
 ## 四、编码与换行
 
-串口乱码通常不是“串口坏了”，而是编码或行尾不一致。PcanWork 提供 UTF-8、GBK、GB18030、ISO-8859-1 与 ASCII 等常用编码，并支持 None、LF、CR、CRLF 等行尾策略。
+串口乱码通常不是“串口坏了”，而是编码或行尾不一致。PCAN-Explorer10 提供 UTF-8、GBK、GB18030、ISO-8859-1 与 ASCII 等常用编码，并支持 None、LF、CR、CRLF 等行尾策略。
 
 状态栏持续显示当前编码、换行方式和串口参数，切换模式时无需重新猜测。对于 Linux 控制台通常优先选择 UTF-8；对于旧式模块或中文设备，可按设备文档选择 GBK/GB18030。
 
@@ -62,7 +62,7 @@ PcanWork 的规则非常明确：
 
 ## 六、统一的桌面体验
 
-串口工具支持中英文切换、浅色/深色主题、窗口置顶和参数保存。顶部状态、按钮高度、复选框和焦点样式与 PcanWork Modbus Tools 保持一致，降低多个工具之间来回切换的学习成本。
+串口工具支持中英文切换、浅色/深色主题、窗口置顶和参数保存。顶部状态、按钮高度、复选框和焦点样式与 PCAN-Explorer10 Modbus Tools 保持一致，降低多个工具之间来回切换的学习成本。
 
 ## 七、适合哪些场景
 
@@ -74,11 +74,11 @@ PcanWork 的规则非常明确：
 
 ## 八、下载与项目地址
 
-当前版本：**PcanWork v0.1.37**，运行平台：Windows x64。
+当前版本：**PCAN-Explorer10 v0.1.37**，运行平台：Windows x64。
 
-- [GitHub 下载](https://github.com/mycode2025-ui/pcanwork/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
-- [Gitee 下载](https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
+- [GitHub 下载](https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
+- [Gitee 下载](https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.1.37/PcanWork-Setup-0.1.37.exe)
 - [产品网站](https://www.hexbyte.cn/)
 
-PcanWork Serial Tool 希望解决的不是“再做一个串口助手”，而是让普通协议调试和真正的终端交互都在同一个稳定、可记录的窗口里完成。
+PCAN-Explorer10 Serial Tool 希望解决的不是“再做一个串口助手”，而是让普通协议调试和真正的终端交互都在同一个稳定、可记录的窗口里完成。
 

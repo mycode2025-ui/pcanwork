@@ -1,12 +1,12 @@
 {
-  "product": "PcanWork",
-  "version": "0.6.2",
+  "product": "PCAN-Explorer10",
+  "version": "0.6.3",
   "published_at": "2026-09-10T08:00:00Z",
-  "notes": "PcanWork v0.6.2 修复普通发送和列表周期发送：\n- 连续点击立即发送时，ID 递增与数据递增会从上次结果继续。\n- 修复列表周期任务停止按钮失效，移除重复的行内删除按钮。\n- 周期发送改用高精度绝对时限调度，改善 1 ms 与 10 ms 周期偏差。",
-  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.2.html",
-  "sha256": "3022D7E8DBA34414E99E13B13581CF708E598872BEEA46FFA31D64DF8B20F04A",
+  "notes": "PCAN-Explorer10 v0.6.3 完成产品品牌统一：\n- 主程序、窗口标题、安装包和文档统一更名为 PCAN-Explorer10。\n- 升级安装迁移旧版设置与许可证，并清理旧品牌安装。\n- GitHub、Gitee 仓库和官方网站链接统一使用新名称。",
+  "release_notes": "https://www.hexbyte.cn/release-notes-0.6.3.html",
+  "sha256": "F6A10D83356072178D461ABCC3BBCC07480DAB8B9235CC7F19ED0740DD69FF08",
   "downloads": {
-    "github": "https://github.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe",
-    "gitee": "https://gitee.com/mycode2025-ui/pcanwork/releases/download/v0.6.2/PcanWork-Setup-0.6.2.exe"
+    "github": "https://github.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe",
+    "gitee": "https://gitee.com/mycode2025-ui/PCAN-Explorer10/releases/download/v0.6.3/PCAN-Explorer10-Setup-0.6.3.exe"
   }
 }
